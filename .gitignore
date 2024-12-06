@@ -3,3 +3,6 @@ data/1000.txt
 data/all-files.txt
 main
 FileFind.git
+.DS_Store
+data/files.db*
+data/files.db-journal
