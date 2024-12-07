@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os/exec"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -13,6 +14,8 @@ import (
 	widgetx "github.com/matwachich/fynex-widgets"
 )
 
+// TODO:
+// - Add system tray icon: https://docs.fyne.io/explore/systray.html
 func handleOpenButtonClick(pathname string) {
 	fmt.Println("handleOpenButtonClick: ", pathname)
 
@@ -24,19 +27,21 @@ func handleOpenButtonClick(pathname string) {
 }
 
 func handleEntryChanged(db *sql.DB, entry *widgetx.AutoComplete) {
+	start := time.Now()
+
 	if len(entry.Text) == 0 {
 		entry.ListHide()
 		return
 	}
-	// Calling prefixSearch without a limit parameter, using the default limit of 20
+
+	searchStart := time.Now()
 	results, err := prefixSearch(db, entry.Text, 200)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
-	fmt.Println("Results:", len(results))
+	searchElapsed := time.Since(searchStart)
 
-	// no results
 	if len(results) == 0 {
 		if entry.Text == "" {
 			return
@@ -46,18 +51,31 @@ func handleEntryChanged(db *sql.DB, entry *widgetx.AutoComplete) {
 	// then show them
 	entry.Options = results
 	entry.ListShow()
-	printMemUsage()
+
+	elapsed := time.Since(start)
+	fmt.Printf(
+		"handleEntryChanged took %s. prefixSearch: %s\n",
+		elapsed,
+		searchElapsed,
+	)
 }
 
-func loadUI2(db *sql.DB) {
+func loadUI(db *sql.DB) {
 	a := app.New()
 	w := a.NewWindow("Entry Completion")
 
+	// Autocomplete entry box
 	entry := widgetx.NewAutoComplete(1)
 	entry.SetPlaceHolder("Enter filename...")
 
-	content := container.NewVBox(
+	// Status bar
+	statusBar := widget.NewLabel("Status: Ready")
+
+	content := container.NewBorder(
 		entry,
+		statusBar,
+		nil,
+		nil,
 		widget.NewButton("Show in Finder", func() {
 			handleOpenButtonClick(entry.Text)
 		}),
@@ -72,5 +90,4 @@ func loadUI2(db *sql.DB) {
 	w.ShowAndRun()
 
 	// anything below will not be executed until app is closed
-	//getInput(input)
 }
