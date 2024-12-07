@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -11,6 +10,18 @@ import (
 var records []struct {
 	filename string
 	path     string
+}
+
+var PrefixSearchStmt *sql.Stmt
+
+func preparePrefixSearchStmt(db *sql.DB) (*sql.Stmt, error) {
+	// Prepare the statement for prefix search - performance optimization
+	stmt, err := db.Prepare("SELECT filename, fullpath FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
+	if err != nil {
+		return nil, err
+	}
+
+	return stmt, err
 }
 
 func openDB(pathname string) (*sql.DB, error) {
@@ -54,9 +65,15 @@ func prefixSearch(db *sql.DB, prefix string, limit ...int) ([]string, error) {
 		resultLimit = limit[0]
 	}
 
-	rows, err := db.Query(
-		"SELECT filename, fullpath FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?",
-		prefix+"%", resultLimit)
+	if PrefixSearchStmt == nil {
+		var err error
+		PrefixSearchStmt, err = preparePrefixSearchStmt(db)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	rows, err := PrefixSearchStmt.Query(prefix+"%", resultLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +85,7 @@ func prefixSearch(db *sql.DB, prefix string, limit ...int) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("Filename: %s, Fullpath: %s\n", filename, fullpath)
+		// fmt.Printf("Filename: %s, Fullpath: %s\n", filename, fullpath)
 
 		results = append(results, fullpath)
 	}
