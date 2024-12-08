@@ -15,30 +15,32 @@ func fileExists(filename string) bool {
 }
 
 func main() {
-	var db *sql.DB = nil
 	var err error
-
+	var db *sql.DB = nil
 	dbFile := "data/files.db"
-	if fileExists(dbFile) {
-		db, err = openDB(dbFile)
-		if err != nil {
-			return
-		}
-		fmt.Println("Opened database ", dbFile)
-	} else {
+
+	if !fileExists(dbFile) {
 		fmt.Println("Database does not exist, creating it...")
-
-		db, err := createDBAndTable("data/files.db")
+		err = createDBAndTable("data/files.db")
 		if err != nil {
 			return
 		}
-
 		fmt.Println("Loading database from file...")
+		db, err = initializeDB(dbFile)
+		if err != nil {
+			return
+		}
 		err = loadDBFromFile(db, "data/all-files.txt")
 		if err != nil {
 			return
 		}
 	}
+
+	db, err = initializeDB(dbFile)
+	if err != nil {
+		return
+	}
+	fmt.Println("Opened database ", dbFile)
 	defer db.Close()
 
 	loadUI(db)
