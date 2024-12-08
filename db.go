@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -13,6 +14,7 @@ var records []struct {
 }
 
 var PrefixSearchStmt *sql.Stmt
+var CountStmt *sql.Stmt
 
 func preparePrefixSearchStmt(db *sql.DB) (*sql.Stmt, error) {
 	// Prepare the statement for prefix search - performance optimization
@@ -24,7 +26,22 @@ func preparePrefixSearchStmt(db *sql.DB) (*sql.Stmt, error) {
 	return stmt, err
 }
 
-func openDB(pathname string) (*sql.DB, error) {
+func prepareCountStmt(db *sql.DB) (*sql.Stmt, error) {
+	// Prepare the statement for prefix search - performance optimization
+	stmt, err := db.Prepare("SELECT count(*) FROM files WHERE filename LIKE ?")
+	if err != nil {
+		return nil, err
+	}
+
+	return stmt, err
+}
+
+func initializeDB(pathname string) (*sql.DB, error) {
+	// Check if the database file exists
+	if _, err := os.Stat(pathname); os.IsNotExist(err) {
+		log.Fatal("DB file missing: ", pathname, err)
+	}
+
 	db, err := sql.Open("sqlite3", pathname)
 	if err != nil {
 		log.Fatal(err)
@@ -35,11 +52,21 @@ func openDB(pathname string) (*sql.DB, error) {
 		log.Fatal(err)
 	}
 
+	PrefixSearchStmt, err = preparePrefixSearchStmt(db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	CountStmt, err = prepareCountStmt(db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	return db, err
 }
 
-func createDBAndTable(pathname string) (*sql.DB, error) {
-	db, err := openDB(pathname)
+func createDBAndTable(pathname string) error {
+	db, err := sql.Open("sqlite3", pathname)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -54,23 +81,15 @@ func createDBAndTable(pathname string) (*sql.DB, error) {
 		log.Fatal(err)
 	}
 
-	return db, err
+	return err
 }
 
-func prefixSearch(db *sql.DB, prefix string, limit ...int) ([]string, error) {
+func prefixSearch(prefix string, limit ...int) ([]string, error) {
 	var results []string
 
-	resultLimit := 20
+	resultLimit := 200
 	if len(limit) > 0 {
 		resultLimit = limit[0]
-	}
-
-	if PrefixSearchStmt == nil {
-		var err error
-		PrefixSearchStmt, err = preparePrefixSearchStmt(db)
-		if err != nil {
-			log.Fatal(err)
-		}
 	}
 
 	rows, err := PrefixSearchStmt.Query(prefix+"%", resultLimit)
@@ -85,7 +104,6 @@ func prefixSearch(db *sql.DB, prefix string, limit ...int) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		// fmt.Printf("Filename: %s, Fullpath: %s\n", filename, fullpath)
 
 		results = append(results, fullpath)
 	}
@@ -104,12 +122,15 @@ func insertRecord(db *sql.DB, filename string, path string) error {
 }
 
 func bulkInsertRecords(db *sql.DB, filename string, path string) error {
+
+	// Collect records here
 	records = append(records, struct {
 		filename string
 		path     string
 	}{filename, path})
 
-	if len(records) >= 10000 {
+	// Commit records when we have enough
+	if len(records) >= 1000 {
 		tx, err := db.Begin()
 		if err != nil {
 			return err
@@ -124,7 +145,6 @@ func bulkInsertRecords(db *sql.DB, filename string, path string) error {
 		for _, record := range records {
 			_, err = stmt.Exec(record.filename, record.path)
 			if err != nil {
-				tx.Rollback()
 				return err
 			}
 		}
@@ -159,7 +179,6 @@ func commitRecords(db *sql.DB) error {
 	for _, record := range records {
 		_, err = stmt.Exec(record.filename, record.path)
 		if err != nil {
-			tx.Rollback()
 			return err
 		}
 	}
