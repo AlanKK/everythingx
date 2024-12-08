@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"testing"
@@ -8,22 +9,8 @@ import (
 
 func TestCreateDBAndTable(t *testing.T) {
 	testDBPath := "test.db"
-	os.Remove(testDBPath)
 
-	db, err := createDBAndTable(testDBPath)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	db.Close()
-	defer os.Remove(testDBPath)
-
-	// Check if the database file was created
-	if _, err := os.Stat(testDBPath); os.IsNotExist(err) {
-		t.Fatalf("Expected database file to be created, but it does not exist")
-	}
-
-	// Open the database to check if the table and index were created
-	db, err = openDB(testDBPath)
+	db, err := createAndOpenNewTestDatabase(t, testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -51,11 +38,30 @@ func TestCreateDBAndTable(t *testing.T) {
 		t.Fatalf("Expected index name to be 'idx_filename', got %s", indexName)
 	}
 }
-func TestGetRecord(t *testing.T) {
-	testDBPath := "test.db"
+
+func createAndOpenNewTestDatabase(t *testing.T, testDBPath string) (*sql.DB, error) {
 	os.Remove(testDBPath)
 
-	db, err := createDBAndTable(testDBPath)
+	err := createDBAndTable(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if _, err := os.Stat(testDBPath); os.IsNotExist(err) {
+		t.Fatalf("Expected database file to be created, but it does not exist")
+	}
+
+	db, err := initializeDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	return db, err
+}
+
+func TestGetRecord(t *testing.T) {
+	testDBPath := "test.db"
+
+	db, err := createAndOpenNewTestDatabase(t, testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -64,7 +70,7 @@ func TestGetRecord(t *testing.T) {
 
 	// Insert test data
 	for i := 1; i < 100; i++ {
-		_, err = db.Exec("INSERT INTO files (filename, fullpath) VALUES (?, ?)", fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%03d.txt", i))
+		_, err = db.Exec("INSERT INTO files (filename, fullpath) VALUES (?, ?)", fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i))
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -72,12 +78,12 @@ func TestGetRecord(t *testing.T) {
 
 	// Test prefixSearch function
 	numResults := 5
-	results, err := prefixSearch(db, "testfile", numResults)
+	results, err := prefixSearch("testfile", numResults)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	expectedResults := []string{"testfile01.txt", "testfile02.txt", "testfile03.txt", "testfile04.txt", "testfile05.txt"}
+	expectedResults := []string{"/path/to/testfile01.txt", "/path/to/testfile02.txt", "/path/to/testfile03.txt", "/path/to/testfile04.txt", "/path/to/testfile05.txt"}
 	if len(results) != len(expectedResults) {
 		t.Fatalf("Expected %d results, got %d", len(expectedResults), len(results))
 	}
@@ -91,9 +97,8 @@ func TestGetRecord(t *testing.T) {
 
 func TestGetCaseSensitiveRecord(t *testing.T) {
 	testDBPath := "test.db"
-	os.Remove(testDBPath)
 
-	db, err := createDBAndTable(testDBPath)
+	db, err := createAndOpenNewTestDatabase(t, testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -102,7 +107,7 @@ func TestGetCaseSensitiveRecord(t *testing.T) {
 
 	// Insert test data
 	for i := 1; i < 100; i++ {
-		_, err = db.Exec("INSERT INTO files (filename, fullpath) VALUES (?, ?)", fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%03d.txt", i))
+		_, err = db.Exec("INSERT INTO files (filename, fullpath) VALUES (?, ?)", fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i))
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -113,7 +118,7 @@ func TestGetCaseSensitiveRecord(t *testing.T) {
 	}
 
 	// Test prefixSearch function
-	results, err := prefixSearch(db, "Test", 5)
+	results, err := prefixSearch("Test", 5)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -125,9 +130,8 @@ func TestGetCaseSensitiveRecord(t *testing.T) {
 
 func TestDeleteRecord(t *testing.T) {
 	testDBPath := "test.db"
-	os.Remove(testDBPath)
 
-	db, err := createDBAndTable(testDBPath)
+	db, err := createAndOpenNewTestDatabase(t, testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -159,9 +163,8 @@ func TestDeleteRecord(t *testing.T) {
 }
 func TestInsertRecord(t *testing.T) {
 	testDBPath := "test.db"
-	os.Remove(testDBPath)
 
-	db, err := createDBAndTable(testDBPath)
+	db, err := createAndOpenNewTestDatabase(t, testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -187,9 +190,8 @@ func TestInsertRecord(t *testing.T) {
 }
 func TestBulkInsertRecords(t *testing.T) {
 	testDBPath := "test.db"
-	os.Remove(testDBPath)
 
-	db, err := createDBAndTable(testDBPath)
+	db, err := createAndOpenNewTestDatabase(t, testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -221,6 +223,11 @@ func TestBulkInsertRecords(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
+	}
+
+	err = commitRecords(db)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
 	}
 
 	// Verify all records are committed
