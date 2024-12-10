@@ -78,7 +78,7 @@ func TestGetRecord(t *testing.T) {
 
 	// Test prefixSearch function
 	numResults := 5
-	results, err := prefixSearch("testfile", numResults)
+	results, _, err := prefixSearch("testfile", numResults)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -118,7 +118,7 @@ func TestGetCaseSensitiveRecord(t *testing.T) {
 	}
 
 	// Test prefixSearch function
-	results, err := prefixSearch("Test", 5)
+	results, _, err := prefixSearch("Test", 5)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}

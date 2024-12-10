@@ -51,6 +51,11 @@ func initializeDB(pathname string) (*sql.DB, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Enable WAL mode - multiple readers and writer
+	_, err = db.Exec("PRAGMA journal_mode=WAL;")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	PrefixSearchStmt, err = preparePrefixSearchStmt(db)
 	if err != nil {
@@ -84,7 +89,7 @@ func createDBAndTable(pathname string) error {
 	return err
 }
 
-func prefixSearch(prefix string, limit ...int) ([]string, error) {
+func prefixSearch(prefix string, limit ...int) ([]string, int, error) {
 	var results []string
 
 	resultLimit := 200
@@ -94,7 +99,7 @@ func prefixSearch(prefix string, limit ...int) ([]string, error) {
 
 	rows, err := PrefixSearchStmt.Query(prefix+"%", resultLimit)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -102,13 +107,35 @@ func prefixSearch(prefix string, limit ...int) ([]string, error) {
 		var filename, fullpath string
 		err := rows.Scan(&filename, &fullpath)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		results = append(results, fullpath)
 	}
 
-	return results, nil
+	// Get the total number of rows
+
+	// TODO: this is super slow.  Need a paginated solution for results and count results instead
+
+	// rows, err = CountStmt.Query("%" + prefix + "%")
+	// if err != nil {
+	// 	return nil, 0, err
+	// }
+	// defer rows.Close()
+
+	// var count int
+	// if rows.Next() {
+	// 	err := rows.Scan(&count)
+	// 	if err != nil {
+	// 		return nil, 0, err
+	// 	}
+	// 	return results, count, nil
+	// }
+	// defer rows.Close()
+	// fmt.Println("Total rows: ", count)
+	count := 0
+
+	return results, count, nil
 }
 
 func deleteRecord(db *sql.DB, key string) error {

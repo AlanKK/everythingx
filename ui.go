@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -10,6 +9,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
 	widgetx "github.com/matwachich/fynex-widgets"
@@ -35,7 +35,7 @@ func bToMb(b uint64) uint64 {
 	return b / 1024 / 1024
 }
 
-func handleOpenButtonClick(pathname string) {
+func handleOpenFile(pathname string) {
 	fmt.Println("handleOpenButtonClick: ", pathname)
 
 	if pathname == "" {
@@ -49,7 +49,9 @@ func handleOpenButtonClick(pathname string) {
 	}
 }
 
-func handleAutoCompleteEntryChanged(db *sql.DB, entry *widgetx.AutoComplete) {
+func handleAutoCompleteEntryChanged(entry *widgetx.AutoComplete, statusBar *widget.Label) {
+	fmt.Println("statusBar size: ", statusBar.Size(), statusBar.Position())
+
 	start := time.Now()
 
 	if len(entry.Text) == 0 {
@@ -58,7 +60,7 @@ func handleAutoCompleteEntryChanged(db *sql.DB, entry *widgetx.AutoComplete) {
 	}
 
 	searchStart := time.Now()
-	results, err := prefixSearch(entry.Text, 20000000)
+	results, count, err := prefixSearch(entry.Text, 200)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -74,63 +76,54 @@ func handleAutoCompleteEntryChanged(db *sql.DB, entry *widgetx.AutoComplete) {
 	// then show them
 	entry.Options = results
 	entry.ListShow()
+	statusBar.SetText(fmt.Sprintf("Status: %d results", count))
 
-	fmt.Println("Results:", len(results))
 	printMemUsage()
 
 	elapsed := time.Since(start)
 	fmt.Printf(
-		"Search: %s, Results: %d, prefixSearch: %s, handleEntryChanged %s.\n",
+		"\tSearch: %s, Results: %d, Total results: %d, prefixSearch: %s, handleEntryChanged %s.\n",
 		entry.Text,
 		len(results),
+		count,
 		searchElapsed,
 		elapsed,
 	)
+
+	fmt.Println("statusBar size: ", statusBar.Size(), statusBar.Position())
 }
 
-// func prePopulateAutoCompleteEntry(db *sql.DB, entry *widgetx.AutoComplete) {
-// 	results, err := prefixSearch(db, "a", 200)
-// 	if err != nil {
-// 		fmt.Println("Error:", err)
-// 		return
-// 	}
-
-// 	// then show them
-// 	entry.Options = results
-// 	entry.ListShow()
-// }
-
-func loadUI(db *sql.DB) {
+func loadUI() {
 	a := app.New()
-	w := a.NewWindow("Entry Completion")
+	w := a.NewWindow("Find files")
 
 	// Autocomplete entry box
 	entry := widgetx.NewAutoComplete(1)
 	entry.SetPlaceHolder("Enter filename...")
 	entry.SubmitOnCompleted = true
-	entry.SetMinRowsVisible(10)
-	entry.OnSubmitted = func(s string) { handleOpenButtonClick(s) }
+	entry.OnSubmitted = func(s string) { handleOpenFile(s) }
+
+	inner := container.NewVBox(entry, layout.NewSpacer())
 
 	// Status bar
 	statusBar := widget.NewLabel("Status: Ready")
 
 	content := container.NewBorder(
-		entry,
+		inner,
 		statusBar,
 		nil,
 		nil,
-		// widget.NewButtonWithIcon("Show in Finder", resourceFinder32x32Png, func() {
-		// 	handleOpenButtonClick(entry.Text)
-		//}),
 	)
 	entry.OnChanged = func(s string) {
-		handleAutoCompleteEntryChanged(db, entry)
+		handleAutoCompleteEntryChanged(entry, statusBar)
 	}
 
 	w.SetContent(content)
 	w.Resize(fyne.NewSize(1300, 800))
 
 	w.Show()
+
+	fmt.Println("statusBar size: ", statusBar.Size(), statusBar.Position())
 
 	// Prepopulate the list
 	// prePopulateAutoCompleteEntry(db, entry)
