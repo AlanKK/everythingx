@@ -43,7 +43,7 @@ func main() {
 	fmt.Println("Opened database ", dbFile)
 	defer db.Close()
 
-	loadUI(db)
+	loadUI()
 }
 
 func loadDBFromFile(db *sql.DB, filename string) error {
