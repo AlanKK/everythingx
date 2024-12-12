@@ -4,10 +4,7 @@ go 1.23.1
 
 toolchain go1.23.3
 
-require (
-	fyne.io/fyne/v2 v2.5.2
-	github.com/matwachich/fynex-widgets v0.0.0-20241101124829-bc23d3cb00ad
-)
+require fyne.io/fyne/v2 v2.5.2
 
 require (
 	github.com/fredbi/uri v1.1.0 // indirect

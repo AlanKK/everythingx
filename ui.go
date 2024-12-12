@@ -9,10 +9,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
-
-	widgetx "github.com/matwachich/fynex-widgets"
 )
 
 // TODO:
@@ -49,33 +46,39 @@ func handleOpenFile(pathname string) {
 	}
 }
 
-func handleAutoCompleteEntryChanged(entry *widgetx.AutoComplete, statusBar *widget.Label) {
+func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar *widget.Label) {
 	fmt.Println("statusBar size: ", statusBar.Size(), statusBar.Position())
 
 	start := time.Now()
 
-	if len(entry.Text) == 0 {
-		entry.ListHide()
+	if len(e.Text) == 0 {
+		//e.Hide()
 		return
 	}
 
 	searchStart := time.Now()
-	results, count, err := prefixSearch(entry.Text, 200)
+	results, count, err := prefixSearch(e.Text, 200)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
 	searchElapsed := time.Since(searchStart)
 
-	if len(results) == 0 {
-		if entry.Text == "" {
-			return
+	// Clear the TableData slice
+	*tableData = (*tableData)[:0]
+
+	if len(results) > 0 {
+		for i, r := range results {
+			fmt.Println(i, r)
+			*tableData = append(*tableData, RowData{
+				Name:  "",
+				Path:  r,
+				Other: "",
+			})
 		}
+		t.Refresh()
 	}
 
-	// then show them
-	entry.Options = results
-	entry.ListShow()
 	statusBar.SetText(fmt.Sprintf("Status: %d results", count))
 
 	printMemUsage()
@@ -83,7 +86,7 @@ func handleAutoCompleteEntryChanged(entry *widgetx.AutoComplete, statusBar *widg
 	elapsed := time.Since(start)
 	fmt.Printf(
 		"\tSearch: %s, Results: %d, Total results: %d, prefixSearch: %s, handleEntryChanged %s.\n",
-		entry.Text,
+		e.Text,
 		len(results),
 		count,
 		searchElapsed,
@@ -93,43 +96,112 @@ func handleAutoCompleteEntryChanged(entry *widgetx.AutoComplete, statusBar *widg
 	fmt.Println("statusBar size: ", statusBar.Size(), statusBar.Position())
 }
 
+type RowData struct {
+	Name  string
+	Path  string
+	Other string
+}
+
+var tableData *[]RowData
+
+func makeTable() *widget.Table {
+	data := make([]RowData, 0, 500)
+	tableData = &data
+	*tableData = append(*tableData, RowData{
+		Name:  "name",
+		Path:  "path",
+		Other: "Other",
+	})
+
+	t := widget.NewTableWithHeaders(
+		// Length()
+		func() (int, int) { return len(*tableData), 3 },
+		// CreateCell()
+		func() fyne.CanvasObject {
+			l := widget.NewLabel("Template")
+			l.TextStyle = fyne.TextStyle{Monospace: true}
+			l.Truncation = fyne.TextTruncateEllipsis
+			return l
+		},
+		// UpdateCell()
+		func(id widget.TableCellID, cell fyne.CanvasObject) {
+			label := cell.(*widget.Label)
+			switch id.Col {
+			case 0:
+				label.SetText((*tableData)[id.Row].Name)
+			case 1:
+				label.SetText((*tableData)[id.Row].Path)
+			case 2:
+				label.SetText((*tableData)[id.Row].Other)
+			}
+		},
+	)
+
+	t.SetColumnWidth(0, 200) // ID column
+	t.SetColumnWidth(1, 800) // Name column
+	t.SetColumnWidth(2, 300) // Description column
+
+	// Define custom headers
+	t.CreateHeader = func() fyne.CanvasObject {
+		return widget.NewLabel("")
+	}
+	t.UpdateHeader = func(cellID widget.TableCellID, header fyne.CanvasObject) {
+		label := header.(*widget.Label)
+
+		if cellID.Col != -1 {
+			//label.SetText("")
+			//} else {
+			switch cellID.Col {
+			case 0:
+				label.SetText("Name")
+			case 1:
+				label.SetText("Path")
+			case 2:
+				label.SetText("Other")
+			}
+		}
+	}
+	return t
+}
+
 func loadUI() {
+	var statusBar *widget.Label
+
 	a := app.New()
 	w := a.NewWindow("Find files")
 
-	// Autocomplete entry box
-	entry := widgetx.NewAutoComplete(1)
-	entry.SetPlaceHolder("Enter filename...")
-	entry.SubmitOnCompleted = true
-	entry.OnSubmitted = func(s string) { handleOpenFile(s) }
+	table := makeTable()
 
-	inner := container.NewVBox(entry, layout.NewSpacer())
+	// Autocomplete entry box
+	entry := widget.NewEntry()
+	entry.SetPlaceHolder("Enter filename...")
+	entry.OnChanged = func(s string) {
+		handleAutoCompleteEntryChanged(entry, table, statusBar)
+	}
+
+	//inner := container.NewVBox(entry, layout.NewSpacer())
 
 	// Status bar
-	statusBar := widget.NewLabel("Status: Ready")
+	statusBar = widget.NewLabel("Status: Ready")
 
+	// Main container
 	content := container.NewBorder(
-		inner,
+		entry,
 		statusBar,
 		nil,
 		nil,
+		table,
 	)
-	entry.OnChanged = func(s string) {
-		handleAutoCompleteEntryChanged(entry, statusBar)
-	}
+	// entry.OnChanged = func(s string) {
+	// 	handleAutoCompleteEntryChanged(entry, statusBar)
+	// }
 
 	w.SetContent(content)
 	w.Resize(fyne.NewSize(1300, 800))
 
-	w.Show()
-
 	fmt.Println("statusBar size: ", statusBar.Size(), statusBar.Position())
 
-	// Prepopulate the list
-	// prePopulateAutoCompleteEntry(db, entry)
-	// entry.ListShow()
-	// w.Canvas().Refresh(w.Canvas().Content())
-	a.Run()
+	w.ShowAndRun()
 
 	// anything below will not be executed until app is closed
 }
