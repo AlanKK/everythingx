@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/AlanKK/findfiles/internal/ffdb"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
@@ -46,7 +48,7 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	}
 
 	searchStart := time.Now()
-	results, count, err := ffdb.prefixSearch(e.Text, maxSearchResults)
+	results, count, err := ffdb.PrefixSearch(e.Text, maxSearchResults)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return

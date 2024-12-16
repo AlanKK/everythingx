@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/AlanKK/findfiles/internal/ffdb"
 )
 
 func fileExists(filename string) bool {
@@ -14,29 +16,31 @@ func fileExists(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
+var dataFolder = "../../data"
+
 func main() {
 	var err error
 	var db *sql.DB = nil
-	dbFile := "data/files.db"
+	dbFile := dataFolder + "/files.db"
 
 	if !fileExists(dbFile) {
 		fmt.Println("Database does not exist, creating it...")
-		err = ffdb.createDBAndTable("data/files.db")
+		err = ffdb.CreateDBAndTable(dbFile)
 		if err != nil {
 			return
 		}
 		fmt.Println("Loading database from file...")
-		db, err = ffdb.initializeDB(dbFile)
+		db, err = ffdb.InitializeDB(dbFile)
 		if err != nil {
 			return
 		}
-		err = ffdb.loadDBFromFile(db, "data/all-files.txt")
+		err = loadDBFromFile(db, dataFolder+"/all-files.txt")
 		if err != nil {
 			return
 		}
 	}
 
-	db, err = ffdb.initializeDB(dbFile)
+	db, err = ffdb.InitializeDB(dbFile)
 	if err != nil {
 		return
 	}
@@ -63,7 +67,7 @@ func loadDBFromFile(db *sql.DB, filename string) error {
 			continue
 		}
 		base := filepath.Base(line)
-		err = ffdb.bulkInsertRecords(db, base, line)
+		err = ffdb.BulkInsertRecords(db, base, line)
 		if err != nil {
 			fmt.Println("Error inserting record:", err)
 			return err
@@ -72,7 +76,7 @@ func loadDBFromFile(db *sql.DB, filename string) error {
 		records++
 	}
 
-	err = ffdb.commitRecords(db)
+	err = ffdb.CommitRecords(db)
 	if err != nil {
 		fmt.Println("Error committing records:", err)
 		return err
