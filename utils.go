@@ -26,8 +26,7 @@ func printFileInfo(path string) {
 		return
 	}
 
-	fmt.Printf("File size: %d bytes\n", size)
-	fmt.Printf("Last modified: %s\n", lastModified)
+	fmt.Printf("File size: %d bytes, Last modified %s\n", size, lastModified)
 }
 
 func printMemUsage() {
