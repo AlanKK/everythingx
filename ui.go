@@ -9,6 +9,9 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // TODO:
@@ -91,6 +94,8 @@ type RowData struct {
 	Other string
 }
 
+// tableData holds the search results to be displayed in the table. Must be always
+// available for the table widget.
 var tableData *[]RowData
 
 func makeTable() *widget.Table {
@@ -102,19 +107,24 @@ func makeTable() *widget.Table {
 		func() (int, int) { return len(*tableData), 3 },
 		// CreateCell()
 		func() fyne.CanvasObject {
-			l := widget.NewLabel("Template")
+			l := ttwidget.NewLabel("Template")
 			l.TextStyle = fyne.TextStyle{Monospace: true}
 			l.Truncation = fyne.TextTruncateEllipsis
 			return l
 		},
 		// UpdateCell()
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			label := cell.(*widget.Label)
+			label := cell.(*ttwidget.Label)
+
+			tt := getToolTipForFile((*tableData)[id.Row].Path)
+
 			switch id.Col {
 			case 0:
 				label.SetText((*tableData)[id.Row].Name)
+				label.SetToolTip(tt)
 			case 1:
 				label.SetText((*tableData)[id.Row].Path)
+				label.SetToolTip(tt)
 			case 2:
 				label.SetText((*tableData)[id.Row].Other)
 			}
@@ -139,8 +149,7 @@ func makeTable() *widget.Table {
 		label := header.(*widget.Label)
 
 		if cellID.Col != -1 {
-			//label.SetText("")
-			//} else {
+			label.TextStyle = fyne.TextStyle{Bold: true}
 			switch cellID.Col {
 			case 0:
 				label.SetText("Name")
@@ -152,6 +161,15 @@ func makeTable() *widget.Table {
 		}
 	}
 	return t
+}
+
+func getToolTipForFile(path string) string {
+	size, lastModified, err := getFileInfo(path)
+	if err != nil {
+		return "No access"
+	}
+
+	return fmt.Sprintf("**Size:** %d bytes\n**Modified** %s", size, lastModified)
 }
 
 func loadUI() {
@@ -181,6 +199,8 @@ func loadUI() {
 	)
 
 	w.SetContent(content)
+	w.SetContent(fynetooltip.AddWindowToolTipLayer(content, w.Canvas()))
+
 	w.Resize(fyne.NewSize(1300, 800))
 
 	printMemUsage()
