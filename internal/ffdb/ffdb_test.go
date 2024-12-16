@@ -1,4 +1,4 @@
-package main
+package ffdb
 
 import (
 	"database/sql"
@@ -42,7 +42,7 @@ func TestCreateDBAndTable(t *testing.T) {
 func createAndOpenNewTestDatabase(t *testing.T, testDBPath string) (*sql.DB, error) {
 	os.Remove(testDBPath)
 
-	err := createDBAndTable(testDBPath)
+	err := CreateDBAndTable(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -51,7 +51,7 @@ func createAndOpenNewTestDatabase(t *testing.T, testDBPath string) (*sql.DB, err
 		t.Fatalf("Expected database file to be created, but it does not exist")
 	}
 
-	db, err := initializeDB(testDBPath)
+	db, err := InitializeDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -78,7 +78,7 @@ func TestGetRecord(t *testing.T) {
 
 	// Test prefixSearch function
 	numResults := 5
-	results, _, err := prefixSearch("testfile", numResults)
+	results, _, err := PrefixSearch("testfile", numResults)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -118,7 +118,7 @@ func TestGetCaseSensitiveRecord(t *testing.T) {
 	}
 
 	// Test prefixSearch function
-	results, _, err := prefixSearch("Test", 5)
+	results, _, err := PrefixSearch("Test", 5)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -145,7 +145,7 @@ func TestDeleteRecord(t *testing.T) {
 	}
 
 	// Delete the record
-	err = deleteRecord(db, "testfile1.txt")
+	err = DeleteRecord(db, "testfile1.txt")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -172,7 +172,7 @@ func TestInsertRecord(t *testing.T) {
 	defer os.Remove(testDBPath)
 
 	// Insert a record
-	err = insertRecord(db, "testfile1.txt", "/path/to/testfile1.txt")
+	err = InsertRecord(db, "testfile1.txt", "/path/to/testfile1.txt")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -200,7 +200,7 @@ func TestBulkInsertRecords(t *testing.T) {
 
 	// Insert less than 100 records to test intermediate state
 	for i := 1; i <= 50; i++ {
-		err = bulkInsertRecords(db, fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i))
+		err = BulkInsertRecords(db, fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i))
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -219,13 +219,13 @@ func TestBulkInsertRecords(t *testing.T) {
 
 	// Insert more records to trigger bulk insert
 	for i := 51; i <= 100; i++ {
-		err = bulkInsertRecords(db, fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i))
+		err = BulkInsertRecords(db, fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i))
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
 	}
 
-	err = commitRecords(db)
+	err = CommitRecords(db)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -242,7 +242,7 @@ func TestBulkInsertRecords(t *testing.T) {
 
 	// Insert additional records to test subsequent bulk insert
 	for i := 101; i <= 150; i++ {
-		err = bulkInsertRecords(db, fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i))
+		err = BulkInsertRecords(db, fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i))
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -259,7 +259,7 @@ func TestBulkInsertRecords(t *testing.T) {
 	}
 
 	// Commit remaining records
-	err = commitRecords(db)
+	err = CommitRecords(db)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
