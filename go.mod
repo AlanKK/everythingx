@@ -7,11 +7,11 @@ toolchain go1.23.3
 require (
 	fyne.io/fyne/v2 v2.5.2
 	github.com/dweymouth/fyne-tooltip v0.2.1
+	github.com/fsnotify/fsevents v0.2.0
 )
 
 require (
 	github.com/fredbi/uri v1.1.0 // indirect
-	github.com/fsnotify/fsevents v0.2.0 // indirect
 	github.com/fyne-io/gl-js v0.0.0-20220119005834-d2da28d9ccfe // indirect
 	github.com/go-gl/gl v0.0.0-20211210172815-726fda9656d6 // indirect
 	github.com/go-text/render v0.2.0 // indirect
