@@ -46,7 +46,7 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	}
 
 	searchStart := time.Now()
-	results, count, err := prefixSearch(e.Text, maxSearchResults)
+	results, count, err := db.prefixSearch(e.Text, maxSearchResults)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
