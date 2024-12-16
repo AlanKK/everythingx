@@ -21,22 +21,22 @@ func main() {
 
 	if !fileExists(dbFile) {
 		fmt.Println("Database does not exist, creating it...")
-		err = createDBAndTable("data/files.db")
+		err = ffdb.createDBAndTable("data/files.db")
 		if err != nil {
 			return
 		}
 		fmt.Println("Loading database from file...")
-		db, err = initializeDB(dbFile)
+		db, err = ffdb.initializeDB(dbFile)
 		if err != nil {
 			return
 		}
-		err = loadDBFromFile(db, "data/all-files.txt")
+		err = ffdb.loadDBFromFile(db, "data/all-files.txt")
 		if err != nil {
 			return
 		}
 	}
 
-	db, err = initializeDB(dbFile)
+	db, err = ffdb.initializeDB(dbFile)
 	if err != nil {
 		return
 	}
@@ -63,7 +63,7 @@ func loadDBFromFile(db *sql.DB, filename string) error {
 			continue
 		}
 		base := filepath.Base(line)
-		err = bulkInsertRecords(db, base, line)
+		err = ffdb.bulkInsertRecords(db, base, line)
 		if err != nil {
 			fmt.Println("Error inserting record:", err)
 			return err
@@ -72,7 +72,7 @@ func loadDBFromFile(db *sql.DB, filename string) error {
 		records++
 	}
 
-	err = commitRecords(db)
+	err = ffdb.commitRecords(db)
 	if err != nil {
 		fmt.Println("Error committing records:", err)
 		return err

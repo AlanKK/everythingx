@@ -5,6 +5,10 @@ go 1.23.1
 toolchain go1.23.3
 
 require (
+	"github.com/alankk/findfiles/internal/db" v0.0.0-20220309101300-3b3b3b3b3b3b
+)
+
+require (
 	fyne.io/fyne/v2 v2.5.2
 	github.com/dweymouth/fyne-tooltip v0.2.1
 )
