@@ -7,7 +7,6 @@ toolchain go1.23.3
 require (
 	fyne.io/fyne/v2 v2.5.2
 	github.com/dweymouth/fyne-tooltip v0.2.1
-	github.com/fsnotify/fsevents v0.2.0
 )
 
 require (
@@ -30,6 +29,7 @@ require (
 	fyne.io/systray v1.11.0 // indirect
 	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/fsnotify/fsevents v0.2.0
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/fyne-io/glfw-js v0.0.0-20240101223322-6e1efdc71b7a // indirect
 	github.com/fyne-io/image v0.0.0-20220602074514-4956b0afb3d2 // indirect
