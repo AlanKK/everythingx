@@ -1,4 +1,4 @@
-package main
+package ffdb
 
 import (
 	"database/sql"
