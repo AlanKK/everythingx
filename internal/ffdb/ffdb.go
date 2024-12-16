@@ -15,8 +15,8 @@ var records []struct {
 	path     string
 }
 
-var PrefixSearchStmt *sql.Stmt
-var CountStmt *sql.Stmt
+var prefixSearchStmt *sql.Stmt
+var countStmt *sql.Stmt
 
 func preparePrefixSearchStmt(db *sql.DB) (*sql.Stmt, error) {
 	// Prepare the statement for prefix search - performance optimization
@@ -38,7 +38,7 @@ func prepareCountStmt(db *sql.DB) (*sql.Stmt, error) {
 	return stmt, err
 }
 
-func initializeDB(pathname string) (*sql.DB, error) {
+func InitializeDB(pathname string) (*sql.DB, error) {
 	// Check if the database file exists
 	if _, err := os.Stat(pathname); os.IsNotExist(err) {
 		log.Fatal("DB file missing: ", pathname, err)
@@ -59,12 +59,12 @@ func initializeDB(pathname string) (*sql.DB, error) {
 		log.Fatal(err)
 	}
 
-	PrefixSearchStmt, err = preparePrefixSearchStmt(db)
+	prefixSearchStmt, err = preparePrefixSearchStmt(db)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	CountStmt, err = prepareCountStmt(db)
+	countStmt, err = prepareCountStmt(db)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func initializeDB(pathname string) (*sql.DB, error) {
 	return db, err
 }
 
-func createDBAndTable(pathname string) error {
+func CreateDBAndTable(pathname string) error {
 	db, err := sql.Open("sqlite3", pathname)
 	if err != nil {
 		log.Fatal(err)
@@ -91,7 +91,7 @@ func createDBAndTable(pathname string) error {
 	return err
 }
 
-func prefixSearch(prefix string, limit ...int) ([]string, int, error) {
+func PrefixSearch(prefix string, limit ...int) ([]string, int, error) {
 	var results []string
 
 	resultLimit := 200
@@ -99,7 +99,7 @@ func prefixSearch(prefix string, limit ...int) ([]string, int, error) {
 		resultLimit = limit[0]
 	}
 
-	rows, err := PrefixSearchStmt.Query(prefix+"%", resultLimit)
+	rows, err := prefixSearchStmt.Query(prefix+"%", resultLimit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -140,17 +140,17 @@ func prefixSearch(prefix string, limit ...int) ([]string, int, error) {
 	return results, count, nil
 }
 
-func deleteRecord(db *sql.DB, key string) error {
+func DeleteRecord(db *sql.DB, key string) error {
 	_, err := db.Exec("DELETE FROM files WHERE filename = ?", key)
 	return err
 }
 
-func insertRecord(db *sql.DB, filename string, path string) error {
+func InsertRecord(db *sql.DB, filename string, path string) error {
 	_, err := db.Exec("INSERT INTO files (filename, fullpath) VALUES (?, ?)", filename, path)
 	return err
 }
 
-func bulkInsertRecords(db *sql.DB, filename string, path string) error {
+func BulkInsertRecords(db *sql.DB, filename string, path string) error {
 
 	// Collect records here
 	records = append(records, struct {
@@ -189,7 +189,7 @@ func bulkInsertRecords(db *sql.DB, filename string, path string) error {
 	return nil
 }
 
-func commitRecords(db *sql.DB) error {
+func CommitRecords(db *sql.DB) error {
 	if len(records) == 0 {
 		return nil
 	}
