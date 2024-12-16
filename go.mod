@@ -1,4 +1,4 @@
-module github.com/AlanKK/FileFind.git
+module github.com/AlanKK/findfiles
 
 go 1.23.1
 
