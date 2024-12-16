@@ -8,6 +8,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// TODO:  check out driver benchmarks for sqlite3 at https://github.com/cvilsmeier/go-sqlite-bench
+
 var records []struct {
 	filename string
 	path     string
