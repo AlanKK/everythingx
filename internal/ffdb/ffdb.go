@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/AlanKK/findfiles/internal/models"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -16,37 +18,37 @@ var records []struct {
 }
 
 var prefixSearchStmt *sql.Stmt
-var countStmt *sql.Stmt
+var insertStmt *sql.Stmt
+var deleteStmt *sql.Stmt
 
-func preparePrefixSearchStmt(db *sql.DB) (*sql.Stmt, error) {
-	// Prepare the statement for prefix search - performance optimization
-	stmt, err := db.Prepare("SELECT filename, fullpath FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
+func CreateAndOpenNewDatabase(pathname string) (*sql.DB, error) {
+	os.Remove(pathname)
+
+	err := CreateDBAndTable(pathname)
 	if err != nil {
-		return nil, err
+		log.Fatalf("Expected no error, got %v", err)
 	}
 
-	return stmt, err
-}
-
-func prepareCountStmt(db *sql.DB) (*sql.Stmt, error) {
-	// Prepare the statement for prefix search - performance optimization
-	stmt, err := db.Prepare("SELECT count(*) FROM files WHERE filename LIKE ?")
-	if err != nil {
-		return nil, err
+	if !fileExists(pathname) {
+		log.Fatalf("Expected database file to be created, but it does not exist")
 	}
 
-	return stmt, err
+	db, err := OpenDB(pathname)
+	if err != nil {
+		log.Fatalf("Expected no error, got %v", err)
+	}
+	return db, err
 }
 
-func InitializeDB(pathname string) (*sql.DB, error) {
+func OpenDB(pathname string) (*sql.DB, error) {
 	// Check if the database file exists
 	if _, err := os.Stat(pathname); os.IsNotExist(err) {
-		log.Fatal("DB file missing: ", pathname, err)
+		return nil, err
 	}
 
 	db, err := sql.Open("sqlite3", pathname)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	_, err = db.Exec("PRAGMA case_sensitive_like = ON")
@@ -59,12 +61,17 @@ func InitializeDB(pathname string) (*sql.DB, error) {
 		log.Fatal(err)
 	}
 
-	prefixSearchStmt, err = preparePrefixSearchStmt(db)
+	prefixSearchStmt, err = db.Prepare("SELECT filename, fullpath FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	countStmt, err = prepareCountStmt(db)
+	insertStmt, err = db.Prepare("INSERT INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	deleteStmt, err = db.Prepare("DELETE FROM files WHERE fullpath = ?")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -77,8 +84,9 @@ func CreateDBAndTable(pathname string) error {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer db.Close()
 
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS files (filename TEXT, fullpath TEXT)")
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS files(filename TEXT NOT NULL, fullpath TEXT NOT NULL UNIQUE, event_id INTEGER, object_type INTEGER)")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -88,10 +96,15 @@ func CreateDBAndTable(pathname string) error {
 		log.Fatal(err)
 	}
 
+	_, err = db.Exec("CREATE INDEX idx_fullpath ON files(fullpath COLLATE BINARY)")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	return err
 }
 
-func PrefixSearch(prefix string, limit ...int) ([]string, int, error) {
+func PrefixSearch(prefix string, limit ...int) ([]string, error) {
 	var results []string
 
 	resultLimit := 200
@@ -101,7 +114,7 @@ func PrefixSearch(prefix string, limit ...int) ([]string, int, error) {
 
 	rows, err := prefixSearchStmt.Query(prefix+"%", resultLimit)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -109,45 +122,28 @@ func PrefixSearch(prefix string, limit ...int) ([]string, int, error) {
 		var filename, fullpath string
 		err := rows.Scan(&filename, &fullpath)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 
 		results = append(results, fullpath)
 	}
 
-	// Get the total number of rows
-
-	// TODO: this is super slow.  Need a paginated solution for results and count results instead
-
-	// rows, err = CountStmt.Query("%" + prefix + "%")
-	// if err != nil {
-	// 	return nil, 0, err
-	// }
-	// defer rows.Close()
-
-	// var count int
-	// if rows.Next() {
-	// 	err := rows.Scan(&count)
-	// 	if err != nil {
-	// 		return nil, 0, err
-	// 	}
-	// 	return results, count, nil
-	// }
-	// defer rows.Close()
-	// fmt.Println("Total rows: ", count)
-	count := 0
-
-	return results, count, nil
+	return results, nil
 }
 
-func DeleteRecord(db *sql.DB, key string) error {
-	_, err := db.Exec("DELETE FROM files WHERE filename = ?", key)
+func DeleteRecord(db *sql.DB, fullpath string) error {
+	_, err := db.Exec("DELETE FROM files WHERE fullpath = ?", fullpath)
 	return err
 }
 
 func InsertRecord(db *sql.DB, filename string, path string) error {
-	_, err := db.Exec("INSERT INTO files (filename, fullpath) VALUES (?, ?)", filename, path)
+	_, err := db.Exec("INSERT OR IGNORE INTO files (filename, fullpath) VALUES (?, ?)", filename, path)
 	return err
+}
+
+func fileExists(pathname string) bool {
+	_, err := os.Stat(pathname)
+	return !os.IsNotExist(err)
 }
 
 func BulkInsertRecords(db *sql.DB, filename string, path string) error {
@@ -165,14 +161,8 @@ func BulkInsertRecords(db *sql.DB, filename string, path string) error {
 			return err
 		}
 
-		stmt, err := tx.Prepare("INSERT INTO files (filename, fullpath) VALUES (?, ?)")
-		if err != nil {
-			return err
-		}
-		defer stmt.Close()
-
 		for _, record := range records {
-			_, err = stmt.Exec(record.filename, record.path)
+			_, err = insertStmt.Exec(record.filename, record.path, nil, 0)
 			if err != nil {
 				return err
 			}
@@ -218,5 +208,49 @@ func CommitRecords(db *sql.DB) error {
 	}
 
 	records = records[:0] // Clear the slice
+	return nil
+}
+
+func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	num_committed := 0
+	num_missing := 0
+	for _, e := range *events {
+		if e.EventAction == models.ItemCreated {
+			if fileExists(e.Path) {
+				num_committed++
+				log.Println("Creating ", e.Path)
+				_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
+				if err != nil {
+					return err
+				}
+			} else {
+				num_missing++
+			}
+		} else {
+			log.Println("Deleting ", e.Path)
+			_, err = deleteStmt.Exec(e.Path)
+			if err != nil {
+				return err
+			}
+		}
+
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+	log.Printf(
+		"Committed %d events, %d missing files, %d total events. ----------------------------",
+		num_committed,
+		num_missing,
+		len(*events),
+	)
+
 	return nil
 }
