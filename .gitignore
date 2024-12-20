@@ -9,3 +9,8 @@ data/files.db-journal
 test.db-shm
 test.db-wal
 cmd/service/service
+cmd/service/main.txt
+cmd/service/main.txt.old.old
+cmd/service/main.txt.old
+cmd/tools/check-files
+cmd/tools/create-db/create-db

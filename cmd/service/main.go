@@ -3,13 +3,17 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/AlanKK/findfiles/internal/ffdb"
+	"github.com/AlanKK/findfiles/internal/models"
 
 	"github.com/fsnotify/fsevents"
 )
@@ -21,97 +25,17 @@ import (
 // sudo launchctl bootstrap system /Library/LaunchDaemons/com.example.filefind.plist
 // sudo launchctl bootout system /Library/LaunchDaemons/com.example.filefind.plist
 
-// move the exmaple program to a new cmd
-// convert db.go to a package to share
-// open sqlite db
-// 		todo: read historical events
-// Parse incoming events
-// if rename:
-// 		check file exists
-//		if so, it was the target
-//		if not, it was the source and needs to be deleted from the db
-// if create, delete:
-//		add or remove from the db
-//
 // todo:
-//		create installer for launchd service
+// 	Read historical events
+// 	Handle missing files.  Keep queue of files before writing to db and check for existence
 //
-
-func main() {
-	// path, err := os.MkdirTemp("", "fsexample")
-	// if err != nil {
-	// 	log.Fatalf("Failed to create MkdirTemp: %v", err)
-	// }
-	path := flag.String("path", "/", "Path to watch for file system events")
-	flag.Parse()
-
-	if *path == "" {
-		log.Fatal("Path is required")
-	}
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGTERM)
-
-	go func() {
-		sig := <-c
-		fmt.Println("Received SIGTERM:", sig)
-		// Perform cleanup or graceful shutdown here
-		os.Exit(0)
-	}()
-
-	dev, err := fsevents.DeviceForPath(*path)
-	if err != nil {
-		log.Fatalf("Failed to retrieve device for path: %v", err)
-	}
-
-	log.Print("Monitoring path: ", *path)
-	log.Print(dev)
-	log.Println(fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
-
-	es := &fsevents.EventStream{
-		Paths:   []string{*path},
-		Latency: 500 * time.Millisecond,
-		Device:  dev,
-		Flags:   fsevents.FileEvents | fsevents.WatchRoot}
-	es.Start()
-	ec := es.Events
-
-	log.Println("Device UUID", fsevents.GetDeviceUUID(dev))
-
-	go func() {
-		for msg := range ec {
-			for _, event := range msg {
-				logEvent(event)
-			}
-		}
-	}()
-
-	// Keep the program running
-	select {}
-
-	// 	in := bufio.NewReader(os.Stdin)
-
-	// 	if false {
-	// 		log.Print("Started, press enter to GC")
-	// 		in.ReadString('\n')
-	// 		runtime.GC()
-	// 		log.Print("GC'd, press enter to quit")
-	// 		in.ReadString('\n')
-	// 	} else {
-	// 		log.Print("Started, press enter to stop")
-	// 		in.ReadString('\n')
-	// 		es.Stop()
-
-	// 		log.Print("Stopped, press enter to restart")
-	// 		in.ReadString('\n')
-	// 		es.Resume = true
-	// 		es.Start()
-
-	//		log.Print("Restarted, press enter to quit")
-	//		in.ReadString('\n')
-	//		es.Stop()
-	//	}
-}
+//  check-files results after running for a while:
+// 	- Total files: 22374
+//	- Files that exist: 14004
+//	- Files that do not exist: 8370
+//
+//	Create installer for launchd service
+//
 
 var noteDescription = map[fsevents.EventFlags]string{
 	fsevents.MustScanSubDirs: "MustScanSubdirs",
@@ -136,12 +60,161 @@ var noteDescription = map[fsevents.EventFlags]string{
 	fsevents.ItemIsSymlink:     "IsSymLink",
 }
 
-func logEvent(event fsevents.Event) {
+func fileExists(filename string) bool {
+	_, err := os.Stat(filename)
+	return !os.IsNotExist(err)
+}
+
+var databasePath = "/Users/alan/Documents/git/findfiles/data/files.db"
+var eventRecordQueue []models.EventRecord
+
+func setupDatabase() *sql.DB {
+	var err error
+	var db *sql.DB = nil
+
+	if !fileExists(databasePath) {
+		log.Fatal("Database does not exist: ", databasePath)
+	}
+
+	db, err = ffdb.OpenDB(databasePath)
+	if err != nil {
+		log.Fatal("Database does not exist: ", databasePath)
+	}
+	log.Println("Opened database ", databasePath)
+
+	return db
+}
+
+func main() {
+	// We take a command-line parameter, "-path /path/to/watch".
+	// Default is "/"
+	path := flag.String("path", "/", "Path to watch for file system events")
+	flag.Parse()
+
+	if *path == "" {
+		log.Fatal("Path is required")
+	}
+
+	db := setupDatabase() // will exit on error
+	if db == nil {
+		log.Fatal("Failed to open database")
+	}
+	defer db.Close()
+
+	// Need to handle SIGTERM to be a well-behaved launchd service
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGTERM)
+
+	go func() {
+		sig := <-c
+		log.Println("Received SIGTERM:", sig)
+		os.Exit(0)
+	}()
+
+	dev, err := fsevents.DeviceForPath(*path)
+	if err != nil {
+		log.Fatalf("Failed to retrieve device for path: %v", err)
+	}
+
+	log.Print("Monitoring path: ", *path)
+	log.Print(dev)
+	log.Println(fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
+
+	es := &fsevents.EventStream{
+		Paths:   []string{*path},
+		Latency: 500 * time.Millisecond,
+		Device:  dev,
+		Flags:   fsevents.FileEvents | fsevents.WatchRoot}
+	es.Start()
+	ec := es.Events
+
+	log.Println("Device UUID for ", *path, fsevents.GetDeviceUUID(dev))
+
+	// TODO: this needs to be fast.  Is it doing too much with the bulk db writes?
+	go func() {
+		startTime := time.Now()
+		for msg := range ec {
+			for _, event := range msg {
+				eventRecord := buildEventRecord(event)
+				if eventRecord != nil {
+					addEventToQueue(db, eventRecord)
+				}
+			}
+		}
+		log.Println("fsevent callback time: ", time.Since(startTime))
+	}()
+
+	// Keep the program running
+	select {}
+}
+
+func buildEventRecord(fsevent fsevents.Event) *models.EventRecord {
 	note := ""
+	var objType models.ObjectType
+	var eventAction models.EventAction
+
+	if fsevent.Flags&fsevents.ItemIsFile == fsevents.ItemIsFile {
+		objType = models.ItemIsFile
+	} else if fsevent.Flags&fsevents.ItemIsDir == fsevents.ItemIsDir {
+		objType = models.ItemIsDir
+	} else if fsevent.Flags&fsevents.ItemIsSymlink == fsevents.ItemIsSymlink {
+		objType = models.ItemIsSymlink
+	}
+
+	path := filepath.Join("/", fsevent.Path)
+
 	for bit, description := range noteDescription {
-		if event.Flags&bit == bit {
+		if fsevent.Flags&bit == bit {
 			note += description + " "
 		}
 	}
-	log.Printf("EventID: %d Path: %s Flags: %s", event.ID, event.Path, note)
+	log.Printf("event_id: %d Path: %s Flags: %s", fsevent.ID, fsevent.Path, note)
+
+	switch {
+	case fsevent.Flags&fsevents.ItemCreated == fsevents.ItemCreated:
+		eventAction = models.ItemCreated
+	case fsevent.Flags&fsevents.ItemRemoved == fsevents.ItemRemoved:
+		eventAction = models.ItemDeleted
+	case fsevent.Flags&fsevents.ItemRenamed == fsevents.ItemRenamed:
+		// We can't tell if the path in the event is the "before" or "after" path of
+		// a rename so checking if the path exists will tell us.
+		if fileExists(fsevent.Path) {
+			eventAction = models.ItemCreated
+		} else {
+			eventAction = models.ItemDeleted
+		}
+	default:
+		return nil
+	}
+
+	eventRecord := &models.EventRecord{
+		Filename:    filepath.Base(path),
+		Path:        path,
+		ObjectType:  objType,
+		EventID:     fsevent.ID,
+		EventTime:   time.Now().UnixNano(), // int64
+		EventAction: eventAction,
+	}
+
+	return eventRecord
+}
+
+var lastFlushTime time.Time = time.Now()
+var delayTime time.Duration = 5 * time.Second
+
+// Create an delay before writing to the db.  Apple's File System Events seems
+// to send file create events but the files are quickly deleted or don't exist.
+func addEventToQueue(db *sql.DB, event *models.EventRecord) {
+
+	eventRecordQueue = append(eventRecordQueue, *event)
+
+	tt := time.Since(lastFlushTime)
+	if tt >= delayTime {
+		err := ffdb.BulkStoreEvents(db, &eventRecordQueue)
+		if err != nil {
+			log.Println("Error writing to db: ", err)
+		}
+		lastFlushTime = time.Now()
+		eventRecordQueue = eventRecordQueue[:0] // clear the queue
+	}
 }

@@ -48,7 +48,7 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	}
 
 	searchStart := time.Now()
-	results, count, err := ffdb.PrefixSearch(e.Text, maxSearchResults)
+	results, err := ffdb.PrefixSearch(e.Text, maxSearchResults)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -81,10 +81,9 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 
 	elapsed := time.Since(start)
 	fmt.Printf(
-		"\tSearch: %s, Results: %d, Total results: %d, prefixSearch: %s, handleEntryChanged %s.\n",
+		"\tSearch: %s, Results: %d, prefixSearch: %s, handleEntryChanged %s.\n",
 		e.Text,
 		len(results),
-		count,
 		searchElapsed,
 		elapsed,
 	)

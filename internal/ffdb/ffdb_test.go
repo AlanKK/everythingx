@@ -1,16 +1,17 @@
 package ffdb
 
 import (
-	"database/sql"
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/AlanKK/findfiles/internal/models"
 )
 
 func TestCreateDBAndTable(t *testing.T) {
 	testDBPath := "test.db"
 
-	db, err := createAndOpenNewTestDatabase(t, testDBPath)
+	db, err := CreateAndOpenNewDatabase(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -27,7 +28,7 @@ func TestCreateDBAndTable(t *testing.T) {
 		t.Fatalf("Expected table name to be 'files', got %s", tableName)
 	}
 
-	// Check if the index exists
+	// Check if the filename index exists
 	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_filename'")
 	var indexName string
 	err = row.Scan(&indexName)
@@ -37,31 +38,22 @@ func TestCreateDBAndTable(t *testing.T) {
 	if indexName != "idx_filename" {
 		t.Fatalf("Expected index name to be 'idx_filename', got %s", indexName)
 	}
-}
 
-func createAndOpenNewTestDatabase(t *testing.T, testDBPath string) (*sql.DB, error) {
-	os.Remove(testDBPath)
-
-	err := CreateDBAndTable(testDBPath)
+	// Check if the fullpath index exists
+	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_fullpath'")
+	err = row.Scan(&indexName)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-
-	if _, err := os.Stat(testDBPath); os.IsNotExist(err) {
-		t.Fatalf("Expected database file to be created, but it does not exist")
+	if indexName != "idx_fullpath" {
+		t.Fatalf("Expected index name to be 'idx_fullpath', got %s", indexName)
 	}
-
-	db, err := InitializeDB(testDBPath)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	return db, err
 }
 
 func TestGetRecord(t *testing.T) {
 	testDBPath := "test.db"
 
-	db, err := createAndOpenNewTestDatabase(t, testDBPath)
+	db, err := CreateAndOpenNewDatabase(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -78,7 +70,7 @@ func TestGetRecord(t *testing.T) {
 
 	// Test prefixSearch function
 	numResults := 5
-	results, _, err := PrefixSearch("testfile", numResults)
+	results, err := PrefixSearch("testfile", numResults)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -98,7 +90,7 @@ func TestGetRecord(t *testing.T) {
 func TestGetCaseSensitiveRecord(t *testing.T) {
 	testDBPath := "test.db"
 
-	db, err := createAndOpenNewTestDatabase(t, testDBPath)
+	db, err := CreateAndOpenNewDatabase(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -118,12 +110,13 @@ func TestGetCaseSensitiveRecord(t *testing.T) {
 	}
 
 	// Test prefixSearch function
-	results, _, err := PrefixSearch("Test", 5)
+	results, err := PrefixSearch("Test", 5)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
 	if len(results) != 1 {
+		t.Log(results)
 		t.Fatalf("Expected 1 result, got %d", len(results))
 	}
 }
@@ -131,7 +124,7 @@ func TestGetCaseSensitiveRecord(t *testing.T) {
 func TestDeleteRecord(t *testing.T) {
 	testDBPath := "test.db"
 
-	db, err := createAndOpenNewTestDatabase(t, testDBPath)
+	db, err := CreateAndOpenNewDatabase(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -145,13 +138,13 @@ func TestDeleteRecord(t *testing.T) {
 	}
 
 	// Delete the record
-	err = DeleteRecord(db, "testfile1.txt")
+	err = DeleteRecord(db, "/path/to/testfile1.txt")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
 	// Verify the record was deleted
-	row := db.QueryRow("SELECT COUNT(*) FROM files WHERE filename = ?", "testfile1.txt")
+	row := db.QueryRow("SELECT COUNT(*) FROM files WHERE fullpath = ?", "/path/to/testfile1.txt")
 	var count int
 	err = row.Scan(&count)
 	if err != nil {
@@ -164,7 +157,7 @@ func TestDeleteRecord(t *testing.T) {
 func TestInsertRecord(t *testing.T) {
 	testDBPath := "test.db"
 
-	db, err := createAndOpenNewTestDatabase(t, testDBPath)
+	db, err := CreateAndOpenNewDatabase(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -191,7 +184,7 @@ func TestInsertRecord(t *testing.T) {
 func TestBulkInsertRecords(t *testing.T) {
 	testDBPath := "test.db"
 
-	db, err := createAndOpenNewTestDatabase(t, testDBPath)
+	db, err := CreateAndOpenNewDatabase(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -272,5 +265,220 @@ func TestBulkInsertRecords(t *testing.T) {
 	}
 	if count != 150 {
 		t.Fatalf("Expected 150 records, got %d", count)
+	}
+}
+func TestFileExists(t *testing.T) {
+	// Create a temporary file
+	tempFile, err := os.CreateTemp("", "testfile")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer os.Remove(tempFile.Name())
+
+	// Test that the file exists
+	if !fileExists(tempFile.Name()) {
+		t.Fatalf("Expected file to exist, but it does not")
+	}
+
+	// Test that a non-existent file does not exist
+	if fileExists("nonexistentfile.txt") {
+		t.Fatalf("Expected file to not exist, but it does")
+	}
+}
+func TestBulkStoreEvents(t *testing.T) {
+	testDBPath := "test.db"
+
+	db, err := CreateAndOpenNewDatabase(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+
+	events := []models.EventRecord{
+		{Filename: "testfile1.txt", Path: "/tmp/testfile1.txt", EventID: 1, ObjectType: 0, EventAction: models.ItemCreated},
+		{Filename: "testfile2.txt", Path: "/tmp/testfile2.txt", EventID: 2, ObjectType: 0, EventAction: models.ItemCreated},
+		{Filename: "testfile3.txt", Path: "/tmp/testfile3.txt", EventID: 3, ObjectType: 0, EventAction: models.ItemDeleted},
+	}
+
+	// Create the first file only, leaving the second to mimick FSE behavior of sending create events when no
+	// file is actually created (or it is quickly deleted)
+	file, err := os.Create(events[0].Path)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	file.Close()
+	defer os.Remove(events[0].Path)
+
+	// Insert the event that should be deleted
+	err = InsertRecord(db, "testfile3.txt", "/tmp/testfile3.txt")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	err = BulkStoreEvents(db, &events)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Verify the records were inserted and deleted correctly
+	row := db.QueryRow("SELECT COUNT(*) FROM files WHERE filename = ?", "testfile1.txt")
+	var count int
+	err = row.Scan(&count)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("Expected 1 record, got %d", count)
+	}
+
+	row = db.QueryRow("SELECT COUNT(*) FROM files WHERE filename = ?", "testfile2.txt")
+	err = row.Scan(&count)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("Expected 1 record, got %d", count)
+	}
+
+	row = db.QueryRow("SELECT COUNT(*) FROM files WHERE filename = ?", "testfile3.txt")
+	err = row.Scan(&count)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("Expected 0 records, got %d", count)
+	}
+}
+func TestOpenDB(t *testing.T) {
+	testDBPath := "test.db"
+
+	// Create a new database
+	db, err := CreateAndOpenNewDatabase(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	db.Close()
+	defer os.Remove(testDBPath)
+
+	// Test opening the existing database
+	db, err = OpenDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+
+	// Verify PRAGMA settings
+	// case_sensitive_like pragma doesn't seem to respone to the query so it is omitted
+	row := db.QueryRow("PRAGMA journal_mode")
+	var journalMode string
+	err = row.Scan(&journalMode)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if journalMode != "wal" {
+		t.Fatalf("Expected PRAGMA journal_mode to be 'wal', got %s", journalMode)
+	}
+
+	// Verify prepared statements
+	if prefixSearchStmt == nil {
+		t.Fatalf("Expected prefixSearchStmt to be prepared, but it is nil")
+	}
+	if insertStmt == nil {
+		t.Fatalf("Expected insertStmt to be prepared, but it is nil")
+	}
+	if deleteStmt == nil {
+		t.Fatalf("Expected deleteStmt to be prepared, but it is nil")
+	}
+}
+
+func TestOpenDB_FileNotExist(t *testing.T) {
+	testDBPath := "nonexistent.db"
+
+	// Test opening a non-existent database
+	_, err := OpenDB(testDBPath)
+	if err == nil {
+		t.Fatalf("Expected an error, got nil")
+	}
+}
+func TestBulkInsertRecords1000(t *testing.T) {
+	testDBPath := "test.db"
+
+	db, err := CreateAndOpenNewDatabase(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+
+	// Insert less than 1000 records to test intermediate state
+	for i := 1; i <= 500; i++ {
+		err = BulkInsertRecords(db, fmt.Sprintf("testfile%03d.txt", i), fmt.Sprintf("/path/to/testfile%03d.txt", i))
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+	}
+
+	// Verify records are not yet committed
+	row := db.QueryRow("SELECT COUNT(*) FROM files")
+	var count int
+	err = row.Scan(&count)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("Expected 0 records, got %d", count)
+	}
+
+	// Insert more records to trigger bulk insert
+	for i := 501; i <= 1000; i++ {
+		err = BulkInsertRecords(db, fmt.Sprintf("testfile%03d.txt", i), fmt.Sprintf("/path/to/testfile%03d.txt", i))
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+	}
+
+	// Verify all records are committed
+	row = db.QueryRow("SELECT COUNT(*) FROM files")
+	err = row.Scan(&count)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 1000 {
+		t.Fatalf("Expected 1000 records, got %d", count)
+	}
+
+	// Insert additional records to test subsequent bulk insert
+	for i := 1001; i <= 1500; i++ {
+		err = BulkInsertRecords(db, fmt.Sprintf("testfile%03d.txt", i), fmt.Sprintf("/path/to/testfile%03d.txt", i))
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+	}
+
+	// Verify intermediate state
+	row = db.QueryRow("SELECT COUNT(*) FROM files")
+	err = row.Scan(&count)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 1000 {
+		t.Fatalf("Expected 1000 records, got %d", count)
+	}
+
+	// Commit remaining records
+	err = CommitRecords(db)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Verify all records are committed
+	row = db.QueryRow("SELECT COUNT(*) FROM files")
+	err = row.Scan(&count)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 1500 {
+		t.Fatalf("Expected 1500 records, got %d", count)
 	}
 }
