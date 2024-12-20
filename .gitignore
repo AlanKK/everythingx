@@ -14,3 +14,4 @@ cmd/service/main.txt.old.old
 cmd/service/main.txt.old
 cmd/tools/check-files
 cmd/tools/create-db/create-db
+cmd/service/out.txt
