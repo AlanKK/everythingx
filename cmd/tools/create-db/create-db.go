@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	pathname := flag.String("path", "files.db", "Path to the database file")
+	pathname := flag.String("path", "/Users/alan/Documents/findfiles/files.db", "Path to the database file")
 	flag.Parse()
 
 	err := ffdb.CreateDBAndTable(*pathname)
