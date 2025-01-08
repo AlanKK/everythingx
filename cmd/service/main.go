@@ -5,6 +5,7 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"io/fs"
 	"log"
 	"os"
 	"os/signal"
@@ -65,7 +66,7 @@ func fileExists(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-var databasePath = "/Users/alan/Documents/git/findfiles/data/files.db"
+var databasePath = "/Users/alan/Documents/findfiles/files.db"
 var eventRecordQueue []models.EventRecord
 
 func setupDatabase() *sql.DB {
@@ -85,6 +86,28 @@ func setupDatabase() *sql.DB {
 	return db
 }
 
+func scanDisk() {
+	log.Println("Scanning from", "/")
+
+	startTime := time.Now()
+
+	fileCount := 0
+	dirCount := 0
+	filepath.WalkDir("/", func(path string, file fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !file.IsDir() {
+			fileCount++
+		} else {
+			dirCount++
+		}
+		return nil
+	})
+
+	log.Printf("Total files/dirs: %d/%d. Elapsed time: %s", fileCount, dirCount, time.Since(startTime).String())
+}
+
 func main() {
 	// We take a command-line parameter, "-path /path/to/watch".
 	// Default is "/"
@@ -102,13 +125,30 @@ func main() {
 	defer db.Close()
 
 	// Need to handle SIGTERM to be a well-behaved launchd service
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGTERM)
+	termChan := make(chan os.Signal, 1)
+	signal.Notify(termChan, syscall.SIGTERM)
+
+	// Handle SIGUSR1 to trigger disk scan
+	usr1Chan := make(chan os.Signal, 1)
+	signal.Notify(usr1Chan, syscall.SIGUSR1)
 
 	go func() {
-		sig := <-c
-		log.Println("Received SIGTERM:", sig)
-		os.Exit(0)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Recovered from panic: %v", r)
+			}
+		}()
+
+		for {
+			select {
+			case <-termChan:
+				log.Println("Received SIGTERM, shutting down gracefully.")
+				os.Exit(0)
+			case <-usr1Chan:
+				log.Println("Received SIGUSR1. Starting scan.")
+				scanDisk()
+			}
+		}
 	}()
 
 	dev, err := fsevents.DeviceForPath(*path)
@@ -168,7 +208,7 @@ func buildEventRecord(fsevent fsevents.Event) *models.EventRecord {
 			note += description + " "
 		}
 	}
-	log.Printf("event_id: %d Path: %s Flags: %s", fsevent.ID, fsevent.Path, note)
+	//log.Printf("event_id: %d Path: %s Flags: %s", fsevent.ID, fsevent.Path, note)
 
 	switch {
 	case fsevent.Flags&fsevents.ItemCreated == fsevents.ItemCreated:
