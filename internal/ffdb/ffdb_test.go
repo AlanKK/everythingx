@@ -165,7 +165,7 @@ func TestInsertRecord(t *testing.T) {
 	defer os.Remove(testDBPath)
 
 	// Insert a record
-	err = InsertRecord(db, "testfile1.txt", "/path/to/testfile1.txt")
+	err = InsertRecord(db, "testfile1.txt", "/path/to/testfile1.txt", 0, models.ItemIsFile)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -181,6 +181,7 @@ func TestInsertRecord(t *testing.T) {
 		t.Fatalf("Expected filename 'testfile1.txt' and fullpath '/path/to/testfile1.txt', got filename '%s' and fullpath '%s'", filename, fullpath)
 	}
 }
+
 func TestBulkInsertRecords(t *testing.T) {
 	testDBPath := "test.db"
 
@@ -267,6 +268,7 @@ func TestBulkInsertRecords(t *testing.T) {
 		t.Fatalf("Expected 150 records, got %d", count)
 	}
 }
+
 func TestFileExists(t *testing.T) {
 	// Create a temporary file
 	tempFile, err := os.CreateTemp("", "testfile")
@@ -285,6 +287,7 @@ func TestFileExists(t *testing.T) {
 		t.Fatalf("Expected file to not exist, but it does")
 	}
 }
+
 func TestBulkStoreEvents(t *testing.T) {
 	testDBPath := "test.db"
 
@@ -311,7 +314,7 @@ func TestBulkStoreEvents(t *testing.T) {
 	defer os.Remove(events[0].Path)
 
 	// Insert the event that should be deleted
-	err = InsertRecord(db, "testfile3.txt", "/tmp/testfile3.txt")
+	err = InsertRecord(db, "testfile3.txt", "/tmp/testfile3.txt", 0, models.ItemIsFile)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -350,6 +353,56 @@ func TestBulkStoreEvents(t *testing.T) {
 		t.Fatalf("Expected 0 records, got %d", count)
 	}
 }
+
+func TestBulkStoreDuplicates(t *testing.T) {
+	testDBPath := "test.db"
+
+	db, err := CreateAndOpenNewDatabase(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+
+	events := []models.EventRecord{
+		{Filename: "testfile1.txt", Path: "/tmp/testfile1.txt", EventID: 1, ObjectType: 0, EventAction: models.ItemCreated},
+		{Filename: "testfile2.txt", Path: "/tmp/testfile2.txt", EventID: 2, ObjectType: 0, EventAction: models.ItemCreated},
+		{Filename: "testfile3.txt", Path: "/tmp/testfile3.txt", EventID: 3, ObjectType: 0, EventAction: models.ItemCreated},
+	}
+
+	// Create the files so they get inserted into the db
+	for i := range events {
+		f, err := os.Create(events[i].Path)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		f.Close()
+		defer os.Remove(events[i].Path)
+	}
+
+	// Insert one file
+	err = InsertRecord(db, events[0].Filename, events[0].Path, events[0].EventID, events[0].ObjectType)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Insert all and make sure we have three in the db
+	err = BulkStoreEvents(db, &events)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	row := db.QueryRow("SELECT COUNT(*) FROM files")
+	var count int
+	err = row.Scan(&count)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("Expected 3 records, got %d", count)
+	}
+}
+
 func TestOpenDB(t *testing.T) {
 	testDBPath := "test.db"
 

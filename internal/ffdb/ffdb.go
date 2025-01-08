@@ -7,7 +7,7 @@ import (
 
 	"github.com/AlanKK/findfiles/internal/models"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 )
 
 // TODO:  check out driver benchmarks for sqlite3 at https://github.com/cvilsmeier/go-sqlite-bench
@@ -136,8 +136,8 @@ func DeleteRecord(db *sql.DB, fullpath string) error {
 	return err
 }
 
-func InsertRecord(db *sql.DB, filename string, path string) error {
-	_, err := db.Exec("INSERT OR IGNORE INTO files (filename, fullpath) VALUES (?, ?)", filename, path)
+func InsertRecord(db *sql.DB, filename string, path string, eventID uint64, objectType models.ObjectType) error {
+	_, err := db.Exec("INSERT OR IGNORE INTO files (filename, fullpath) VALUES (?, ?, ?, ?)", filename, path, eventID, objectType)
 	return err
 }
 
@@ -211,34 +211,46 @@ func CommitRecords(db *sql.DB) error {
 	return nil
 }
 
+func isDuplicate(err error) bool {
+	if sqliteErr, ok := err.(sqlite3.Error); ok && sqliteErr.Code == sqlite3.ErrConstraint {
+		return true
+	}
+	return false
+}
+
 func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 
-	num_committed := 0
-	num_missing := 0
+	var num_committed int
+	var num_missing int
+	var num_duplicate int
+
 	for _, e := range *events {
 		if e.EventAction == models.ItemCreated {
 			if fileExists(e.Path) {
 				num_committed++
-				log.Println("Creating ", e.Path)
 				_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
 				if err != nil {
-					return err
+					if isDuplicate(err) {
+						num_duplicate++
+					} else {
+						return err
+					}
 				}
 			} else {
 				num_missing++
 			}
-		} else {
-			log.Println("Deleting ", e.Path)
+		} else if e.EventAction == models.ItemDeleted {
 			_, err = deleteStmt.Exec(e.Path)
 			if err != nil {
 				return err
 			}
+		} else {
+			log.Fatal("Unknown event action: ", e.EventAction)
 		}
-
 	}
 
 	err = tx.Commit()
@@ -246,9 +258,10 @@ func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
 		return err
 	}
 	log.Printf(
-		"Committed %d events, %d missing files, %d total events. ----------------------------",
+		"Committed %d events, %d missing files, duplicates %d, %d total events. ----------------------------",
 		num_committed,
 		num_missing,
+		num_duplicate,
 		len(*events),
 	)
 
