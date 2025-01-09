@@ -319,7 +319,7 @@ func TestBulkStoreEvents(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	err = BulkStoreEvents(db, &events)
+	err = BulkStoreEvents(db, events)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -387,7 +387,7 @@ func TestBulkStoreDuplicates(t *testing.T) {
 	}
 
 	// Insert all and make sure we have three in the db
-	err = BulkStoreEvents(db, &events)
+	err = BulkStoreEvents(db, events)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
