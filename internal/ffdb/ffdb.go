@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/AlanKK/findfiles/internal/models"
-
 	"github.com/mattn/go-sqlite3"
 )
 
@@ -137,7 +136,7 @@ func DeleteRecord(db *sql.DB, fullpath string) error {
 }
 
 func InsertRecord(db *sql.DB, filename string, path string, eventID uint64, objectType models.ObjectType) error {
-	_, err := db.Exec("INSERT OR IGNORE INTO files (filename, fullpath) VALUES (?, ?, ?, ?)", filename, path, eventID, objectType)
+	_, err := db.Exec("INSERT OR IGNORE INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)", filename, path, eventID, objectType)
 	return err
 }
 
@@ -218,7 +217,7 @@ func isDuplicate(err error) bool {
 	return false
 }
 
-func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
+func BulkStoreEvents(db *sql.DB, events []models.EventRecord) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -228,7 +227,7 @@ func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
 	var num_missing int
 	var num_duplicate int
 
-	for _, e := range *events {
+	for _, e := range events {
 		if e.EventAction == models.ItemCreated {
 			if fileExists(e.Path) {
 				num_committed++
@@ -262,7 +261,7 @@ func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
 		num_committed,
 		num_missing,
 		num_duplicate,
-		len(*events),
+		len(events),
 	)
 
 	return nil
