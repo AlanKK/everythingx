@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,33 +19,23 @@ func fileExists(filename string) bool {
 var dataFolder = "../../data"
 
 func main() {
-	var err error
-	var db *sql.DB = nil
 	dbFile := dataFolder + "/files.db"
 
 	if !fileExists(dbFile) {
-		fmt.Println("Database does not exist, creating it...")
-		err = ffdb.CreateDBAndTable(dbFile)
+		fmt.Println("Database does not exist. Creating it.")
+		db, err := ffdb.CreateDB(dbFile)
 		if err != nil {
 			return
 		}
-		fmt.Println("Loading database from file...")
-		db, err = ffdb.OpenDB(dbFile)
-		if err != nil {
-			log.Fatal("Database does not exist: ", dbFile)
-		}
+		defer db.Close()
+
 		err = loadDBFromFile(db, dataFolder+"/all-files.txt")
 		if err != nil {
 			return
 		}
 	}
 
-	db, err = ffdb.OpenDB(dbFile)
-	if err != nil {
-		log.Fatal("Database does not exist: ", dbFile)
-	}
 	fmt.Println("Opened database ", dbFile)
-	defer db.Close()
 
 	loadUI()
 }
