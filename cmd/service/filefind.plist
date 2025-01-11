@@ -6,16 +6,17 @@
     <string>com.example.filefind</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/alan/Documents/git/fsevents/example/main</string>
-        <string>-path /</string>
+        <string>/usr/local/bin/filefind</string>
+        <string>--monitor_path /</string>
+        <string>--db_path /var/lib/filefind/files.db</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <false/>
     <key>StandardErrorPath</key>
-    <string>/var/log/filefind.err</string>
+    <string>/var/log/filefind.log</string>
     <key>StandardOutPath</key>
-    <string>/var/log/filefind.out</string>
+    <string>/var/log/filefind.log</string>
 </dict>
 </plist>

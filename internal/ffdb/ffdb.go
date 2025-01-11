@@ -20,29 +20,10 @@ var prefixSearchStmt *sql.Stmt
 var insertStmt *sql.Stmt
 var deleteStmt *sql.Stmt
 
-func CreateAndOpenNewDatabase(pathname string) (*sql.DB, error) {
-	os.Remove(pathname)
-
-	err := CreateDBAndTable(pathname)
-	if err != nil {
-		log.Fatalf("Expected no error, got %v", err)
-	}
-
-	if !fileExists(pathname) {
-		log.Fatalf("Expected database file to be created, but it does not exist")
-	}
-
-	db, err := OpenDB(pathname)
-	if err != nil {
-		log.Fatalf("Expected no error, got %v", err)
-	}
-	return db, err
-}
-
-func OpenDB(pathname string) (*sql.DB, error) {
-	// Check if the database file exists
-	if _, err := os.Stat(pathname); os.IsNotExist(err) {
-		return nil, err
+// Creates and opens a new database at the given pathname.
+func CreateDB(pathname string) (*sql.DB, error) {
+	if fileExists(pathname) {
+		return nil, os.ErrExist
 	}
 
 	db, err := sql.Open("sqlite3", pathname)
@@ -50,7 +31,52 @@ func OpenDB(pathname string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	_, err = db.Exec("PRAGMA case_sensitive_like = ON")
+	createTablesAndIndexes(db)
+	configureDB(db)
+	prepareStatements(db)
+
+	return db, err
+}
+
+// Opens an existing database
+func OpenDB(pathname string) (*sql.DB, error) {
+	// Check if the database file exists
+	if !fileExists(pathname) {
+		return nil, error(os.ErrNotExist)
+	}
+
+	db, err := sql.Open("sqlite3", pathname)
+	if err != nil {
+		return nil, err
+	}
+
+	configureDB(db)
+	prepareStatements(db)
+
+	return db, err
+}
+
+// Creates the necessary tables and indexes in the database.
+func createTablesAndIndexes(db *sql.DB) {
+	_, err := db.Exec("CREATE TABLE IF NOT EXISTS files(filename TEXT NOT NULL, fullpath TEXT NOT NULL UNIQUE, event_id INTEGER, object_type INTEGER)")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = db.Exec("CREATE INDEX idx_filename ON files(filename COLLATE BINARY)")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = db.Exec("CREATE INDEX idx_fullpath ON files(fullpath COLLATE BINARY)")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+// Configures the database with necessary settings.
+func configureDB(db *sql.DB) {
+	_, err := db.Exec("PRAGMA case_sensitive_like = ON")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -59,6 +85,11 @@ func OpenDB(pathname string) (*sql.DB, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+// Prepares the SQL statements for later use.
+func prepareStatements(db *sql.DB) {
+	var err error
 
 	prefixSearchStmt, err = db.Prepare("SELECT filename, fullpath FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
 	if err != nil {
@@ -74,35 +105,9 @@ func OpenDB(pathname string) (*sql.DB, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	return db, err
 }
 
-func CreateDBAndTable(pathname string) error {
-	db, err := sql.Open("sqlite3", pathname)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS files(filename TEXT NOT NULL, fullpath TEXT NOT NULL UNIQUE, event_id INTEGER, object_type INTEGER)")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	_, err = db.Exec("CREATE INDEX idx_filename ON files(filename COLLATE BINARY)")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	_, err = db.Exec("CREATE INDEX idx_fullpath ON files(fullpath COLLATE BINARY)")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return err
-}
-
+// Performs a search for filenames starting with the given prefix and returns a limited number of results.
 func PrefixSearch(prefix string, limit ...int) ([]string, error) {
 	var results []string
 
@@ -130,21 +135,19 @@ func PrefixSearch(prefix string, limit ...int) ([]string, error) {
 	return results, nil
 }
 
+// Deletes a record from the database with the given fullpath.
 func DeleteRecord(db *sql.DB, fullpath string) error {
 	_, err := db.Exec("DELETE FROM files WHERE fullpath = ?", fullpath)
 	return err
 }
 
+// Inserts a new record into the database.
 func InsertRecord(db *sql.DB, filename string, path string, eventID uint64, objectType models.ObjectType) error {
 	_, err := db.Exec("INSERT OR IGNORE INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)", filename, path, eventID, objectType)
 	return err
 }
 
-func fileExists(pathname string) bool {
-	_, err := os.Stat(pathname)
-	return !os.IsNotExist(err)
-}
-
+// Collects records and commits them to the database when enough records are collected.
 func BulkInsertRecords(db *sql.DB, filename string, path string) error {
 
 	// Collect records here
@@ -178,6 +181,7 @@ func BulkInsertRecords(db *sql.DB, filename string, path string) error {
 	return nil
 }
 
+// Commits any collected records to the database.
 func CommitRecords(db *sql.DB) error {
 	if len(records) == 0 {
 		return nil
@@ -210,13 +214,7 @@ func CommitRecords(db *sql.DB) error {
 	return nil
 }
 
-func isDuplicate(err error) bool {
-	if sqliteErr, ok := err.(sqlite3.Error); ok && sqliteErr.Code == sqlite3.ErrConstraint {
-		return true
-	}
-	return false
-}
-
+// Stores a batch of events in the database.
 func BulkStoreEvents(db *sql.DB, events []models.EventRecord) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -265,4 +263,17 @@ func BulkStoreEvents(db *sql.DB, events []models.EventRecord) error {
 	)
 
 	return nil
+}
+
+// Checks if the given error is a SQLite constraint violation error.
+func isDuplicate(err error) bool {
+	if sqliteErr, ok := err.(sqlite3.Error); ok && sqliteErr.Code == sqlite3.ErrConstraint {
+		return true
+	}
+	return false
+}
+
+func fileExists(pathname string) bool {
+	_, err := os.Stat(pathname)
+	return !os.IsNotExist(err)
 }
