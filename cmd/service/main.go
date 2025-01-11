@@ -27,16 +27,8 @@ import (
 // sudo launchctl bootout system /Library/LaunchDaemons/com.example.filefind.plist
 
 // todo:
-// 	Read historical events
-// 	Handle missing files.  Keep queue of files before writing to db and check for existence
-//
-//  check-files results after running for a while:
-// 	- Total files: 22374
-//	- Files that exist: 14004
-//	- Files that do not exist: 8370
-//
+// 	Read historical events from FSEvents
 //	Create installer for launchd service
-//
 
 var noteDescription = map[fsevents.EventFlags]string{
 	fsevents.MustScanSubDirs: "MustScanSubdirs",
@@ -61,7 +53,6 @@ var noteDescription = map[fsevents.EventFlags]string{
 	fsevents.ItemIsSymlink:     "IsSymLink",
 }
 
-var databasePath = "/Users/alan/Documents/findfiles/files.db"
 var delayTime time.Duration = 5 * time.Second
 
 func fileExists(filename string) bool {
@@ -69,7 +60,7 @@ func fileExists(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-func setupDatabase() *sql.DB {
+func setupDatabase(databasePath string) *sql.DB {
 	var err error
 	var db *sql.DB
 
@@ -80,7 +71,7 @@ func setupDatabase() *sql.DB {
 		}
 	} else {
 		log.Println("Database does not exist. Creating ", databasePath)
-		db, err = ffdb.CreateAndOpenNewDatabase(databasePath)
+		db, err = ffdb.CreateDB(databasePath)
 		if err != nil {
 			log.Fatal("Error creating database: ", err)
 		}
@@ -91,22 +82,71 @@ func setupDatabase() *sql.DB {
 }
 
 func main() {
-	// We take a command-line parameter, "-path /path/to/watch".
-	// Default is "/"
-	path := flag.String("path", "/", "Path to watch for file system events")
-	flag.Parse()
+	monitorPath, dbPath := getCommandLineArgs()
 
-	if *path == "" {
-		log.Fatal("Path is required")
-	}
-
-	db := setupDatabase()
+	db := setupDatabase(*dbPath)
 	if db == nil {
 		log.Fatal("Failed to open database")
 	}
 	defer db.Close()
 
-	// Need to handle SIGTERM to be a well-behaved launchd service
+	// Setup SIGTERM, SIGUSR1, SIGUSR2 listeners
+	setupSignalHandlers(db)
+
+	dev, err := fsevents.DeviceForPath(*monitorPath)
+	if err != nil {
+		log.Fatalf("Failed to retrieve device for path: %v", err)
+	}
+
+	log.Printf("Monitoring path: %s.  Device %d UUID %d", *monitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
+
+	es := &fsevents.EventStream{
+		Paths:   []string{*monitorPath},
+		Latency: 500 * time.Millisecond,
+		Device:  dev,
+		Flags:   fsevents.FileEvents | fsevents.WatchRoot}
+	es.Start()
+	ec := es.Events
+
+	log.Println("Device UUID for ", *monitorPath, fsevents.GetDeviceUUID(dev))
+
+	// TODO: this needs to be fast.  Is it doing too much with the bulk db writes?
+	go func() {
+		startTime := time.Now()
+		var lastFlushTime time.Time = time.Now()
+		var eventRecordQueue []models.EventRecord
+
+		for msg := range ec {
+			for _, event := range msg {
+				eventRecord := buildEventRecord(event)
+				if eventRecord != nil {
+					addEventToQueue(db, &lastFlushTime, &eventRecordQueue, eventRecord)
+				}
+			}
+		}
+		log.Println("fsevent callback time: ", time.Since(startTime))
+	}()
+
+	// Keep the program running
+	select {}
+}
+
+func getCommandLineArgs() (*string, *string) {
+	monitorPath := flag.String("monitor_path", "/", "Path to monitor for file system events")
+	dbPath := flag.String("db_path", "/var/lib/filefind/files.db", "Path to the database file")
+	flag.Parse()
+
+	if *monitorPath == "" {
+		log.Fatal("Monitor path is required")
+	}
+	if *dbPath == "" {
+		log.Fatal("Database path is required")
+	}
+	return monitorPath, dbPath
+}
+
+func setupSignalHandlers(db *sql.DB) {
+	// TODO: does this need a new db connection or is reuse OK?
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGTERM)
 
@@ -133,45 +173,6 @@ func main() {
 			}
 		}
 	}()
-
-	dev, err := fsevents.DeviceForPath(*path)
-	if err != nil {
-		log.Fatalf("Failed to retrieve device for path: %v", err)
-	}
-
-	log.Print("Monitoring path: ", *path)
-	log.Print(dev)
-	log.Println(fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
-
-	es := &fsevents.EventStream{
-		Paths:   []string{*path},
-		Latency: 500 * time.Millisecond,
-		Device:  dev,
-		Flags:   fsevents.FileEvents | fsevents.WatchRoot}
-	es.Start()
-	ec := es.Events
-
-	log.Println("Device UUID for ", *path, fsevents.GetDeviceUUID(dev))
-
-	// TODO: this needs to be fast.  Is it doing too much with the bulk db writes?
-	go func() {
-		startTime := time.Now()
-		var lastFlushTime time.Time = time.Now()
-		var eventRecordQueue []models.EventRecord
-
-		for msg := range ec {
-			for _, event := range msg {
-				eventRecord := buildEventRecord(event)
-				if eventRecord != nil {
-					addEventToQueue(db, &lastFlushTime, &eventRecordQueue, eventRecord)
-				}
-			}
-		}
-		log.Println("fsevent callback time: ", time.Since(startTime))
-	}()
-
-	// Keep the program running
-	select {}
 }
 
 func buildEventRecord(fsevent fsevents.Event) *models.EventRecord {
@@ -263,6 +264,7 @@ func deleteMissing(db *sql.DB) {
 		if fileExists(fullpath) {
 			filesExist++
 		} else {
+			// TODO: delete the missing file from the db
 			missingFiles = append(missingFiles, fullpath)
 			filesMissing++
 		}
