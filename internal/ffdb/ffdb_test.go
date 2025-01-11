@@ -8,10 +8,10 @@ import (
 	"github.com/AlanKK/findfiles/internal/models"
 )
 
-func TestCreateDBAndTable(t *testing.T) {
+func TestCreateDB(t *testing.T) {
 	testDBPath := "test.db"
 
-	db, err := CreateAndOpenNewDatabase(testDBPath)
+	db, err := CreateDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -52,8 +52,9 @@ func TestCreateDBAndTable(t *testing.T) {
 
 func TestGetRecord(t *testing.T) {
 	testDBPath := "test.db"
+	os.Remove(testDBPath)
 
-	db, err := CreateAndOpenNewDatabase(testDBPath)
+	db, err := CreateDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -89,8 +90,9 @@ func TestGetRecord(t *testing.T) {
 
 func TestGetCaseSensitiveRecord(t *testing.T) {
 	testDBPath := "test.db"
+	os.Remove(testDBPath)
 
-	db, err := CreateAndOpenNewDatabase(testDBPath)
+	db, err := CreateDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -123,8 +125,9 @@ func TestGetCaseSensitiveRecord(t *testing.T) {
 
 func TestDeleteRecord(t *testing.T) {
 	testDBPath := "test.db"
+	os.Remove(testDBPath)
 
-	db, err := CreateAndOpenNewDatabase(testDBPath)
+	db, err := CreateDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -156,8 +159,9 @@ func TestDeleteRecord(t *testing.T) {
 }
 func TestInsertRecord(t *testing.T) {
 	testDBPath := "test.db"
+	os.Remove(testDBPath)
 
-	db, err := CreateAndOpenNewDatabase(testDBPath)
+	db, err := CreateDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -184,8 +188,9 @@ func TestInsertRecord(t *testing.T) {
 
 func TestBulkInsertRecords(t *testing.T) {
 	testDBPath := "test.db"
+	os.Remove(testDBPath)
 
-	db, err := CreateAndOpenNewDatabase(testDBPath)
+	db, err := CreateDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -290,8 +295,9 @@ func TestFileExists(t *testing.T) {
 
 func TestBulkStoreEvents(t *testing.T) {
 	testDBPath := "test.db"
+	os.Remove(testDBPath)
 
-	db, err := CreateAndOpenNewDatabase(testDBPath)
+	db, err := CreateDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -356,8 +362,9 @@ func TestBulkStoreEvents(t *testing.T) {
 
 func TestBulkStoreDuplicates(t *testing.T) {
 	testDBPath := "test.db"
+	os.Remove(testDBPath)
 
-	db, err := CreateAndOpenNewDatabase(testDBPath)
+	db, err := CreateDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -405,9 +412,10 @@ func TestBulkStoreDuplicates(t *testing.T) {
 
 func TestOpenDB(t *testing.T) {
 	testDBPath := "test.db"
+	os.Remove(testDBPath)
 
 	// Create a new database
-	db, err := CreateAndOpenNewDatabase(testDBPath)
+	db, err := CreateDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -456,8 +464,9 @@ func TestOpenDB_FileNotExist(t *testing.T) {
 }
 func TestBulkInsertRecords1000(t *testing.T) {
 	testDBPath := "test.db"
+	os.Remove(testDBPath)
 
-	db, err := CreateAndOpenNewDatabase(testDBPath)
+	db, err := CreateDB(testDBPath)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
