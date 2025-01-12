@@ -60,6 +60,20 @@ func fileExists(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
+func getCommandLineArgs() (*string, *string) {
+	monitorPath := flag.String("monitor_path", "/", "Path to monitor for file system events")
+	dbPath := flag.String("db_path", "/var/lib/filefind/files.db", "Path to the database file")
+	flag.Parse()
+
+	if *monitorPath == "" {
+		log.Fatal("Monitor path is required")
+	}
+	if *dbPath == "" {
+		log.Fatal("Database path is required")
+	}
+	return monitorPath, dbPath
+}
+
 func setupDatabase(databasePath string) *sql.DB {
 	var err error
 	var db *sql.DB
@@ -76,7 +90,12 @@ func setupDatabase(databasePath string) *sql.DB {
 			log.Fatal("Error creating database: ", err)
 		}
 	}
-	log.Println("Opened database ", databasePath)
+
+	count, err := ffdb.RecordCount(db)
+	if err != nil {
+		log.Fatal("Error getting record count: ", err)
+	}
+	log.Printf("Opened database %s. %d records", databasePath, count)
 
 	return db
 }
@@ -92,7 +111,6 @@ func main() {
 
 	// Setup SIGTERM, SIGUSR1, SIGUSR2 listeners
 	setupSignalHandlers(db)
-
 	dev, err := fsevents.DeviceForPath(*monitorPath)
 	if err != nil {
 		log.Fatalf("Failed to retrieve device for path: %v", err)
@@ -114,13 +132,14 @@ func main() {
 	go func() {
 		startTime := time.Now()
 		var lastFlushTime time.Time = time.Now()
-		var eventRecordQueue []models.EventRecord
+		var eventRecordQueue = &[]models.EventRecord{}
+		//log.Printf("main() - &eventRecordQueue: %p", eventRecordQueue)
 
 		for msg := range ec {
 			for _, event := range msg {
 				eventRecord := buildEventRecord(event)
 				if eventRecord != nil {
-					addEventToQueue(db, &lastFlushTime, &eventRecordQueue, eventRecord)
+					addEventToQueue(db, &lastFlushTime, eventRecordQueue, eventRecord)
 				}
 			}
 		}
@@ -129,20 +148,6 @@ func main() {
 
 	// Keep the program running
 	select {}
-}
-
-func getCommandLineArgs() (*string, *string) {
-	monitorPath := flag.String("monitor_path", "/", "Path to monitor for file system events")
-	dbPath := flag.String("db_path", "/var/lib/filefind/files.db", "Path to the database file")
-	flag.Parse()
-
-	if *monitorPath == "" {
-		log.Fatal("Monitor path is required")
-	}
-	if *dbPath == "" {
-		log.Fatal("Database path is required")
-	}
-	return monitorPath, dbPath
 }
 
 func setupSignalHandlers(db *sql.DB) {
@@ -228,13 +233,14 @@ func buildEventRecord(fsevent fsevents.Event) *models.EventRecord {
 
 // Create an delay before writing to the db.  Apple's File System Events seems
 // to send file create events but the files are quickly deleted or don't exist.
-func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]models.EventRecord, event *models.EventRecord) {
+func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *([]models.EventRecord), event *models.EventRecord) {
 
 	*eventRecordQueue = append(*eventRecordQueue, *event)
 
 	tt := time.Since(*lastFlushTime)
 	if tt >= delayTime {
-		err := ffdb.BulkStoreEvents(db, *eventRecordQueue)
+		//log.Printf("addEventToQueue() - &eventRecordQueue: %p", eventRecordQueue)
+		err := ffdb.BulkStoreEvents(db, eventRecordQueue)
 		if err != nil {
 			log.Println("Error writing to db: ", err)
 		}
@@ -284,8 +290,8 @@ func scanDisk(db *sql.DB) {
 	var fileCount int
 	var dirCount int
 	var objType models.ObjectType = models.ItemIsFile
-	var eventRecordQueue []models.EventRecord
 	var lastFlushTime time.Time = time.Now()
+	var eventRecordQueue = &[]models.EventRecord{}
 
 	filepath.WalkDir("/", func(path string, file fs.DirEntry, err error) error {
 		if !file.IsDir() {
@@ -305,7 +311,7 @@ func scanDisk(db *sql.DB) {
 			EventAction: models.ItemCreated,
 		}
 
-		addEventToQueue(db, &lastFlushTime, &eventRecordQueue, eventRecord)
+		addEventToQueue(db, &lastFlushTime, eventRecordQueue, eventRecord)
 
 		return nil
 	})
@@ -320,7 +326,7 @@ func scanDisk(db *sql.DB) {
 		EventAction: models.ItemCreated,
 	}
 	lastFlushTime = time.Time{} // force a flush
-	addEventToQueue(db, &lastFlushTime, &eventRecordQueue, eventRecord)
+	addEventToQueue(db, &lastFlushTime, eventRecordQueue, eventRecord)
 
-	log.Printf("Scan complete. Total files/dirs: %d/%d. Elapsed time: %s", fileCount, dirCount, time.Since(startTime).String())
+	log.Printf("Scan complete. Files/dirs: %d/%d. Elapsed time: %s", fileCount, dirCount, time.Since(startTime).String())
 }
