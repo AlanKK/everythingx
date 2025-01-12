@@ -325,7 +325,7 @@ func TestBulkStoreEvents(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	err = BulkStoreEvents(db, events)
+	err = BulkStoreEvents(db, &events)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -394,7 +394,7 @@ func TestBulkStoreDuplicates(t *testing.T) {
 	}
 
 	// Insert all and make sure we have three in the db
-	err = BulkStoreEvents(db, events)
+	err = BulkStoreEvents(db, &events)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -542,5 +542,42 @@ func TestBulkInsertRecords1000(t *testing.T) {
 	}
 	if count != 1500 {
 		t.Fatalf("Expected 1500 records, got %d", count)
+	}
+}
+func TestRecordCount(t *testing.T) {
+	testDBPath := "test.db"
+	os.Remove(testDBPath)
+
+	db, err := CreateDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+
+	// Verify initial record count
+	count, err := RecordCount(db)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("Expected 0 records, got %d", count)
+	}
+
+	// Insert test data
+	for i := 1; i <= 10; i++ {
+		err = InsertRecord(db, fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i), 0, models.ItemIsFile)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+	}
+
+	// Verify record count after insertion
+	count, err = RecordCount(db)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 10 {
+		t.Fatalf("Expected 10 records, got %d", count)
 	}
 }

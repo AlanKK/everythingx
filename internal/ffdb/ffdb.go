@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"time"
 
 	"github.com/AlanKK/findfiles/internal/models"
 	"github.com/mattn/go-sqlite3"
@@ -85,6 +86,12 @@ func configureDB(db *sql.DB) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	_, err = db.Exec("PRAGMA busy_timeout = 5000;")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 }
 
 // Prepares the SQL statements for later use.
@@ -135,6 +142,16 @@ func PrefixSearch(prefix string, limit ...int) ([]string, error) {
 	return results, nil
 }
 
+// Returns the count of records in the files table.
+func RecordCount(db *sql.DB) (int, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM files").Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // Deletes a record from the database with the given fullpath.
 func DeleteRecord(db *sql.DB, fullpath string) error {
 	_, err := db.Exec("DELETE FROM files WHERE fullpath = ?", fullpath)
@@ -183,6 +200,7 @@ func BulkInsertRecords(db *sql.DB, filename string, path string) error {
 
 // Commits any collected records to the database.
 func CommitRecords(db *sql.DB) error {
+
 	if len(records) == 0 {
 		return nil
 	}
@@ -215,7 +233,10 @@ func CommitRecords(db *sql.DB) error {
 }
 
 // Stores a batch of events in the database.
-func BulkStoreEvents(db *sql.DB, events []models.EventRecord) error {
+func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
+	bulkTime := time.Now()
+	//log.Printf("BulkStoreEvents() - &eventRecordQueue: %p", events)
+
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -225,7 +246,7 @@ func BulkStoreEvents(db *sql.DB, events []models.EventRecord) error {
 	var num_missing int
 	var num_duplicate int
 
-	for _, e := range events {
+	for _, e := range *events {
 		if e.EventAction == models.ItemCreated {
 			if fileExists(e.Path) {
 				num_committed++
@@ -250,16 +271,23 @@ func BulkStoreEvents(db *sql.DB, events []models.EventRecord) error {
 		}
 	}
 
+	commitTime := time.Now()
+
 	err = tx.Commit()
 	if err != nil {
 		return err
 	}
+
 	log.Printf(
-		"Committed %d events, %d missing files, duplicates %d, %d total events. ----------------------------",
+		"Total %d, committed %d events, %d missing, dups %d, time fn %s / commit %s. Queue %p capacity %d",
+		len(*events),
 		num_committed,
 		num_missing,
 		num_duplicate,
-		len(events),
+		time.Since(bulkTime).Round(time.Microsecond).String(),
+		time.Since(commitTime).Round(time.Microsecond).String(),
+		events,
+		cap(*events),
 	)
 
 	return nil
