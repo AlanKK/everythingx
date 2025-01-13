@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/AlanKK/findfiles/internal/models"
@@ -245,6 +246,7 @@ func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
 	var num_committed int
 	var num_missing int
 	var num_duplicate int
+	var num_deleted int
 
 	for _, e := range *events {
 		if e.EventAction == models.ItemCreated {
@@ -266,6 +268,7 @@ func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
 			if err != nil {
 				return err
 			}
+			num_deleted++
 		} else {
 			log.Fatal("Unknown event action: ", e.EventAction)
 		}
@@ -278,19 +281,29 @@ func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
 		return err
 	}
 
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
 	log.Printf(
-		"Total %d, committed %d events, %d missing, dups %d, time fn %s / commit %s. Queue %p capacity %d",
+		"Events: %-6d Del: %-6d New: %-6d Missing: %-6d Dups: %-6d Time fn/commit: %-9s / %-8s Queue: %p Capacity: %-7d Mem: %.1f heap %.1f MB",
 		len(*events),
-		num_committed,
+		num_deleted,
+		num_committed-num_duplicate,
 		num_missing,
 		num_duplicate,
 		time.Since(bulkTime).Round(time.Microsecond).String(),
 		time.Since(commitTime).Round(time.Microsecond).String(),
 		events,
 		cap(*events),
+		bToMb(m.Sys),
+		bToMb(m.Alloc),
 	)
 
 	return nil
+}
+
+// Converts bytes to megabytes.
+func bToMb(b uint64) float64 {
+	return float64(b) / 1024 / 1024
 }
 
 // Checks if the given error is a SQLite constraint violation error.
