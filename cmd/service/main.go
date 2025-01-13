@@ -100,6 +100,14 @@ func setupDatabase(databasePath string) *sql.DB {
 	return db
 }
 
+func gracefulShutdown(db *sql.DB) {
+	log.Println("Shutting down.")
+	if err := db.Close(); err != nil {
+		log.Printf("Error closing database: %v", err)
+	}
+	os.Exit(0)
+}
+
 func main() {
 	monitorPath, dbPath := getCommandLineArgs()
 
@@ -111,6 +119,7 @@ func main() {
 
 	// Setup SIGTERM, SIGUSR1, SIGUSR2 listeners
 	setupSignalHandlers(db)
+
 	dev, err := fsevents.DeviceForPath(*monitorPath)
 	if err != nil {
 		log.Fatalf("Failed to retrieve device for path: %v", err)
@@ -155,6 +164,10 @@ func setupSignalHandlers(db *sql.DB) {
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGTERM)
 
+	// Handle SIGINT (Ctrl+C) to shutdown gracefully
+	intChan := make(chan os.Signal, 1)
+	signal.Notify(intChan, syscall.SIGINT)
+
 	// Handle SIGUSR1 to trigger disk scan
 	usr1Chan := make(chan os.Signal, 1)
 	signal.Notify(usr1Chan, syscall.SIGUSR1)
@@ -164,11 +177,15 @@ func setupSignalHandlers(db *sql.DB) {
 	signal.Notify(usr2Chan, syscall.SIGUSR2)
 
 	go func() {
+		log.Println("Signal handler thread started.")
 		for {
 			select {
 			case <-termChan:
 				log.Println("Received SIGTERM, shutting down gracefully.")
-				os.Exit(0)
+				gracefulShutdown(db)
+			case <-intChan:
+				log.Println("Received SIGINT (Ctrl+C), shutting down gracefully.")
+				gracefulShutdown(db)
 			case <-usr1Chan:
 				log.Println("Received SIGUSR1. Starting scan...")
 				scanDisk(db)
@@ -239,7 +256,6 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *([]
 
 	tt := time.Since(*lastFlushTime)
 	if tt >= delayTime {
-		//log.Printf("addEventToQueue() - &eventRecordQueue: %p", eventRecordQueue)
 		err := ffdb.BulkStoreEvents(db, eventRecordQueue)
 		if err != nil {
 			log.Println("Error writing to db: ", err)
@@ -251,6 +267,8 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *([]
 
 func deleteMissing(db *sql.DB) {
 	startTime := time.Now()
+	var lastFlushTime time.Time = time.Now()
+	var eventRecordQueue = &[]models.EventRecord{}
 
 	rows, err := db.Query("SELECT fullpath FROM files")
 	if err != nil {
@@ -259,7 +277,6 @@ func deleteMissing(db *sql.DB) {
 	defer rows.Close()
 
 	var totalFiles, filesExist, filesMissing int
-	var missingFiles []string
 
 	for rows.Next() {
 		var fullpath string
@@ -267,12 +284,20 @@ func deleteMissing(db *sql.DB) {
 			log.Fatal(err)
 		}
 
-		if fileExists(fullpath) {
-			filesExist++
-		} else {
-			// TODO: delete the missing file from the db
-			missingFiles = append(missingFiles, fullpath)
+		if !fileExists(fullpath) {
+			eventRecord := &models.EventRecord{
+				Filename:    "",
+				Path:        fullpath,
+				ObjectType:  0,
+				EventID:     0,
+				EventTime:   0,
+				EventAction: models.ItemDeleted,
+			}
+
+			addEventToQueue(db, &lastFlushTime, eventRecordQueue, eventRecord)
 			filesMissing++
+		} else {
+			filesExist++
 		}
 		totalFiles++
 	}
@@ -281,7 +306,7 @@ func deleteMissing(db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	log.Printf("DB Audit complete. Total files %d, files that exist %d, missing files %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
+	log.Printf("DB Audit complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
 }
 
 func scanDisk(db *sql.DB) {

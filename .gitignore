@@ -17,3 +17,4 @@ cmd/tools/scan-disk/scan-disk
 cmd/service/out.txt
 cmd/service/findfiles
 cmd/tools/check-files/check-files
+cmd/service/filefind
