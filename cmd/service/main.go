@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -54,6 +55,8 @@ var noteDescription = map[fsevents.EventFlags]string{
 }
 
 var delayTime time.Duration = 5 * time.Second
+var wg sync.WaitGroup
+var dbChannel chan models.EventRecord
 
 func fileExists(filename string) bool {
 	_, err := os.Stat(filename)
@@ -101,7 +104,6 @@ func setupDatabase(databasePath string) *sql.DB {
 }
 
 func gracefulShutdown(db *sql.DB) {
-	log.Println("Shutting down.")
 	if err := db.Close(); err != nil {
 		log.Printf("Error closing database: %v", err)
 	}
@@ -115,11 +117,20 @@ func main() {
 	if db == nil {
 		log.Fatal("Failed to open database")
 	}
-	defer db.Close()
+	defer func() {
+		log.Println("Closing database")
+		db.Close()
+	}()
+
+	// Start the database writer thread
+	dbChannel = make(chan models.EventRecord, 5000)
+	wg.Add(1)
+	go databaseWriter(db)
 
 	// Setup SIGTERM, SIGUSR1, SIGUSR2 listeners
 	setupSignalHandlers(db)
 
+	// Start the File System Event listener
 	dev, err := fsevents.DeviceForPath(*monitorPath)
 	if err != nil {
 		log.Fatalf("Failed to retrieve device for path: %v", err)
@@ -140,15 +151,12 @@ func main() {
 	// TODO: this needs to be fast.  Is it doing too much with the bulk db writes?
 	go func() {
 		startTime := time.Now()
-		var lastFlushTime time.Time = time.Now()
-		var eventRecordQueue = &[]models.EventRecord{}
-		//log.Printf("main() - &eventRecordQueue: %p", eventRecordQueue)
 
 		for msg := range ec {
 			for _, event := range msg {
 				eventRecord := buildEventRecord(event)
 				if eventRecord != nil {
-					addEventToQueue(db, &lastFlushTime, eventRecordQueue, eventRecord)
+					dbChannel <- *eventRecord
 				}
 			}
 		}
@@ -160,7 +168,6 @@ func main() {
 }
 
 func setupSignalHandlers(db *sql.DB) {
-	// TODO: does this need a new db connection or is reuse OK?
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGTERM)
 
@@ -181,14 +188,14 @@ func setupSignalHandlers(db *sql.DB) {
 		for {
 			select {
 			case <-termChan:
-				log.Println("Received SIGTERM, shutting down gracefully.")
+				log.Println("Received SIGTERM, shutting down.")
 				gracefulShutdown(db)
 			case <-intChan:
-				log.Println("Received SIGINT (Ctrl+C), shutting down gracefully.")
+				log.Println("Received SIGINT (Ctrl+C), shutting down.")
 				gracefulShutdown(db)
 			case <-usr1Chan:
 				log.Println("Received SIGUSR1. Starting scan...")
-				scanDisk(db)
+				scanDisk()
 			case <-usr2Chan:
 				log.Println("Received SIGUSR2. Starting db audit...")
 				deleteMissing(db)
@@ -250,8 +257,7 @@ func buildEventRecord(fsevent fsevents.Event) *models.EventRecord {
 
 // Create an delay before writing to the db.  Apple's File System Events seems
 // to send file create events but the files are quickly deleted or don't exist.
-func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *([]models.EventRecord), event *models.EventRecord) {
-
+func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]models.EventRecord, event *models.EventRecord) {
 	*eventRecordQueue = append(*eventRecordQueue, *event)
 
 	tt := time.Since(*lastFlushTime)
@@ -267,8 +273,8 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *([]
 
 func deleteMissing(db *sql.DB) {
 	startTime := time.Now()
-	var lastFlushTime time.Time = time.Now()
-	var eventRecordQueue = &[]models.EventRecord{}
+
+	// TODO Vacuum: Run VACUUM after bulk inserts to optimize the database file.
 
 	rows, err := db.Query("SELECT fullpath FROM files")
 	if err != nil {
@@ -294,7 +300,7 @@ func deleteMissing(db *sql.DB) {
 				EventAction: models.ItemDeleted,
 			}
 
-			addEventToQueue(db, &lastFlushTime, eventRecordQueue, eventRecord)
+			dbChannel <- *eventRecord
 			filesMissing++
 		} else {
 			filesExist++
@@ -309,14 +315,12 @@ func deleteMissing(db *sql.DB) {
 	log.Printf("DB Audit complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
 }
 
-func scanDisk(db *sql.DB) {
+func scanDisk() {
 	startTime := time.Now()
 
 	var fileCount int
 	var dirCount int
 	var objType models.ObjectType = models.ItemIsFile
-	var lastFlushTime time.Time = time.Now()
-	var eventRecordQueue = &[]models.EventRecord{}
 
 	filepath.WalkDir("/", func(path string, file fs.DirEntry, err error) error {
 		if !file.IsDir() {
@@ -332,26 +336,29 @@ func scanDisk(db *sql.DB) {
 			Path:        path,
 			ObjectType:  objType,
 			EventID:     0,
-			EventTime:   0, // int64
+			EventTime:   0,
 			EventAction: models.ItemCreated,
 		}
 
-		addEventToQueue(db, &lastFlushTime, eventRecordQueue, eventRecord)
+		dbChannel <- *eventRecord
 
 		return nil
 	})
 
-	// Force a flush to the db
-	eventRecord := &models.EventRecord{
-		Filename:    "/",
-		Path:        "/",
-		ObjectType:  models.ItemIsDir,
-		EventID:     0,
-		EventTime:   0, // int64
-		EventAction: models.ItemCreated,
-	}
-	lastFlushTime = time.Time{} // force a flush
-	addEventToQueue(db, &lastFlushTime, eventRecordQueue, eventRecord)
-
 	log.Printf("Scan complete. Files/dirs: %d/%d. Elapsed time: %s", fileCount, dirCount, time.Since(startTime).String())
+}
+
+func databaseWriter(db *sql.DB) {
+	defer wg.Done()
+	log.Println("databaseWriter thread started.")
+
+	var lastFlushTime time.Time = time.Now()
+	var eventRecordQueue = []models.EventRecord{}
+	log.Printf("Queue %p", &eventRecordQueue)
+
+	for event := range dbChannel {
+		addEventToQueue(db, &lastFlushTime, &eventRecordQueue, &event)
+	}
+
+	log.Println("databaseWriter thread stopped.")
 }
