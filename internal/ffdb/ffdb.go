@@ -22,6 +22,11 @@ var prefixSearchStmt *sql.Stmt
 var insertStmt *sql.Stmt
 var deleteStmt *sql.Stmt
 
+func fileExists(filename string) bool {
+	_, err := os.Stat(filename)
+	return !os.IsNotExist(err)
+}
+
 // Creates and opens a new database at the given pathname.
 func CreateDB(pathname string) (*sql.DB, error) {
 	if fileExists(pathname) {
@@ -88,7 +93,8 @@ func configureDB(db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.Exec("PRAGMA busy_timeout = 5000;")
+	// Disable synchronous mode
+	_, err = db.Exec("PRAGMA synchronous=OFF;")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -234,21 +240,17 @@ func CommitRecords(db *sql.DB) error {
 }
 
 // Stores a batch of events in the database.
-func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
+func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 	bulkTime := time.Now()
-	//log.Printf("BulkStoreEvents() - &eventRecordQueue: %p", events)
 
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 
-	var num_committed int
-	var num_missing int
-	var num_duplicate int
-	var num_deleted int
+	var num_committed, num_missing, num_duplicate, num_deleted int
 
-	for _, e := range *events {
+	for _, e := range *eventRecordQueue {
 		if e.EventAction == models.ItemCreated {
 			if fileExists(e.Path) {
 				num_committed++
@@ -285,15 +287,15 @@ func BulkStoreEvents(db *sql.DB, events *[]models.EventRecord) error {
 	runtime.ReadMemStats(&m)
 	log.Printf(
 		"Events: %-6d Del: %-6d New: %-6d Missing: %-6d Dups: %-6d Time fn/commit: %-9s / %-8s Queue: %p Capacity: %-7d Mem: %.1f heap %.1f MB",
-		len(*events),
+		len(*eventRecordQueue),
 		num_deleted,
 		num_committed-num_duplicate,
 		num_missing,
 		num_duplicate,
 		time.Since(bulkTime).Round(time.Microsecond).String(),
 		time.Since(commitTime).Round(time.Microsecond).String(),
-		events,
-		cap(*events),
+		eventRecordQueue,
+		cap(*eventRecordQueue),
 		bToMb(m.Sys),
 		bToMb(m.Alloc),
 	)
@@ -312,9 +314,4 @@ func isDuplicate(err error) bool {
 		return true
 	}
 	return false
-}
-
-func fileExists(pathname string) bool {
-	_, err := os.Stat(pathname)
-	return !os.IsNotExist(err)
 }
