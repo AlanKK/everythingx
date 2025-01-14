@@ -18,3 +18,6 @@ cmd/service/out.txt
 cmd/service/findfiles
 cmd/tools/check-files/check-files
 cmd/service/filefind
+cmd/service/findfilesd
+ff
+findfilesd
