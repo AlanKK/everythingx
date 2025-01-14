@@ -63,9 +63,9 @@ func fileExists(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-func getCommandLineArgs() (*string, *string) {
+func getCommandLineArgs() (string, string) {
 	monitorPath := flag.String("monitor_path", "/", "Path to monitor for file system events")
-	dbPath := flag.String("db_path", "/var/lib/filefind/files.db", "Path to the database file")
+	dbPath := flag.String("db_path", "/var/lib/findfiles/files.db", "Path to the database file")
 	flag.Parse()
 
 	if *monitorPath == "" {
@@ -74,7 +74,7 @@ func getCommandLineArgs() (*string, *string) {
 	if *dbPath == "" {
 		log.Fatal("Database path is required")
 	}
-	return monitorPath, dbPath
+	return *monitorPath, *dbPath
 }
 
 func setupDatabase(databasePath string) *sql.DB {
@@ -113,7 +113,7 @@ func gracefulShutdown(db *sql.DB) {
 func main() {
 	monitorPath, dbPath := getCommandLineArgs()
 
-	db := setupDatabase(*dbPath)
+	db := setupDatabase(dbPath)
 	if db == nil {
 		log.Fatal("Failed to open database")
 	}
@@ -131,7 +131,7 @@ func main() {
 	setupSignalHandlers(db)
 
 	// Start the File System Event listener
-	dev, err := fsevents.DeviceForPath(*monitorPath)
+	dev, err := fsevents.DeviceForPath(monitorPath)
 	if err != nil {
 		log.Fatalf("Failed to retrieve device for path: %v", err)
 	}
@@ -139,7 +139,7 @@ func main() {
 	log.Printf("Monitoring path: %s.  Device %d UUID %d", *monitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
 
 	es := &fsevents.EventStream{
-		Paths:   []string{*monitorPath},
+		Paths:   []string{monitorPath},
 		Latency: 500 * time.Millisecond,
 		Device:  dev,
 		Flags:   fsevents.FileEvents | fsevents.WatchRoot}
@@ -316,6 +316,8 @@ func deleteMissing(db *sql.DB) {
 }
 
 func scanDisk() {
+	// TODO: figure out how to use a separate eventRecordQueue for the scan that can be deleted when the scan is done.
+	//       It would save about 150MB ram
 	startTime := time.Now()
 
 	var fileCount int

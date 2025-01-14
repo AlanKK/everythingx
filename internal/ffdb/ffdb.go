@@ -83,6 +83,8 @@ func createTablesAndIndexes(db *sql.DB) {
 
 // Configures the database with necessary settings.
 func configureDB(db *sql.DB) {
+
+	// These require the db be writable.  The UI uses case sensitive
 	_, err := db.Exec("PRAGMA case_sensitive_like = ON")
 	if err != nil {
 		log.Fatal(err)
