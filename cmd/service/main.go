@@ -56,7 +56,7 @@ var noteDescription = map[fsevents.EventFlags]string{
 
 var delayTime time.Duration = 5 * time.Second
 var wg sync.WaitGroup
-var dbChannel chan models.EventRecord
+var dbChannel chan *models.EventRecord
 
 func fileExists(filename string) bool {
 	_, err := os.Stat(filename)
@@ -123,7 +123,7 @@ func main() {
 	}()
 
 	// Start the database writer thread
-	dbChannel = make(chan models.EventRecord, 5000)
+	dbChannel = make(chan *models.EventRecord, 5000)
 	wg.Add(1)
 	go databaseWriter(db)
 
@@ -156,7 +156,7 @@ func main() {
 			for _, event := range msg {
 				eventRecord := buildEventRecord(event)
 				if eventRecord != nil {
-					dbChannel <- *eventRecord
+					dbChannel <- eventRecord
 				}
 			}
 		}
@@ -300,7 +300,7 @@ func deleteMissing(db *sql.DB) {
 				EventAction: models.ItemDeleted,
 			}
 
-			dbChannel <- *eventRecord
+			dbChannel <- eventRecord
 			filesMissing++
 		} else {
 			filesExist++
@@ -342,7 +342,7 @@ func scanDisk() {
 			EventAction: models.ItemCreated,
 		}
 
-		dbChannel <- *eventRecord
+		dbChannel <- eventRecord
 
 		return nil
 	})
@@ -359,7 +359,7 @@ func databaseWriter(db *sql.DB) {
 	log.Printf("Queue %p", &eventRecordQueue)
 
 	for event := range dbChannel {
-		addEventToQueue(db, &lastFlushTime, &eventRecordQueue, &event)
+		addEventToQueue(db, &lastFlushTime, &eventRecordQueue, event)
 	}
 
 	log.Println("databaseWriter thread stopped.")
