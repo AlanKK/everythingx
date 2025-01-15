@@ -18,12 +18,12 @@ func TestBuildEventRecord(t *testing.T) {
 			name: "File created",
 			fsevent: fsevents.Event{
 				ID:    1,
-				Path:  "testfile.txt",
+				Path:  "/testfile.txt",
 				Flags: fsevents.ItemCreated | fsevents.ItemIsFile,
 			},
 			wantRecord: &models.EventRecord{
 				Filename:    "testfile.txt",
-				Path:        filepath.Join("/", "testfile.txt"),
+				Path:        "/testfile.txt",
 				ObjectType:  models.ItemIsFile,
 				EventID:     1,
 				EventAction: models.ItemCreated,
@@ -33,12 +33,12 @@ func TestBuildEventRecord(t *testing.T) {
 			name: "File removed",
 			fsevent: fsevents.Event{
 				ID:    2,
-				Path:  "testfile.txt",
+				Path:  "/tmp/testfile.txt",
 				Flags: fsevents.ItemRemoved | fsevents.ItemIsFile,
 			},
 			wantRecord: &models.EventRecord{
 				Filename:    "testfile.txt",
-				Path:        filepath.Join("/", "testfile.txt"),
+				Path:        "/tmp/testfile.txt",
 				ObjectType:  models.ItemIsFile,
 				EventID:     2,
 				EventAction: models.ItemDeleted,
@@ -48,12 +48,12 @@ func TestBuildEventRecord(t *testing.T) {
 			name: "Directory created",
 			fsevent: fsevents.Event{
 				ID:    3,
-				Path:  "testdir",
+				Path:  "/Users/testdir",
 				Flags: fsevents.ItemCreated | fsevents.ItemIsDir,
 			},
 			wantRecord: &models.EventRecord{
 				Filename:    "testdir",
-				Path:        filepath.Join("/", "testdir"),
+				Path:        filepath.Join("/Users", "testdir"),
 				ObjectType:  models.ItemIsDir,
 				EventID:     3,
 				EventAction: models.ItemCreated,
@@ -63,12 +63,12 @@ func TestBuildEventRecord(t *testing.T) {
 			name: "Symlink created",
 			fsevent: fsevents.Event{
 				ID:    4,
-				Path:  "testlink",
+				Path:  "/path/to/testlink",
 				Flags: fsevents.ItemCreated | fsevents.ItemIsSymlink,
 			},
 			wantRecord: &models.EventRecord{
 				Filename:    "testlink",
-				Path:        filepath.Join("/", "testlink"),
+				Path:        "/path/to/testlink",
 				ObjectType:  models.ItemIsSymlink,
 				EventID:     4,
 				EventAction: models.ItemCreated,

@@ -8,9 +8,11 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-echo 'Installing executable'
-cp -f /Users/alan/Documents/git/findfiles/cmd/service/findfilesd /usr/local/bin/findfilesd
+echo 'Installing executables'
+cp -f findfilesd /usr/local/bin
 chmod +x /usr/local/bin/findfilesd
+cp -f ff /usr/local/bin
+chmod +x /usr/local/bin/ff
 
 echo 'Creating data directory /var/lib/findfiles'
 mkdir /var/lib/findfiles
@@ -21,6 +23,7 @@ chmod 644 /Library/LaunchDaemons/com.example.findfiles.plist
 chown root:wheel /Library/LaunchDaemons/com.example.findfiles.plist
 
 echo 'Registering and starting service with launchd'
+launchctl bootout   system /Library/LaunchDaemons/com.example.findfiles.plist > /dev/null 2>&1
 launchctl bootstrap system /Library/LaunchDaemons/com.example.findfiles.plist
 launchctl start com.example.findfiles
 
