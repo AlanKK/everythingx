@@ -136,7 +136,7 @@ func main() {
 		log.Fatalf("Failed to retrieve device for path: %v", err)
 	}
 
-	log.Printf("Monitoring path: %s.  Device %d UUID %d", *monitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
+	log.Printf("Monitoring path: %s.  Device %d UUID %d", monitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
 
 	es := &fsevents.EventStream{
 		Paths:   []string{monitorPath},
@@ -146,7 +146,7 @@ func main() {
 	es.Start()
 	ec := es.Events
 
-	log.Println("Device UUID for ", *monitorPath, fsevents.GetDeviceUUID(dev))
+	log.Println("Device UUID for ", monitorPath, fsevents.GetDeviceUUID(dev))
 
 	// TODO: this needs to be fast.  Is it doing too much with the bulk db writes?
 	go func() {
