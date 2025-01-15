@@ -21,3 +21,5 @@ cmd/service/filefind
 cmd/service/findfilesd
 ff
 findfilesd
+data/myscan-md5.txt
+data/md5-go-scan.txt
