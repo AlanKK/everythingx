@@ -13,7 +13,7 @@
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <false/>
+    <true/>
     <key>StandardErrorPath</key>
     <string>/var/log/findfilesd.log</string>
     <key>StandardOutPath</key>
