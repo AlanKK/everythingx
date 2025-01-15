@@ -272,7 +272,7 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 	for _, e := range *eventRecordQueue {
 		if e.EventAction == models.ItemCreated {
 			if fileExists(e.Path) {
-				num_committed++
+				//log.Println("Inserting: ", e.Path)
 				_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
 				if err != nil {
 					if isDuplicate(err) {
@@ -281,6 +281,7 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 						return err
 					}
 				}
+				num_committed++
 			} else {
 				num_missing++
 			}
