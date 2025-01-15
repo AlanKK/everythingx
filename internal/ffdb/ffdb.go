@@ -63,6 +63,23 @@ func OpenDB(pathname string) (*sql.DB, error) {
 	return db, err
 }
 
+// Open read-only for the UI.  Can't use PRAGMAS in read-only mode.
+func OpenDBReadOnly(pathname string) (*sql.DB, error) {
+	// Check if the database file exists
+	if !fileExists(pathname) {
+		return nil, error(os.ErrNotExist)
+	}
+
+	db, err := sql.Open("sqlite3", "file:"+pathname+"?mode=ro")
+	if err != nil {
+		return nil, err
+	}
+
+	prepareStatements(db)
+
+	return db, err
+}
+
 // Creates the necessary tables and indexes in the database.
 func createTablesAndIndexes(db *sql.DB) {
 	_, err := db.Exec("CREATE TABLE IF NOT EXISTS files(filename TEXT NOT NULL, fullpath TEXT NOT NULL UNIQUE, event_id INTEGER, object_type INTEGER)")
@@ -85,12 +102,12 @@ func createTablesAndIndexes(db *sql.DB) {
 func configureDB(db *sql.DB) {
 
 	// These require the db be writable.  The UI uses case sensitive
-	_, err := db.Exec("PRAGMA case_sensitive_like = ON")
-	if err != nil {
-		log.Fatal(err)
-	}
+	// _, err := db.Exec("PRAGMA case_sensitive_like = ON")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 	// Enable WAL mode - multiple readers and writer
-	_, err = db.Exec("PRAGMA journal_mode=WAL;")
+	_, err := db.Exec("PRAGMA journal_mode=WAL;")
 	if err != nil {
 		log.Fatal(err)
 	}
