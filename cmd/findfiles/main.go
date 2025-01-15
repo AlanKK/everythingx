@@ -22,7 +22,7 @@ func main() {
 	}
 
 	fmt.Println("Opening database ", dbFile)
-	_, err := ffdb.OpenDB(dbFile)
+	_, err := ffdb.OpenDBReadOnly(dbFile)
 	if err != nil {
 		fmt.Println("Error opening database: ", dbFile, err)
 		os.Exit(1)
