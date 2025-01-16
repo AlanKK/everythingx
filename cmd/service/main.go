@@ -49,6 +49,8 @@ var noteDescription = map[fsevents.EventFlags]string{
 var delayTime time.Duration = 5 * time.Second
 var dbChannel chan *models.EventRecord
 
+const ignorePath = "/System/Volumes/Data"
+
 func fileExists(filename string) bool {
 	_, err := os.Stat(filename)
 	return !os.IsNotExist(err)
@@ -121,6 +123,10 @@ func main() {
 	go databaseWriter(db)
 
 	// Start the File System Event listener
+	if !fileExists(monitorPath) {
+		log.Fatalf("Monitor path does not exist: %s", monitorPath)
+	}
+
 	dev, err := fsevents.DeviceForPath(monitorPath)
 	if err != nil {
 		log.Fatalf("Failed to retrieve device for path: %v", err)
@@ -138,15 +144,15 @@ func main() {
 	go func() {
 		for msg := range es.Events {
 			for _, event := range msg {
-				if strings.HasPrefix(event.Path, "/System/Volumes/Data") {
+				if strings.HasPrefix(event.Path, ignorePath) {
 					continue
 				}
-				eventRecord := buildEventRecord(event) // TODO: pass event by reference?
+				eventRecord := buildEventRecord(&event)
 				if eventRecord != nil {
 					dbChannel <- eventRecord
 				}
 				if event.Flags&fsevents.MustScanSubDirs == fsevents.MustScanSubDirs {
-					log.Printf("MustScanSubdirs: %s", event.Path)
+					log.Printf("Warning: MustScanSubdirs found for %s", event.Path)
 				}
 			}
 		}
@@ -196,7 +202,7 @@ func setupSignalHandlers(db *sql.DB, es *fsevents.EventStream) {
 	}()
 }
 
-func buildEventRecord(fsevent fsevents.Event) *models.EventRecord {
+func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 	note := ""
 	var objType models.ObjectType
 	var eventAction models.EventAction
@@ -241,7 +247,7 @@ func buildEventRecord(fsevent fsevents.Event) *models.EventRecord {
 		Path:        fsevent.Path,
 		ObjectType:  objType,
 		EventID:     fsevent.ID,
-		EventTime:   time.Now().UnixNano(), // int64
+		EventTime:   time.Now().UnixNano(),
 		EventAction: eventAction,
 	}
 
@@ -319,15 +325,15 @@ func scanDisk() {
 	var objType models.ObjectType = models.ItemIsFile
 
 	filepath.WalkDir("/", func(path string, file fs.DirEntry, err error) error {
-		if strings.HasPrefix(path, "/System/Volumes/Data") {
+		if strings.HasPrefix(path, ignorePath) {
 			return nil
 		}
-		if !file.IsDir() {
-			fileCount++
-			objType = models.ItemIsFile
-		} else {
+		if file.IsDir() {
 			dirCount++
 			objType = models.ItemIsDir
+		} else {
+			fileCount++
+			objType = models.ItemIsFile
 		}
 
 		eventRecord := &models.EventRecord{
