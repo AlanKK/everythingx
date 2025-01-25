@@ -50,14 +50,18 @@ var dbChannel chan *models.EventRecord
 
 const ignorePath = "/System/Volumes/Data"
 
+var verbose bool
+
 func fileExists(filename string) bool {
 	_, err := os.Stat(filename)
 	return !os.IsNotExist(err)
 }
 
-func getCommandLineArgs() (string, string) {
+func getCommandLineArgs() (string, string, bool) {
 	monitorPath := flag.String("monitor_path", "/", "Path to monitor for file system events")
 	dbPath := flag.String("db_path", "/var/lib/findfiles/files.db", "Path to the database file")
+	noCache := flag.Bool("nocache", false, "Disable caching")
+	v := flag.Bool("verbose", false, "Enable verbose logging")
 	flag.Parse()
 
 	if *monitorPath == "" {
@@ -66,7 +70,14 @@ func getCommandLineArgs() (string, string) {
 	if *dbPath == "" {
 		log.Fatal("Database path is required")
 	}
-	return *monitorPath, *dbPath
+	if *noCache {
+		log.Println("--nocache is enabled.")
+	}
+	if *v {
+		log.Println("--verbose logging is enabled.")
+	}
+	verbose = *v
+	return *monitorPath, *dbPath, *noCache
 }
 
 func setupDatabase(databasePath string) *sql.DB {
@@ -105,8 +116,8 @@ func gracefulShutdown(db *sql.DB, es *fsevents.EventStream) {
 }
 
 func main() {
-	log.Println("Starting service.")
-	monitorPath, dbPath := getCommandLineArgs()
+	log.Println("Starting service with PID", os.Getpid())
+	monitorPath, dbPath, noCache := getCommandLineArgs()
 
 	db := setupDatabase(dbPath)
 	if db == nil {
@@ -119,7 +130,7 @@ func main() {
 
 	// Start the database writer thread
 	dbChannel = make(chan *models.EventRecord, 5000)
-	go databaseWriter(db)
+	go databaseWriter(db, noCache)
 
 	// Start the File System Event listener
 	if !fileExists(monitorPath) {
@@ -134,6 +145,7 @@ func main() {
 	log.Printf("Monitoring path: %s.  Device %d UUID %d", monitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
 
 	es := &fsevents.EventStream{
+		Events:  make(chan []fsevents.Event, 10000), // Provide our own channel to buffer events and prevent hangs
 		Paths:   []string{monitorPath},
 		Latency: 5 * time.Second,
 		Device:  0,
@@ -141,9 +153,13 @@ func main() {
 	es.Start()
 
 	go func() {
+		log.Println("Event listener ready.")
 		for msg := range es.Events {
 			for _, event := range msg {
 				if strings.HasPrefix(event.Path, ignorePath) {
+					if verbose {
+						log.Printf("Ignoring path: %s", event.Path)
+					}
 					continue
 				}
 				eventRecord := buildEventRecord(&event)
@@ -224,6 +240,11 @@ func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 		}
 	}
 
+	if verbose {
+		log.Printf("Event: %s created=%d removed=%d renamed=%d note=%s", fsevent.Path, fsevent.Flags&fsevents.ItemCreated, fsevent.Flags&fsevents.ItemRemoved, fsevent.Flags&fsevents.ItemRenamed, note)
+	}
+
+	// TODO: we're not using this stuff anymore.  delete?
 	switch {
 	case fsevent.Flags&fsevents.ItemCreated == fsevents.ItemCreated:
 		eventAction = models.ItemCreated
@@ -232,11 +253,6 @@ func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 	case fsevent.Flags&fsevents.ItemRenamed == fsevents.ItemRenamed:
 		// We can't tell if the path in the event is the "before" or "after" path of
 		// a rename so checking if the path exists will tell us.
-		if fileExists(fsevent.Path) {
-			eventAction = models.ItemCreated
-		} else {
-			eventAction = models.ItemDeleted
-		}
 	default:
 		return nil
 	}
@@ -250,14 +266,21 @@ func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 		EventAction: eventAction,
 	}
 
+	if verbose {
+		log.Printf("Event: %s %s", fsevent.Path, eventAction.String())
+	}
+
 	return eventRecord
 }
 
 // Create an delay before writing to the db.  Apple's File System Events seems
 // to send file create events but the files are quickly deleted or don't exist.
-func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]models.EventRecord, event *models.EventRecord) {
-	const maxQueueSize = 100000 // Set a queue size limit to keep memory usage in check
-	var delayTime time.Duration = 60 * time.Second
+func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]models.EventRecord, event *models.EventRecord, noCache bool) {
+	maxQueueSize := 100000 // Set a queue size limit to keep memory usage in check
+	if noCache {
+		maxQueueSize = 1
+	}
+	var delayTime time.Duration = 5 * time.Second
 
 	*eventRecordQueue = append(*eventRecordQueue, *event)
 
@@ -343,6 +366,7 @@ func scanDisk() {
 			EventID:     0,
 			EventTime:   0,
 			EventAction: models.ItemCreated,
+			FoundOnScan: true,
 		}
 
 		dbChannel <- eventRecord
@@ -353,7 +377,7 @@ func scanDisk() {
 	log.Printf("Scan complete. Files/dirs: %d/%d. Elapsed time: %s", fileCount, dirCount, time.Since(startTime).String())
 }
 
-func databaseWriter(db *sql.DB) {
+func databaseWriter(db *sql.DB, noCache bool) {
 	log.Println("databaseWriter thread started.")
 
 	var lastFlushTime time.Time = time.Now()
@@ -361,7 +385,7 @@ func databaseWriter(db *sql.DB) {
 	log.Printf("Queue %p", &eventRecordQueue)
 
 	for event := range dbChannel {
-		addEventToQueue(db, &lastFlushTime, &eventRecordQueue, event)
+		addEventToQueue(db, &lastFlushTime, &eventRecordQueue, event, noCache)
 	}
 
 	log.Println("databaseWriter thread stopped.")
