@@ -46,7 +46,6 @@ var noteDescription = map[fsevents.EventFlags]string{
 	fsevents.ItemIsSymlink:     "IsSymLink",
 }
 
-var delayTime time.Duration = 5 * time.Second
 var dbChannel chan *models.EventRecord
 
 const ignorePath = "/System/Volumes/Data"
@@ -257,7 +256,8 @@ func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 // Create an delay before writing to the db.  Apple's File System Events seems
 // to send file create events but the files are quickly deleted or don't exist.
 func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]models.EventRecord, event *models.EventRecord) {
-	const maxQueueSize = 100000 // Set a maximum queue size to limit memory usage
+	const maxQueueSize = 100000 // Set a queue size limit to keep memory usage in check
+	var delayTime time.Duration = 60 * time.Second
 
 	*eventRecordQueue = append(*eventRecordQueue, *event)
 
