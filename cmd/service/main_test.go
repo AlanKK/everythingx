@@ -6,6 +6,8 @@ import (
 
 	"github.com/AlanKK/findfiles/internal/models"
 	"github.com/fsnotify/fsevents"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestBuildEventRecord(t *testing.T) {
@@ -78,7 +80,7 @@ func TestBuildEventRecord(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotRecord := buildEventRecord(tt.fsevent)
+			gotRecord := buildEventRecord(&tt.fsevent)
 			// Set EventTime to match since it is generated dynamically
 			tt.wantRecord.EventTime = gotRecord.EventTime
 
@@ -157,10 +159,146 @@ func TestBuildEventRecord(t *testing.T) {
 // 		}
 // 	}
 
-// 	if !foundFile1 {
-// 		t.Fatalf("Expected file1 to be found, but it was not")
+//		if !foundFile1 {
+//			t.Fatalf("Expected file1 to be found, but it was not")
+//		}
+//		if foundFile2 {
+//			t.Fatalf("Expected file2 to be deleted, but it still exists")
+//		}
+//	}
+
+// const (
+// 	dbPath      = "/var/lib/findfiles/files.db"
+// 	rootDir     = "/private/tmp/testdir"
+// 	depth       = 50
+// 	filesPerDir = 1000
+// 	newFileName = "newfile"
+// )
+
+// //var rootDir string = getFullPath("./testdir")
+
+// func TestFileOperations(t *testing.T) {
+// 	//rootDir     = getFullPath("./testdir")
+
+// 	// Open the database
+// 	db, err := sql.Open("sqlite3", dbPath)
+// 	if err != nil {
+// 		t.Fatalf("Failed to open database: %v", err)
 // 	}
-// 	if foundFile2 {
-// 		t.Fatalf("Expected file2 to be deleted, but it still exists")
+// 	defer db.Close()
+
+// 	t.Logf("Running test with root directory: %s", rootDir)
+
+// 	// Stage 1: Create directory hierarchy and populate with files
+// 	createHierarchy(t, rootDir, depth, filesPerDir)
+// 	time.Sleep(65 * time.Second)
+
+// 	// Stage 2: Validate that all of the files and directories are in the database
+// 	validateInDB(t, db, rootDir, depth, filesPerDir)
+
+// 	// Stage 3: Rename each of the files to a new naming scheme
+// 	renameFiles(t, rootDir, depth, filesPerDir)
+// 	time.Sleep(65 * time.Second)
+
+// 	// Stage 4: Validate the database contains the newly named files and old ones are not in the db
+// 	validateRenamedInDB(t, db, rootDir, depth, filesPerDir)
+
+// 	// Stage 5: Delete all files and directories
+// 	deleteHierarchy(t, rootDir, depth, filesPerDir)
+// 	time.Sleep(65 * time.Second)
+
+// 	// Stage 6: Validate that none of the files and directories are in the database
+// 	validateNotInDB(t, db, rootDir, depth, filesPerDir)
+// }
+
+// func createHierarchy(t *testing.T, root string, depth, filesPerDir int) {
+// 	for i := 0; i < depth; i++ {
+// 		dir := filepath.Join(root, fmt.Sprintf("dir%d", i))
+// 		if err := os.MkdirAll(dir, 0755); err != nil {
+// 			t.Fatalf("Failed to create directory: %v", err)
+// 		}
+// 		for j := 0; j < filesPerDir; j++ {
+// 			file := filepath.Join(dir, fmt.Sprintf("file%d.txt", j))
+// 			if _, err := os.Create(file); err != nil {
+// 				t.Fatalf("Failed to create file: %v", err)
+// 			}
+// 		}
 // 	}
+// }
+
+// func validateNotInDB(t *testing.T, db *sql.DB, root string, depth, filesPerDir int) {
+// 	for i := 0; i < depth; i++ {
+// 		dir := filepath.Join(root, fmt.Sprintf("dir%d", i))
+// 		for j := 0; j < filesPerDir; j++ {
+// 			file := filepath.Join(dir, fmt.Sprintf("file%d.txt", j))
+// 			if inDB(t, db, file) {
+// 				t.Logf("File %s should not be in the database", file)
+// 			}
+// 		}
+// 	}
+// }
+
+// func validateInDB(t *testing.T, db *sql.DB, root string, depth, filesPerDir int) {
+// 	for i := 0; i < depth; i++ {
+// 		dir := filepath.Join(root, fmt.Sprintf("dir%d", i))
+// 		for j := 0; j < filesPerDir; j++ {
+// 			file := filepath.Join(dir, fmt.Sprintf("file%d.txt", j))
+// 			if !inDB(t, db, file) {
+// 				t.Logf("File %s should not be in the database", file)
+// 			}
+// 		}
+// 	}
+// }
+
+// func renameFiles(t *testing.T, root string, depth, filesPerDir int) {
+// 	for i := 0; i < depth; i++ {
+// 		dir := filepath.Join(root, fmt.Sprintf("dir%d", i))
+// 		for j := 0; j < filesPerDir; j++ {
+// 			oldFile := filepath.Join(dir, fmt.Sprintf("file%d.txt", j))
+// 			newFile := filepath.Join(dir, fmt.Sprintf("%s%d.txt", newFileName, j))
+// 			if err := os.Rename(oldFile, newFile); err != nil {
+// 				t.Logf("Failed to rename file: %v", err)
+// 			}
+// 		}
+// 	}
+// }
+
+// func validateRenamedInDB(t *testing.T, db *sql.DB, root string, depth, filesPerDir int) {
+// 	for i := 0; i < depth; i++ {
+// 		dir := filepath.Join(root, fmt.Sprintf("dir%d", i))
+// 		for j := 0; j < filesPerDir; j++ {
+// 			oldFile := filepath.Join(dir, fmt.Sprintf("file%d.txt", j))
+// 			newFile := filepath.Join(dir, fmt.Sprintf("%s%d.txt", newFileName, j))
+// 			if inDB(t, db, oldFile) {
+// 				t.Logf("Old file %s should not be in the database", oldFile)
+// 			}
+// 			if !inDB(t, db, newFile) {
+// 				t.Logf("New file %s should be in the database", newFile)
+// 			}
+// 		}
+// 	}
+// }
+
+// func deleteHierarchy(t *testing.T, root string, depth, filesPerDir int) {
+// 	for i := depth - 1; i >= 0; i-- {
+// 		dir := filepath.Join(root, fmt.Sprintf("dir%d", i))
+// 		for j := 0; j < filesPerDir; j++ {
+// 			file := filepath.Join(dir, fmt.Sprintf("%s%d.txt", newFileName, j))
+// 			if err := os.Remove(file); err != nil {
+// 				t.Fatalf("Failed to delete file: %v", err)
+// 			}
+// 		}
+// 		if err := os.Remove(dir); err != nil {
+// 			t.Fatalf("Failed to delete directory: %v", err)
+// 		}
+// 	}
+// }
+
+// func inDB(t *testing.T, db *sql.DB, path string) bool {
+// 	var count int
+// 	err := db.QueryRow("SELECT COUNT(*) FROM files WHERE fullpath = ?", path).Scan(&count)
+// 	if err != nil {
+// 		t.Fatalf("Failed to query database: %v", err)
+// 	}
+// 	return count > 0
 // }
