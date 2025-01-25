@@ -4,6 +4,7 @@
 build:
 	go build -o findfilesd ./cmd/service/main.go
 	go build -o ff ./cmd/findfiles/main.go ./cmd/findfiles/ui.go ./cmd/findfiles/utils.go
+	go build -o e2etest ./e2eTest/main.go
 
 # Run tests
 test:

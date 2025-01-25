@@ -22,4 +22,16 @@ type EventRecord struct {
 	EventID     uint64
 	EventTime   int64
 	EventAction EventAction
+	FoundOnScan bool
+}
+
+func (e EventAction) String() string {
+	switch e {
+	case ItemCreated:
+		return "ItemCreated"
+	case ItemDeleted:
+		return "ItemDeleted"
+	default:
+		return "Unknown"
+	}
 }

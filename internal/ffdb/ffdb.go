@@ -260,6 +260,10 @@ func CommitRecords(db *sql.DB) error {
 
 // Stores a batch of events in the database.
 func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
+	if len(*eventRecordQueue) == 0 {
+		log.Println("No events to store")
+		return nil
+	}
 	bulkTime := time.Now()
 
 	tx, err := db.Begin()
@@ -270,31 +274,53 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 	var num_committed, num_missing, num_duplicate, num_deleted int
 
 	for _, e := range *eventRecordQueue {
-		if e.EventAction == models.ItemCreated {
-			if fileExists(e.Path) {
-				//log.Println("Inserting: ", e.Path)
-				_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
-				if err != nil {
-					if isDuplicate(err) {
-						num_duplicate++
-					} else {
-						return err
-					}
+		if e.FoundOnScan || fileExists(e.Path) {
+			//log.Println("DB create: ", e.Path)
+			_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
+			if err != nil {
+				if isDuplicate(err) {
+					num_duplicate++
+				} else {
+					return err
 				}
-				num_committed++
-			} else {
-				num_missing++
 			}
-		} else if e.EventAction == models.ItemDeleted {
+			num_committed++
+		} else {
+			//log.Println("DB delete: ", e.Path)
 			_, err = deleteStmt.Exec(e.Path)
 			if err != nil {
 				return err
 			}
 			num_deleted++
-		} else {
-			log.Fatal("Unknown event action: ", e.EventAction)
 		}
 	}
+
+	// }
+	// for _, e := range *eventRecordQueue {
+	// 	if e.EventAction == models.ItemCreated {
+	// 		if fileExists(e.Path) {
+	// 			_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
+	// 			if err != nil {
+	// 				if isDuplicate(err) {
+	// 					num_duplicate++
+	// 				} else {
+	// 					return err
+	// 				}
+	// 			}
+	// 			num_committed++
+	// 		} else {
+	// 			num_missing++
+	// 		}
+	// 	} else if e.EventAction == models.ItemDeleted {
+	// 		_, err = deleteStmt.Exec(e.Path)
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 		num_deleted++
+	// 	} else {
+	// 		log.Fatal("Unknown event action: ", e.EventAction)
+	// 	}
+	// }
 
 	commitTime := time.Now()
 
@@ -302,6 +328,8 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 	if err != nil {
 		return err
 	}
+	commitTimeEnd := time.Since(commitTime).Round(time.Microsecond).String()
+	bulkTimeEnd := time.Since(bulkTime).Round(time.Microsecond).String()
 
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
@@ -312,8 +340,8 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 		num_committed-num_duplicate,
 		num_missing,
 		num_duplicate,
-		time.Since(bulkTime).Round(time.Microsecond).String(),
-		time.Since(commitTime).Round(time.Microsecond).String(),
+		bulkTimeEnd,
+		commitTimeEnd,
 		eventRecordQueue,
 		cap(*eventRecordQueue),
 		bToMb(m.Sys),
