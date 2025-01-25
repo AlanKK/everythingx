@@ -581,3 +581,89 @@ func TestRecordCount(t *testing.T) {
 		t.Fatalf("Expected 10 records, got %d", count)
 	}
 }
+
+// Verify order given to BulkStoreEvents is maintainded in DB for creates/deletes
+func TestBulkStoreOrdering(t *testing.T) {
+	testDBPath := "test.db"
+	os.Remove(testDBPath)
+
+	db, err := CreateDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+
+	numItems := 1000
+	events := []models.EventRecord{}
+	for i := 1; i <= numItems; i++ {
+		events = append(events, models.EventRecord{
+			Filename:    fmt.Sprintf("testfile%d.txt", i),
+			Path:        fmt.Sprintf("/tmp/testfile%d.txt", i),
+			EventID:     uint64(i),
+			ObjectType:  0,
+			EventAction: models.ItemCreated,
+		})
+	}
+
+	for i := 1; i <= numItems; i++ {
+		events = append(events, models.EventRecord{
+			Filename:    fmt.Sprintf("testfile%d.txt", i),
+			Path:        fmt.Sprintf("/tmp/testfile%d.txt", i),
+			EventID:     uint64(i),
+			ObjectType:  0,
+			EventAction: models.ItemDeleted,
+		})
+	}
+
+	// Insert all and make sure we have three in the db
+	err = BulkStoreEvents(db, &events)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	row := db.QueryRow("SELECT COUNT(*) FROM files")
+	var count int
+	err = row.Scan(&count)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("Expected 0 records, got %d", count)
+	}
+
+	// Part 2, interleave the events
+	events = events[:0]
+
+	for i := 1; i <= numItems; i++ {
+		events = append(events, models.EventRecord{
+			Filename:    fmt.Sprintf("testfile%d.txt", i),
+			Path:        fmt.Sprintf("/tmp/testfile%d.txt", i),
+			EventID:     uint64(i),
+			ObjectType:  0,
+			EventAction: models.ItemCreated,
+		})
+		events = append(events, models.EventRecord{
+			Filename:    fmt.Sprintf("testfile%d.txt", i),
+			Path:        fmt.Sprintf("/tmp/testfile%d.txt", i),
+			EventID:     uint64(i),
+			ObjectType:  0,
+			EventAction: models.ItemDeleted,
+		})
+	}
+	// Insert all and make sure we have three in the db
+	err = BulkStoreEvents(db, &events)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	row = db.QueryRow("SELECT COUNT(*) FROM files")
+
+	err = row.Scan(&count)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("Expected 0 records, got %d", count)
+	}
+}
