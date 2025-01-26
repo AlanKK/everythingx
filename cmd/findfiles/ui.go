@@ -116,16 +116,17 @@ func makeTable() *widget.Table {
 		// UpdateCell()
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
 			label := cell.(*ttwidget.Label)
+			fynetooltip.SetToolTipTextStyle(fyne.TextStyle{Monospace: true})
 
-			tt := getToolTipForFile((*tableData)[id.Row].Path)
+			toolTipText := getToolTipForFile((*tableData)[id.Row].Path)
 
 			switch id.Col {
 			case 0:
 				label.SetText((*tableData)[id.Row].Name)
-				label.SetToolTip(tt)
+				label.SetToolTip(toolTipText)
 			case 1:
 				label.SetText((*tableData)[id.Row].Path)
-				label.SetToolTip(tt)
+				label.SetToolTip(toolTipText)
 			case 2:
 				label.SetText((*tableData)[id.Row].Other)
 			}
@@ -165,12 +166,12 @@ func makeTable() *widget.Table {
 }
 
 func getToolTipForFile(path string) string {
-	size, lastModified, err := getFileInfo(path)
+	lsFormat, err := getFileInfo(path)
 	if err != nil {
 		return "No access"
 	}
 
-	return fmt.Sprintf("**Size:** %d bytes\n**Modified** %s", size, lastModified)
+	return fmt.Sprintf("%s\n", lsFormat)
 }
 
 func loadUI() {
@@ -188,6 +189,8 @@ func loadUI() {
 	entry.OnChanged = func(s string) {
 		handleAutoCompleteEntryChanged(entry, table, statusBar)
 	}
+	w.SetContent(container.NewVBox(entry))
+	w.Canvas().Focus(entry)
 
 	statusBar = widget.NewLabel("0 objects")
 
