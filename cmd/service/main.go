@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+
+	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
@@ -107,6 +109,8 @@ func setupDatabase(databasePath string) *sql.DB {
 }
 
 func gracefulShutdown(db *sql.DB, es *fsevents.EventStream) {
+	pprof.StopCPUProfile()
+
 	es.Stop()
 
 	if err := db.Close(); err != nil {
@@ -141,6 +145,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to retrieve device for path: %v", err)
 	}
+
+	// Start profiling
+	f, err := os.Create("/var/lib/findfiles/findfilesd.prof")
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	pprof.StartCPUProfile(f)
 
 	log.Printf("Monitoring path: %s.  Device %d UUID %d", monitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
 
@@ -220,7 +232,6 @@ func setupSignalHandlers(db *sql.DB, es *fsevents.EventStream) {
 func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 	note := ""
 	var objType models.ObjectType
-	var eventAction models.EventAction
 
 	isFile := fsevent.Flags&fsevents.ItemIsFile == fsevents.ItemIsFile
 	isDir := fsevent.Flags&fsevents.ItemIsDir == fsevents.ItemIsDir
@@ -244,30 +255,16 @@ func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 		log.Printf("Event: %s created=%d removed=%d renamed=%d note=%s", fsevent.Path, fsevent.Flags&fsevents.ItemCreated, fsevent.Flags&fsevents.ItemRemoved, fsevent.Flags&fsevents.ItemRenamed, note)
 	}
 
-	// TODO: we're not using this stuff anymore.  delete?
-	switch {
-	case fsevent.Flags&fsevents.ItemCreated == fsevents.ItemCreated:
-		eventAction = models.ItemCreated
-	case fsevent.Flags&fsevents.ItemRemoved == fsevents.ItemRemoved:
-		eventAction = models.ItemDeleted
-	case fsevent.Flags&fsevents.ItemRenamed == fsevents.ItemRenamed:
-		// We can't tell if the path in the event is the "before" or "after" path of
-		// a rename so checking if the path exists will tell us.
-	default:
-		return nil
-	}
-
 	eventRecord := &models.EventRecord{
-		Filename:    filepath.Base(fsevent.Path),
-		Path:        fsevent.Path,
-		ObjectType:  objType,
-		EventID:     fsevent.ID,
-		EventTime:   time.Now().UnixNano(),
-		EventAction: eventAction,
+		Filename:   filepath.Base(fsevent.Path),
+		Path:       fsevent.Path,
+		ObjectType: objType,
+		EventID:    fsevent.ID,
+		EventTime:  time.Now().UnixNano(),
 	}
 
 	if verbose {
-		log.Printf("Event: %s %s", fsevent.Path, eventAction.String())
+		log.Printf("Event: %s", fsevent.Path)
 	}
 
 	return eventRecord
@@ -316,12 +313,11 @@ func deleteMissing(db *sql.DB) {
 
 		if !fileExists(fullpath) {
 			eventRecord := &models.EventRecord{
-				Filename:    "",
-				Path:        fullpath,
-				ObjectType:  0,
-				EventID:     0,
-				EventTime:   0,
-				EventAction: models.ItemDeleted,
+				Filename:   "",
+				Path:       fullpath,
+				ObjectType: 0,
+				EventID:    0,
+				EventTime:  0,
 			}
 
 			dbChannel <- eventRecord
@@ -365,7 +361,6 @@ func scanDisk() {
 			ObjectType:  objType,
 			EventID:     0,
 			EventTime:   0,
-			EventAction: models.ItemCreated,
 			FoundOnScan: true,
 		}
 
