@@ -21,7 +21,6 @@ type EventRecord struct {
 	ObjectType  ObjectType
 	EventID     uint64
 	EventTime   int64
-	EventAction EventAction
 	FoundOnScan bool
 }
 
