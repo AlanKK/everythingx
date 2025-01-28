@@ -29,7 +29,7 @@ func main() {
 	rootDir := filepath.Join(currentDir, "findfiles_test", randomString(10))
 	testDirs := filepath.Join(rootDir, "testdirs")
 	dbPath := filepath.Join(rootDir, "files.db")
-	findfilesd := filepath.Join(currentDir, "../", "findfilesd")
+	findfilesd := "./findfilesd"
 
 	if err := os.MkdirAll(testDirs, 0755); err != nil {
 		log.Printf("failed to create directory: %s. %v", rootDir, err)
@@ -62,12 +62,13 @@ func main() {
 
 	iterations := 5
 	for i := 1; i <= iterations; i++ {
+		// Having too many FilesPerDir too quickly can cause the Apple's FSE to hang
 		params := &Params{
 			RootDir:     rootDir,
 			TestDirs:    testDirs,
 			DirPrefix:   filepath.Join(testDirs, fmt.Sprintf("dir_%d", i)),
 			Depth:       5,
-			FilesPerDir: 500,
+			FilesPerDir: 100,
 		}
 
 		log.Printf("==========  Running iteration %d/%d  ==========", i, iterations)
