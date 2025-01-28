@@ -17,7 +17,7 @@ func getFileInfo(path string) (string, error) {
 	size := fileInfo.Size()
 	lastModified := fileInfo.ModTime()
 
-	// Get file mode and format it like "ls -al"
+	// Get file mode and format it like "ls -alH"
 	mode := fileInfo.Mode().String()
 	stat := fileInfo.Sys().(*syscall.Stat_t)
 	owner := fmt.Sprintf("%d", stat.Uid)
@@ -29,7 +29,6 @@ func getFileInfo(path string) (string, error) {
 		group = grp.Name
 	}
 
-	// Format size like ls -alH
 	formattedSize := fmt.Sprintf("%.1fK", float64(size)/1024)
 	if size >= 1024*1024 {
 		formattedSize = fmt.Sprintf("%.1fM", float64(size)/(1024*1024))
@@ -47,8 +46,9 @@ func getFileInfo(path string) (string, error) {
 func printMemUsage() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	fmt.Printf("Alloc = %v MB", bToMb(m.Alloc))
+	// fmt.Printf("Alloc = %v MB", bToMb(m.Alloc))
 }
+
 func bToMb(b uint64) uint64 {
 	return b / 1024 / 1024
 }

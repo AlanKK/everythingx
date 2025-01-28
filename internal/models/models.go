@@ -8,6 +8,11 @@ const (
 	ItemIsSymlink
 )
 
+type SearchResult struct {
+	Fullpath   string
+	ObjectType ObjectType
+}
+
 type EventAction int
 
 const (
