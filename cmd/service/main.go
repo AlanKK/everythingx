@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"path/filepath"
 
-	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
@@ -109,8 +108,6 @@ func setupDatabase(databasePath string) *sql.DB {
 }
 
 func gracefulShutdown(db *sql.DB, es *fsevents.EventStream) {
-	pprof.StopCPUProfile()
-
 	es.Stop()
 
 	if err := db.Close(); err != nil {
@@ -145,14 +142,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to retrieve device for path: %v", err)
 	}
-
-	// Start profiling
-	f, err := os.Create("/var/lib/findfiles/findfilesd.prof")
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	pprof.StartCPUProfile(f)
 
 	log.Printf("Monitoring path: %s.  Device %d UUID %d", monitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
 
@@ -230,7 +219,6 @@ func setupSignalHandlers(db *sql.DB, es *fsevents.EventStream) {
 }
 
 func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
-	note := ""
 	var objType models.ObjectType
 
 	isFile := fsevent.Flags&fsevents.ItemIsFile == fsevents.ItemIsFile
@@ -245,13 +233,13 @@ func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 		objType = models.ItemIsSymlink
 	}
 
-	for bit, description := range noteDescription {
-		if fsevent.Flags&bit == bit {
-			note += description + " "
-		}
-	}
-
 	if verbose {
+		note := ""
+		for bit, description := range noteDescription {
+			if fsevent.Flags&bit == bit {
+				note += description + " "
+			}
+		}
 		log.Printf("Event: %s created=%d removed=%d renamed=%d note=%s", fsevent.Path, fsevent.Flags&fsevents.ItemCreated, fsevent.Flags&fsevents.ItemRemoved, fsevent.Flags&fsevents.ItemRenamed, note)
 	}
 
@@ -261,10 +249,6 @@ func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 		ObjectType: objType,
 		EventID:    fsevent.ID,
 		EventTime:  time.Now().UnixNano(),
-	}
-
-	if verbose {
-		log.Printf("Event: %s", fsevent.Path)
 	}
 
 	return eventRecord

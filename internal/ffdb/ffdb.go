@@ -101,11 +101,12 @@ func createTablesAndIndexes(db *sql.DB) {
 // Configures the database with necessary settings.
 func configureDB(db *sql.DB) {
 
-	// These require the db be writable.  The UI uses case sensitive
+	// For the UI to use case sensitive search.
 	// _, err := db.Exec("PRAGMA case_sensitive_like = ON")
 	// if err != nil {
 	// 	log.Fatal(err)
 	// }
+
 	// Enable WAL mode - multiple readers and writer
 	_, err := db.Exec("PRAGMA journal_mode=WAL;")
 	if err != nil {
@@ -124,7 +125,7 @@ func configureDB(db *sql.DB) {
 func prepareStatements(db *sql.DB) {
 	var err error
 
-	prefixSearchStmt, err = db.Prepare("SELECT filename, fullpath FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
+	prefixSearchStmt, err = db.Prepare("SELECT fullpath, object_type FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -141,8 +142,8 @@ func prepareStatements(db *sql.DB) {
 }
 
 // Performs a search for filenames starting with the given prefix and returns a limited number of results.
-func PrefixSearch(prefix string, limit ...int) ([]string, error) {
-	var results []string
+func PrefixSearch(prefix string, limit ...int) ([]*models.SearchResult, error) {
+	var results []*models.SearchResult
 
 	resultLimit := 200
 	if len(limit) > 0 {
@@ -156,13 +157,15 @@ func PrefixSearch(prefix string, limit ...int) ([]string, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var filename, fullpath string
-		err := rows.Scan(&filename, &fullpath)
+		result := &models.SearchResult{
+			Fullpath:   "",
+			ObjectType: 0,
+		}
+		err := rows.Scan(&result.Fullpath, &result.ObjectType)
 		if err != nil {
 			return nil, err
 		}
-
-		results = append(results, fullpath)
+		results = append(results, result)
 	}
 
 	return results, nil
@@ -275,7 +278,6 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 
 	for _, e := range *eventRecordQueue {
 		if e.FoundOnScan || fileExists(e.Path) {
-			//log.Println("DB create: ", e.Path)
 			_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
 			if err != nil {
 				if isDuplicate(err) {
@@ -286,7 +288,6 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 			}
 			num_committed++
 		} else {
-			//log.Println("DB delete: ", e.Path)
 			_, err = deleteStmt.Exec(e.Path)
 			if err != nil {
 				return err
@@ -295,39 +296,13 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 		}
 	}
 
-	// }
-	// for _, e := range *eventRecordQueue {
-	// 	if e.EventAction == models.ItemCreated {
-	// 		if fileExists(e.Path) {
-	// 			_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
-	// 			if err != nil {
-	// 				if isDuplicate(err) {
-	// 					num_duplicate++
-	// 				} else {
-	// 					return err
-	// 				}
-	// 			}
-	// 			num_committed++
-	// 		} else {
-	// 			num_missing++
-	// 		}
-	// 	} else if e.EventAction == models.ItemDeleted {
-	// 		_, err = deleteStmt.Exec(e.Path)
-	// 		if err != nil {
-	// 			return err
-	// 		}
-	// 		num_deleted++
-	// 	} else {
-	// 		log.Fatal("Unknown event action: ", e.EventAction)
-	// 	}
-	// }
-
 	commitTime := time.Now()
 
 	err = tx.Commit()
 	if err != nil {
 		return err
 	}
+
 	commitTimeEnd := time.Since(commitTime).Round(time.Microsecond).String()
 	bulkTimeEnd := time.Since(bulkTime).Round(time.Microsecond).String()
 
