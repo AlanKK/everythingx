@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/AlanKK/findfiles/internal/ffdb"
@@ -52,23 +53,28 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 
 	// Preallocate the TableData slice
 	*tableData = make([]RowData, 0, len(results))
-	var fullpath string
+	var fullpath, filename, size, modified string
 
 	if len(results) > 0 {
 		for _, r := range results {
 			if r.ObjectType == models.ItemIsDir {
+				filename = ""
 				fullpath = r.Fullpath + "/"
+				size = ""
+				modified = ""
 			} else {
-				fullpath = r.Fullpath
+				filename = filepath.Base(r.Fullpath)
+				fullpath = filepath.Dir(r.Fullpath) + "/"
+				size, modified = getFileSizeMod(fullpath)
 			}
 			*tableData = append(*tableData, RowData{
-				Name:  "",
-				Path:  fullpath,
-				Other: "",
+				Name:     filename,
+				Path:     fullpath,
+				Size:     size,
+				Modified: modified,
 			})
 		}
 	}
-
 	t.Refresh()
 
 	var resultText string
@@ -92,9 +98,10 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 }
 
 type RowData struct {
-	Name  string
-	Path  string
-	Other string
+	Name     string
+	Path     string
+	Size     string
+	Modified string
 }
 
 // tableData holds the search results to be displayed in the table. Must be always
@@ -107,7 +114,7 @@ func makeTable() *widget.Table {
 
 	t := widget.NewTableWithHeaders(
 		// Length()
-		func() (int, int) { return len(*tableData), 3 },
+		func() (int, int) { return len(*tableData), 4 },
 		// CreateCell()
 		func() fyne.CanvasObject {
 			l := ttwidget.NewLabel("Template")
@@ -118,8 +125,8 @@ func makeTable() *widget.Table {
 		// UpdateCell()
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
 			label := cell.(*ttwidget.Label)
-			fynetooltip.SetToolTipTextStyle(fyne.TextStyle{Monospace: true})
 
+			fynetooltip.SetToolTipTextStyle(fyne.TextStyle{Monospace: true})
 			toolTipText := getToolTipForFile((*tableData)[id.Row].Path)
 
 			switch id.Col {
@@ -130,7 +137,10 @@ func makeTable() *widget.Table {
 				label.SetText((*tableData)[id.Row].Path)
 				label.SetToolTip(toolTipText)
 			case 2:
-				label.SetText((*tableData)[id.Row].Other)
+				label.SetText((*tableData)[id.Row].Size)
+				label.Alignment = fyne.TextAlignTrailing
+			case 3:
+				label.SetText((*tableData)[id.Row].Modified)
 			}
 		},
 	)
@@ -138,12 +148,13 @@ func makeTable() *widget.Table {
 		if id.Row == 0 {
 			return
 		}
-		handleOpenFile((*tableData)[id.Row].Path)
+		handleOpenFile((*tableData)[id.Row].Path + (*tableData)[id.Row].Name)
 	}
 
-	t.SetColumnWidth(0, 200) // ID column
-	t.SetColumnWidth(1, 800) // Name column
-	t.SetColumnWidth(2, 300) // Description column
+	t.SetColumnWidth(0, 400) // Name
+	t.SetColumnWidth(1, 600) // Path
+	t.SetColumnWidth(2, 70)  // Size
+	t.SetColumnWidth(3, 190) // Last modified
 
 	// Define custom headers
 	t.CreateHeader = func() fyne.CanvasObject {
@@ -160,7 +171,9 @@ func makeTable() *widget.Table {
 			case 1:
 				label.SetText("Path")
 			case 2:
-				label.SetText("Other")
+				label.SetText("Size")
+			case 3:
+				label.SetText("Last Modified")
 			}
 		}
 	}

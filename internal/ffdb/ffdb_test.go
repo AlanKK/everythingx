@@ -3,6 +3,7 @@ package ffdb
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/AlanKK/findfiles/internal/models"
@@ -63,7 +64,11 @@ func TestGetRecord(t *testing.T) {
 
 	// Insert test data
 	for i := 1; i < 100; i++ {
-		_, err = db.Exec("INSERT INTO files (filename, fullpath) VALUES (?, ?)", fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i))
+		result := models.SearchResult{
+			Fullpath:   fmt.Sprintf("/path/to/testfile%02d.txt", i),
+			ObjectType: models.ItemIsFile,
+		}
+		_, err = db.Exec("INSERT INTO files (filename, fullpath, object_type) VALUES (?, ?, ?)", filepath.Base(result.Fullpath), result.Fullpath, result.ObjectType)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -76,14 +81,20 @@ func TestGetRecord(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	expectedResults := []string{"/path/to/testfile01.txt", "/path/to/testfile02.txt", "/path/to/testfile03.txt", "/path/to/testfile04.txt", "/path/to/testfile05.txt"}
+	expectedResults := []models.SearchResult{
+		{Fullpath: "/path/to/testfile01.txt", ObjectType: models.ItemIsFile},
+		{Fullpath: "/path/to/testfile02.txt", ObjectType: models.ItemIsFile},
+		{Fullpath: "/path/to/testfile03.txt", ObjectType: models.ItemIsFile},
+		{Fullpath: "/path/to/testfile04.txt", ObjectType: models.ItemIsFile},
+		{Fullpath: "/path/to/testfile05.txt", ObjectType: models.ItemIsFile},
+	}
 	if len(results) != len(expectedResults) {
 		t.Fatalf("Expected %d results, got %d", len(expectedResults), len(results))
 	}
 
 	for i, result := range results {
-		if result != expectedResults[i] {
-			t.Fatalf("Expected result %s, got %s", expectedResults[i], result)
+		if result.Fullpath != expectedResults[i].Fullpath || result.ObjectType != expectedResults[i].ObjectType {
+			t.Fatalf("Expected result %s/%d, got %s/%d", expectedResults[i].Fullpath, expectedResults[i].ObjectType, result.Fullpath, result.ObjectType)
 		}
 	}
 }

@@ -43,6 +43,29 @@ func getFileInfo(path string) (string, error) {
 	return lsFormat, nil
 }
 
+func getFileSizeMod(path string) (string, string) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return "", ""
+	}
+
+	size := fileInfo.Size()
+	lastModified := fileInfo.ModTime()
+
+	formattedSize := fmt.Sprintf("%.1fK", float64(size)/1024)
+	if size >= 1024*1024 {
+		formattedSize = fmt.Sprintf("%.1fM", float64(size)/(1024*1024))
+	}
+	if size >= 1024*1024*1024 {
+		formattedSize = fmt.Sprintf("%.1fG", float64(size)/(1024*1024*1024))
+	}
+	if size >= 1024*1024*1024*1024 {
+		formattedSize = fmt.Sprintf("%.1fT", float64(size)/(1024*1024*1024*1024))
+	}
+
+	return formattedSize, lastModified.Format("Jan 2 2006 15:04")
+}
+
 func printMemUsage() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
