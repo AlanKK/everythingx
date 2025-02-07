@@ -87,7 +87,7 @@ func createTablesAndIndexes(db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.Exec("CREATE INDEX idx_filename ON files(filename COLLATE BINARY)")
+	_, err = db.Exec("CREATE INDEX idx_filename_fullpath ON files(filename, fullpath COLLATE BINARY)")
 	if err != nil {
 		log.Fatal(err)
 	}
