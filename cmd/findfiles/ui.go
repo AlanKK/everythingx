@@ -49,31 +49,33 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 		fmt.Println("Error:", err)
 		return
 	}
+	if len(results) == 0 {
+		return
+	}
+
 	searchElapsed := time.Since(searchStart)
 
 	// Preallocate the TableData slice
 	*tableData = make([]RowData, 0, len(results))
-	var fullpath, filename, size, modified string
+	var fullpath, dir, base, size, modified string
 
-	if len(results) > 0 {
-		for _, r := range results {
-			if r.ObjectType == models.ItemIsDir {
-				filename = ""
-				fullpath = r.Fullpath + "/"
-				size = ""
-				modified = ""
-			} else {
-				filename = filepath.Base(r.Fullpath)
-				fullpath = filepath.Dir(r.Fullpath) + "/"
-				size, modified = getFileSizeMod(fullpath)
-			}
-			*tableData = append(*tableData, RowData{
-				Name:     filename,
-				Path:     fullpath,
-				Size:     size,
-				Modified: modified,
-			})
+	for _, r := range results {
+		base = filepath.Base(r.Fullpath)
+		dir = filepath.Dir(r.Fullpath) + "/"
+		size, modified = getFileSizeMod(r.Fullpath)
+
+		if r.ObjectType == models.ItemIsDir {
+			base += "/"
+			fullpath += "/"
+			size = "--"
 		}
+		*tableData = append(*tableData, RowData{
+			Name:         base,
+			Path:         dir,
+			Size:         size,
+			Modified:     modified,
+			SearchResult: r,
+		})
 	}
 	t.Refresh()
 
@@ -98,10 +100,11 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 }
 
 type RowData struct {
-	Name     string
-	Path     string
-	Size     string
-	Modified string
+	Name         string
+	Path         string
+	Size         string
+	Modified     string
+	SearchResult *models.SearchResult
 }
 
 // tableData holds the search results to be displayed in the table. Must be always
@@ -127,20 +130,23 @@ func makeTable() *widget.Table {
 			label := cell.(*ttwidget.Label)
 
 			fynetooltip.SetToolTipTextStyle(fyne.TextStyle{Monospace: true})
-			toolTipText := getToolTipForFile((*tableData)[id.Row].Path)
+			toolTipText := getToolTipForFile((*tableData)[id.Row].SearchResult.Fullpath)
 
 			switch id.Col {
 			case 0:
 				label.SetText((*tableData)[id.Row].Name)
 				label.SetToolTip(toolTipText)
+				label.Alignment = fyne.TextAlignLeading
 			case 1:
 				label.SetText((*tableData)[id.Row].Path)
 				label.SetToolTip(toolTipText)
+				label.Alignment = fyne.TextAlignLeading
 			case 2:
 				label.SetText((*tableData)[id.Row].Size)
 				label.Alignment = fyne.TextAlignTrailing
 			case 3:
 				label.SetText((*tableData)[id.Row].Modified)
+				label.Alignment = fyne.TextAlignLeading
 			}
 		},
 	)
@@ -186,7 +192,7 @@ func getToolTipForFile(path string) string {
 		return "No access"
 	}
 
-	return fmt.Sprintf("%s\n", lsFormat)
+	return fmt.Sprintf("%s\n\n%s\n", path, lsFormat)
 }
 
 func loadUI() {
