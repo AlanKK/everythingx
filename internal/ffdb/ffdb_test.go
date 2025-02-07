@@ -30,14 +30,14 @@ func TestCreateDB(t *testing.T) {
 	}
 
 	// Check if the filename index exists
-	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_filename'")
+	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_filename_fullpath'")
 	var indexName string
 	err = row.Scan(&indexName)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if indexName != "idx_filename" {
-		t.Fatalf("Expected index name to be 'idx_filename', got %s", indexName)
+	if indexName != "idx_filename_fullpath" {
+		t.Fatalf("Expected index name to be 'idx_filename_fullpath', got %s", indexName)
 	}
 
 	// Check if the fullpath index exists
