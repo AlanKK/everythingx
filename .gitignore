@@ -25,3 +25,9 @@ data/myscan-md5.txt
 data/md5-go-scan.txt
 e2eTest/findfiles_test
 tools/monitor-resource-usage/findfilesd_usage.log
+tools/benchmark-db/benchmark-db
+tools/benchmark-db/benchmark.db
+tools/benchmark-db/files.db.gz
+tools/benchmark-db/benchmark.db-wal
+tools/benchmark-db/benchmark.db-shm
+tools/benchmark-db/benchmark_results.csv
