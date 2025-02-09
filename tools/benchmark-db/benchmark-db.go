@@ -3,11 +3,13 @@ package main
 import (
 	"compress/gzip"
 	"database/sql"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"math"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/AlanKK/findfiles/internal/ffdb"
@@ -18,20 +20,25 @@ import (
 const (
 	sourceDBPath     = "./files.db.gz"
 	targetDBPath     = "benchmark.db"
-	numSearches      = 1000
 	maxSearchResults = 5000
 )
 
-var searchPrefixes = []string{"a", "al", "ala", "alan"}
+var (
+	searchPrefixes = []string{"a", "al", "ala", "alan"}
+	numSearches    int
+	noDB           bool
+)
+
+func init() {
+	flag.IntVar(&numSearches, "n", 100, "number of searches to perform")
+	flag.BoolVar(&noDB, "no-db", false, "skip database setup")
+}
 
 func main() {
+	flag.Parse()
+
 	var targetDB *sql.DB
 	var err error
-
-	noDB := false
-	if len(os.Args) > 1 && os.Args[1] == "--no-db" {
-		noDB = true
-	}
 
 	if !noDB {
 		os.Remove(targetDBPath)
@@ -48,31 +55,22 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to open source database: %v", err)
 		}
-		defer sourceDB.Close()
+		//defer sourceDB.Close()
 
 		// Create the target database
 		targetDB, err := ffdb.CreateDB(targetDBPath)
 		if err != nil {
-			if err == os.ErrExist {
-				targetDB, err = ffdb.OpenDB(targetDBPath)
-				if err != nil {
-					log.Fatalf("Failed to open existing target database: %v", err)
-				}
-			} else {
-				log.Fatalf("Failed to create target database: %v", err)
-			}
+			log.Fatalf("Failed to create target database: %v", err)
 		}
 		// Copy data from the source database to the target database
 		copyData(sourceDB, targetDB)
-
-		sourceDB.Close()
 	} else {
 		targetDB, err = ffdb.OpenDB(targetDBPath)
 		if err != nil {
 			log.Fatalf("Failed to open target database: %v", err)
 		}
 	}
-	defer targetDB.Close()
+	//defer targetDB.Close()
 
 	benchmarkPrefixSearch()
 }
@@ -170,6 +168,7 @@ func benchmarkPrefixSearch() {
 	logger := log.New(logFile, "", log.LstdFlags)
 
 	var times = make(map[string][]time.Duration)
+	var allTimes []time.Duration
 	for _, prefix := range searchPrefixes {
 		times[prefix] = []time.Duration{}
 	}
@@ -187,7 +186,9 @@ func benchmarkPrefixSearch() {
 			if len(results) == 0 {
 				log.Printf("No results found for prefix '%s'", prefix)
 			}
-			times[prefix] = append(times[prefix], time.Since(searchStart))
+			duration := time.Since(searchStart)
+			times[prefix] = append(times[prefix], duration)
+			allTimes = append(allTimes, duration)
 		}
 		totalSearches += len(searchPrefixes)
 	}
@@ -196,7 +197,7 @@ func benchmarkPrefixSearch() {
 	for _, prefix := range searchPrefixes {
 		// Calculate statistics
 		var total, min, max time.Duration
-		min = times[prefix][0]
+		min = time.Duration(math.MaxInt64)
 		for _, t := range times[prefix] {
 			total += t
 			if t < min {
@@ -212,14 +213,53 @@ func benchmarkPrefixSearch() {
 			diff := t - average
 			sumSquares += diff * diff
 		}
-		stdDev := time.Duration(math.Sqrt(float64(sumSquares / time.Duration(numSearches))))
+		//stdDev := time.Duration(math.Sqrt(float64(sumSquares) / float64(numSearches)))
+
+		// Calculate median
+		sortedTimes := times[prefix]
+		sort.Slice(sortedTimes, func(i, j int) bool { return sortedTimes[i] < sortedTimes[j] })
+		//median := sortedTimes[numSearches/2]
+		// if numSearches%2 == 0 {
+		// 	median = (sortedTimes[numSearches/2-1] + sortedTimes[numSearches/2]) / 2
+		// }
 
 		// Log results in CSV format
-		logger.Printf(",%s,%d,%d,%d,%d\n", prefix, min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), stdDev.Milliseconds())
-		fmt.Printf("%s,%d,%d,%d,%d\n", prefix, min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), stdDev.Milliseconds())
+		//logger.Printf(",%s,%d,%d,%d,%d,%d,%d iterations\n", prefix, min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), median.Milliseconds(), stdDev.Milliseconds(), numSearches)
+		//fmt.Printf("%s,%d,%d,%d,%d,%d,%d iterations\n", prefix, min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), median.Milliseconds(), stdDev.Milliseconds(), numSearches)
 	}
 
+	// Calculate overall statistics
+	var total, min, max time.Duration
+	min = time.Duration(math.MaxInt64)
+	for _, t := range allTimes {
+		total += t
+		if t < min {
+			min = t
+		}
+		if t > max {
+			max = t
+		}
+	}
+	average := total / time.Duration(totalSearches)
+	var sumSquares time.Duration
+	for _, t := range allTimes {
+		diff := t - average
+		sumSquares += diff * diff
+	}
+	stdDev := time.Duration(math.Sqrt(float64(sumSquares) / float64(totalSearches)))
+
+	// Calculate overall median
+	sort.Slice(allTimes, func(i, j int) bool { return allTimes[i] < allTimes[j] })
+	median := allTimes[totalSearches/2]
+	if totalSearches%2 == 0 {
+		median = (allTimes[totalSearches/2-1] + allTimes[totalSearches/2]) / 2
+	}
+
+	// Log overall results in CSV format
+	logger.Printf(",Overall,%d,%d,%d,%d,%d,%d iterations\n", min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), median.Milliseconds(), stdDev.Milliseconds(), totalSearches)
+	fmt.Printf("Overall,%d,%d,%d,%d,%d,%d iterations\n", min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), median.Milliseconds(), stdDev.Milliseconds(), totalSearches)
+
 	totalElapsed := time.Since(totalStart)
-	fmt.Printf("Completed %d total searches in %fs\n", totalSearches, totalElapsed.Seconds())
-	fmt.Printf("Overall average time per search: %dms\n", totalElapsed.Milliseconds()/int64(totalSearches))
+	//fmt.Printf("Completed %d total searches in %fs\n", totalSearches, totalElapsed.Seconds())
+	fmt.Printf("Overall average time per search: %dms, Median: %dms, Overall standard deviation: %dms\n", totalElapsed.Milliseconds()/int64(totalSearches), median.Milliseconds(), stdDev.Milliseconds())
 }
