@@ -22,7 +22,7 @@ import (
 // TODO:
 // - Add system tray icon: https://docs.fyne.io/explore/systray.html
 
-var maxSearchResults int = 5000
+var maxSearchResults int = 1000
 
 func handleOpenFile(pathname string) {
 	if pathname == "" {
