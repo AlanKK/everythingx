@@ -1,0 +1,71 @@
+Date,Search,Min,Max,Average,Median,StdDev,Notes
+
+# All queries done with prepared stmt calling PrefixSearch() unless noted and these:
+# SELECT fullpath, object_type FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
+# CREATE TABLE files(filename TEXT NOT NULL, fullpath TEXT NOT NULL UNIQUE, event_id INTEGER, object_type INTEGER);
+# CREATE INDEX idx_filename ON files(filename COLLATE BINARY);
+# PRAGMA journal_mode=WAL / PRAGMA synchronous=OFF
+
+# No index
+# PRAGMA journal_mode=WAL / PRAGMA synchronous=OFF
+2025/02/09 10:08:26 ,Overall,104,142,111,109,6,400 iterations
+2025/02/09 10:09:12 ,Overall,106,201,114,111,9,400 iterations
+2025/02/09 10:09:59 ,Overall,108,173,117,114,9,400 iterations
+
+# CREATE INDEX idx_filename ON files(filename COLLATE BINARY)
+# PRAGMA journal_mode=WAL / PRAGMA synchronous=OFF
+# Biggest impact!!
+2025/02/09 10:12:19 ,Overall,13,111,55,68,24,400 iterations
+2025/02/09 10:12:41 ,Overall,14,76,55,67,23,400 iterations
+2025/02/09 10:13:04 ,Overall,14,138,56,68,24,400 iterations
+2025/02/09 10:17:28 ,Overall,13,608,61,68,41,1200 iterations
+2025/02/09 10:18:35 ,Overall,14,83,55,68,23,1200 iterations
+2025/02/09 10:19:43 ,Overall,14,122,56,67,24,1200 iterations
+
+# CREATE INDEX idx_filename_fullpath_obj_type ON files(filename COLLATE BINARY, fullpath, object_type)
+# PRAGMA journal_mode=WAL / PRAGMA synchronous=OFF
+# Degraded performance as this index was used instead of idx_filename
+2025/02/09 10:28:47 ,Overall,16,1093,100,113,0,1200 iterations
+2025/02/09 10:30:35 ,Overall,16,188,90,114,42,1200 iterations
+2025/02/09 10:32:47 ,Overall,16,2669,109,116,0,1200 iterations
+
+# disabled PRAGMA journal_mode=WAL / PRAGMA synchronous=OFF
+2025/02/09 10:44:20 ,Overall,13,346,55,67,25,1200 iterations
+2025/02/09 10:45:27 ,Overall,14,79,55,67,23,1200 iterations
+2025/02/09 10:46:34 ,Overall,14,133,55,67,23,1200 iterations
+
+# PRAGMA journal_mode=WAL - No impact for single process read queries
+2025/02/09 10:49:11 ,Overall,13,147,55,67,24,1200 iterations
+2025/02/09 10:50:18 ,Overall,14,84,55,67,23,1200 iterations
+2025/02/09 10:51:27 ,Overall,14,111,56,68,24,1200 iterations
+
+# PRAGMA synchronous=OFF - No impact
+2025/02/09 10:54:42 ,Overall,13,79,56,68,24,1200 iterations
+2025/02/09 10:55:51 ,Overall,14,128,56,69,24,1200 iterations
+2025/02/09 10:56:58 ,Overall,14,78,55,68,23,1200 iterations
+
+# PRAGMA synchronous=NORMAL - No impact -- keeping this
+2025/02/09 10:59:46 ,Overall,13,300,56,68,25,1200 iterations
+2025/02/09 11:00:53 ,Overall,14,129,56,68,24,1200 iterations
+2025/02/09 11:02:01 ,Overall,14,122,56,68,24,1200 iterations
+
+# CREATE INDEX idx_filename ON files(filename) -- no COLLATE BINARY here or query
+# No impact so including COLLATE BINARY in the index and query
+2025/02/09 11:06:42 ,Overall,13,112,56,68,24,1200 iterations
+2025/02/09 11:07:50 ,Overall,14,105,56,68,23,1200 iterations
+2025/02/09 11:08:59 ,Overall,14,530,57,68,28,1200 iterations
+
+# maxSearchResults = 2000
+# PRAGMA synchronous=NORMAL
+2025/02/09 11:12:30 ,Overall,10,927,49,68,40,1200 iterations
+2025/02/09 11:13:27 ,Overall,10,140,47,66,24,1200 iterations
+2025/02/09 11:14:23 ,Overall,10,93,46,61,24,1200 iterations
+
+# maxSearchResults = 1000
+# PRAGMA synchronous=NORMAL
+2025/02/09 11:56:22 ,Overall,9,573,46,67,31,1200 iterations
+2025/02/09 11:57:17 ,Overall,10,83,45,57,24,1200 iterations
+2025/02/09 11:58:13 ,Overall,10,112,46,65,25,1200 iterations
+2025/02/09 12:20:27 ,Overall,9,280,47,67,27,1200 iterations
+2025/02/09 12:21:22 ,Overall,10,114,46,67,24,1200 iterations
+2025/02/09 12:22:18 ,Overall,9,83,46,54,24,1200 iterations

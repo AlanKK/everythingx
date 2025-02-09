@@ -87,12 +87,7 @@ func createTablesAndIndexes(db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.Exec("CREATE INDEX idx_filename_fullpath ON files(filename, fullpath COLLATE BINARY)")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	_, err = db.Exec("CREATE INDEX idx_fullpath ON files(fullpath COLLATE BINARY)")
+	_, err = db.Exec("CREATE INDEX idx_filename ON files(filename COLLATE BINARY)")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -113,12 +108,11 @@ func configureDB(db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	// Disable synchronous mode
-	_, err = db.Exec("PRAGMA synchronous=OFF;")
+	// No performane impact for this
+	_, err = db.Exec("PRAGMA synchronous=NORMAL;")
 	if err != nil {
 		log.Fatal(err)
 	}
-
 }
 
 // Prepares the SQL statements for later use.

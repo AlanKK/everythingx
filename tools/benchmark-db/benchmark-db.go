@@ -20,7 +20,7 @@ import (
 const (
 	sourceDBPath     = "./files.db.gz"
 	targetDBPath     = "benchmark.db"
-	maxSearchResults = 5000
+	maxSearchResults = 1000
 )
 
 var (
@@ -29,15 +29,12 @@ var (
 	noDB           bool
 )
 
-func init() {
+func main() {
 	flag.IntVar(&numSearches, "n", 100, "number of searches to perform")
 	flag.BoolVar(&noDB, "no-db", false, "skip database setup")
-}
-
-func main() {
 	flag.Parse()
 
-	var targetDB *sql.DB
+	var sourceDB, targetDB *sql.DB
 	var err error
 
 	if !noDB {
@@ -51,18 +48,18 @@ func main() {
 		}
 
 		// Open the unzipped source database
-		sourceDB, err := ffdb.OpenDB(unzippedSourceDBPath)
+		sourceDB, err = ffdb.OpenDB(unzippedSourceDBPath)
 		if err != nil {
 			log.Fatalf("Failed to open source database: %v", err)
 		}
-		//defer sourceDB.Close()
+		defer sourceDB.Close()
 
 		// Create the target database
-		targetDB, err := ffdb.CreateDB(targetDBPath)
+		targetDB, err = ffdb.CreateDB(targetDBPath)
 		if err != nil {
 			log.Fatalf("Failed to create target database: %v", err)
 		}
-		// Copy data from the source database to the target database
+
 		copyData(sourceDB, targetDB)
 	} else {
 		targetDB, err = ffdb.OpenDB(targetDBPath)
@@ -70,7 +67,7 @@ func main() {
 			log.Fatalf("Failed to open target database: %v", err)
 		}
 	}
-	//defer targetDB.Close()
+	defer targetDB.Close()
 
 	benchmarkPrefixSearch()
 }
@@ -115,16 +112,16 @@ func copyData(sourceDB, targetDB *sql.DB) {
 	}
 	defer rows.Close()
 
-	tx, err := targetDB.Begin()
+	targetTx, err := targetDB.Begin()
 	if err != nil {
 		log.Fatalf("Failed to begin transaction: %v", err)
 	}
 
-	stmt, err := tx.Prepare("INSERT INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)")
+	insertStmt, err := targetTx.Prepare("INSERT INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)")
 	if err != nil {
 		log.Fatalf("Failed to prepare insert statement: %v", err)
 	}
-	defer stmt.Close()
+	defer insertStmt.Close()
 
 	rowCount := 0
 	for rows.Next() {
@@ -137,7 +134,7 @@ func copyData(sourceDB, targetDB *sql.DB) {
 			log.Fatalf("Failed to scan row: %v", err)
 		}
 
-		_, err = stmt.Exec(filename, fullpath, eventID, objectType)
+		_, err = insertStmt.Exec(filename, fullpath, eventID, objectType)
 		if err != nil {
 			log.Fatalf("Failed to insert row into target database: %v", err)
 		}
@@ -146,7 +143,7 @@ func copyData(sourceDB, targetDB *sql.DB) {
 
 	fmt.Printf("Imported %d rows.\n", rowCount)
 
-	err = tx.Commit()
+	err = targetTx.Commit()
 	if err != nil {
 		log.Fatalf("Failed to commit transaction: %v", err)
 	}
@@ -257,9 +254,8 @@ func benchmarkPrefixSearch() {
 
 	// Log overall results in CSV format
 	logger.Printf(",Overall,%d,%d,%d,%d,%d,%d iterations\n", min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), median.Milliseconds(), stdDev.Milliseconds(), totalSearches)
-	fmt.Printf("Overall,%d,%d,%d,%d,%d,%d iterations\n", min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), median.Milliseconds(), stdDev.Milliseconds(), totalSearches)
 
 	totalElapsed := time.Since(totalStart)
 	//fmt.Printf("Completed %d total searches in %fs\n", totalSearches, totalElapsed.Seconds())
-	fmt.Printf("Overall average time per search: %dms, Median: %dms, Overall standard deviation: %dms\n", totalElapsed.Milliseconds()/int64(totalSearches), median.Milliseconds(), stdDev.Milliseconds())
+	fmt.Printf("Median: %dms, Standard deviation: %dms, Average: %dms\n", median.Milliseconds(), stdDev.Milliseconds(), totalElapsed.Milliseconds()/int64(totalSearches))
 }
