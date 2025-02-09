@@ -144,7 +144,7 @@ func PrefixSearch(prefix string, limit ...int) ([]*models.SearchResult, error) {
 		resultLimit = limit[0]
 	}
 
-	rows, err := prefixSearchStmt.Query(prefix+"%", resultLimit)
+	rows, err := prefixSearchStmt.Query("%"+prefix+"%", resultLimit)
 	if err != nil {
 		return nil, err
 	}
