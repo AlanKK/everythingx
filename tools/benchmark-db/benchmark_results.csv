@@ -69,3 +69,12 @@ Date,Search,Min,Max,Average,Median,StdDev,Notes
 2025/02/09 12:20:27 ,Overall,9,280,47,67,27,1200 iterations
 2025/02/09 12:21:22 ,Overall,10,114,46,67,24,1200 iterations
 2025/02/09 12:22:18 ,Overall,9,83,46,54,24,1200 iterations
+2025/02/09 13:06:02 ,Overall,9,164,46,63,25,1200 iterations
+2025/02/09 13:06:58 ,Overall,10,114,46,61,24,1200 iterations
+2025/02/09 13:07:53 ,Overall,9,100,45,57,24,1200 iterations
+
+# prefixSearchStmt.Query("%"+prefix+"%", resultLimit) instead of prefix+"%"
+# Wow
+2025/02/09 13:23:58 ,Overall,1,122,34,19,42,1200 iterations
+2025/02/09 13:24:39 ,Overall,1,134,34,14,42,1200 iterations
+2025/02/09 13:25:20 ,Overall,1,152,34,15,42,1200 iterations
