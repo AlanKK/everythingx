@@ -3,17 +3,24 @@
 This README presents the results of performance benchmarks conducted on SQLite queries with various optimizations and configurations. The benchmarks were run on February 9, 2025, to evaluate the impact of different indexing strategies and SQLite PRAGMA settings on query performance.
 
 ## Benchmark Setup
+- **Hadware**: 
+Macbook Air M2
 
-- **Query**: `SELECT fullpath, object_type FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?`
-- **Table Structure**:
-  ```sql
-  CREATE TABLE files(
-    filename TEXT NOT NULL,
-    fullpath TEXT NOT NULL UNIQUE,
-    event_id INTEGER,
-    object_type INTEGER
-  );
-  ```
+The following setup was used for all benchmarks:
+```sql
+-- Schema
+CREATE TABLE files(filename TEXT NOT NULL, fullpath TEXT NOT NULL UNIQUE, event_id INTEGER, object_type INTEGER);
+
+-- Query
+SELECT fullpath, object_type FROM files 
+WHERE filename LIKE ? COLLATE BINARY 
+ORDER BY filename ASC 
+LIMIT ?;
+
+-- PRAGMA Settings (unless noted otherwise)
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=OFF;
+```
 
 ## Baseline Performance (No Index)
 
@@ -25,7 +32,7 @@ Initial tests were run without any index and with WAL journal mode and synchrono
 | 2025/02/09 10:09:12 | Overall | 106 | 201 | 114     | 111    | 9      | 400 iterations  |
 | 2025/02/09 10:09:59 | Overall | 108 | 173 | 117     | 114    | 9      | 400 iterations  |
 
-**Key Insight**: Without an index, query performance is consistently slow, with average times above 110ms.
+**Result**: Without an index, query performance is consistently slow, with average times above 110ms.
 
 ## Performance with Basic Index
 
@@ -40,20 +47,11 @@ CREATE INDEX idx_filename ON files(filename COLLATE BINARY);
 | 2025/02/09 10:12:19 | Overall | 13  | 111 | 55      | 68     | 24     | 400 iterations  |
 | 2025/02/09 10:12:41 | Overall | 14  | 76  | 55      | 67     | 23     | 400 iterations  |
 | 2025/02/09 10:13:04 | Overall | 14  | 138 | 56      | 68     | 24     | 400 iterations  |
-
-**Key Insight**: Adding a basic index on the filename column dramatically improved performance, reducing average query time by about 50%.
-
-## Extended Testing with Basic Index
-
-Further tests were conducted with the basic index and increased iterations:
-
-| Date                | Search  | Min | Max | Average | Median | StdDev | Notes           |
-|---------------------|---------|-----|-----|---------|--------|--------|-----------------|
 | 2025/02/09 10:17:28 | Overall | 13  | 608 | 61      | 68     | 41     | 1200 iterations |
 | 2025/02/09 10:18:35 | Overall | 14  | 83  | 55      | 68     | 23     | 1200 iterations |
 | 2025/02/09 10:19:43 | Overall | 14  | 122 | 56      | 67     | 24     | 1200 iterations |
 
-**Key Insight**: Increasing the number of iterations to 1200 showed consistent performance, with occasional spikes in maximum query time.
+**Result**: Adding a basic index on the filename column dramatically improved performance, reducing average query time by about 50%.
 
 ## Composite Index Performance
 
@@ -69,7 +67,7 @@ CREATE INDEX idx_filename_fullpath_obj_type ON files(filename COLLATE BINARY, fu
 | 2025/02/09 10:30:35 | Overall | 16  | 188  | 90      | 114    | 42     | 1200 iterations |
 | 2025/02/09 10:32:47 | Overall | 16  | 2669 | 109     | 116    | 0      | 1200 iterations |
 
-**Key Insight**: The composite index actually degraded performance, likely due to the query optimizer choosing this more complex index over the simpler, more efficient one.
+**Result**: The composite index actually degraded performance significantly.
 
 ## PRAGMA Settings Impact
 
@@ -107,7 +105,7 @@ Various PRAGMA settings were tested to assess their impact on read query perform
 | 2025/02/09 11:00:53 | Overall | 14  | 129 | 56      | 68     | 24     | 1200 iterations |
 | 2025/02/09 11:02:01 | Overall | 14  | 122 | 56      | 68     | 24     | 1200 iterations |
 
-**Key Insight**: For read-only queries, PRAGMA settings had minimal impact on performance. The synchronous=NORMAL setting was kept for a balance of performance and data integrity.
+**Result**: For read-only queries, PRAGMA settings had minimal impact on performance. I'll keep `synchronous=NORMAL` for the additional data integrity with no impact on performance
 
 ## Index Collation Impact
 
@@ -119,9 +117,9 @@ Tests were conducted to evaluate the impact of COLLATE BINARY in the index and q
 | 2025/02/09 11:07:50 | Overall | 14  | 105 | 56      | 68     | 23     | 1200 iterations |
 | 2025/02/09 11:08:59 | Overall | 14  | 530 | 57      | 68     | 28     | 1200 iterations |
 
-**Key Insight**: Including COLLATE BINARY in both the index and query provided consistent performance.
+**Result**: Including COLLATE BINARY in both the index and query had no impact on read perf.
 
-## Result Limit Impact
+## Changing Result Limit
 
 Tests with different maxSearchResults values:
 
@@ -141,13 +139,14 @@ Tests with different maxSearchResults values:
 | 2025/02/09 11:57:17 | Overall | 10  | 83  | 45      | 57     | 24     | 1200 iterations |
 | 2025/02/09 11:58:13 | Overall | 10  | 112 | 46      | 65     | 25     | 1200 iterations |
 
-**Key Insight**: Reducing maxSearchResults from 2000 to 1000 slightly improved average and median query times.
+**Result**: Reducing maxSearchResults from 5000 to 2000 to 1000 reduced average latency  (~68ms to ~48ms ms) but not much change in median time.
+
 
 ## Final Optimization: Wildcard Placement
 
 A significant improvement was achieved by changing the wildcard placement in the query:
 
-```sql
+```go
 prefixSearchStmt.Query("%"+prefix+"%", resultLimit)
 ```
 
@@ -157,18 +156,17 @@ prefixSearchStmt.Query("%"+prefix+"%", resultLimit)
 | 2025/02/09 13:24:39 | Overall | 1   | 134 | 34      | 14     | 42     | 1200 iterations |
 | 2025/02/09 13:25:20 | Overall | 1   | 152 | 34      | 15     | 42     | 1200 iterations |
 
-**Key Insight**: Placing wildcards at both ends of the search term dramatically improved performance, reducing median query times to under 20ms.
+**Result**: 
+- **Dramatic improvement**
+- Min latency dropped to **1 ms** (from 10–14 ms).  
+- Wildcard placement optimized index usage, reducing scan overhead.
 
 ## Conclusion
 
 The most significant performance improvements were achieved by:
 1. Adding a basic index on the filename column
-2. Optimizing the wildcard placement in the query
+2. Avoid Over-Indexing: Composite indexes can degrade performance if unused columns are included.
+3. Query Tuning: Adjusting wildcard placement ("%"+prefix+"%") yielded the largest gains (1 ms min).
+4. PRAGMA Settings: journal_mode=WAL and synchronous=OFF had minimal impact on read-heavy workloads.
 
-PRAGMA settings and result limits had minimal impact on read-only query performance. The composite index unexpectedly degraded performance and should be avoided for this specific query pattern.
-
-Citations:
-[1] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/27640979/08fe1c36-e642-4a4c-896e-dc47e8244c34/benchmark_results.csv
-
----
-Answer from Perplexity: pplx.ai/share
+PRAGMA settings and result limits had minimal or no impact on read-only query performance. The composite index unexpectedly degraded performance and should be avoided for this specific query pattern.
