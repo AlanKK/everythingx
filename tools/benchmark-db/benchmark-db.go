@@ -42,7 +42,7 @@ func main() {
 
 		// Unzip the source database file
 		unzippedSourceDBPath := "/tmp/unzipped_files.db"
-		err := ungzipFile(sourceDBPath, unzippedSourceDBPath)
+		err = ungzipFile(sourceDBPath, unzippedSourceDBPath)
 		if err != nil {
 			log.Fatalf("Failed to unzip source database: %v", err)
 		}
@@ -60,8 +60,12 @@ func main() {
 			log.Fatalf("Failed to create target database: %v", err)
 		}
 
+		// Copy data from source database to target database
 		copyData(sourceDB, targetDB)
 	} else {
+		if _, err := os.Stat(targetDBPath); os.IsNotExist(err) {
+			log.Fatalf("Target database does not exist: %v", err)
+		}
 		targetDB, err = ffdb.OpenDB(targetDBPath)
 		if err != nil {
 			log.Fatalf("Failed to open target database: %v", err)
@@ -155,7 +159,6 @@ func benchmarkPrefixSearch() {
 	totalStart := time.Now()
 	totalSearches := 0
 
-	// Open the log file
 	logFile, err := os.OpenFile("benchmark_results.csv", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
@@ -191,8 +194,8 @@ func benchmarkPrefixSearch() {
 	}
 	fmt.Println()
 
+	// Calculate statistics
 	for _, prefix := range searchPrefixes {
-		// Calculate statistics
 		var total, min, max time.Duration
 		min = time.Duration(math.MaxInt64)
 		for _, t := range times[prefix] {
@@ -210,19 +213,10 @@ func benchmarkPrefixSearch() {
 			diff := t - average
 			sumSquares += diff * diff
 		}
-		//stdDev := time.Duration(math.Sqrt(float64(sumSquares) / float64(numSearches)))
 
 		// Calculate median
 		sortedTimes := times[prefix]
 		sort.Slice(sortedTimes, func(i, j int) bool { return sortedTimes[i] < sortedTimes[j] })
-		//median := sortedTimes[numSearches/2]
-		// if numSearches%2 == 0 {
-		// 	median = (sortedTimes[numSearches/2-1] + sortedTimes[numSearches/2]) / 2
-		// }
-
-		// Log results in CSV format
-		//logger.Printf(",%s,%d,%d,%d,%d,%d,%d iterations\n", prefix, min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), median.Milliseconds(), stdDev.Milliseconds(), numSearches)
-		//fmt.Printf("%s,%d,%d,%d,%d,%d,%d iterations\n", prefix, min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), median.Milliseconds(), stdDev.Milliseconds(), numSearches)
 	}
 
 	// Calculate overall statistics
@@ -253,6 +247,7 @@ func benchmarkPrefixSearch() {
 	}
 
 	// Log overall results in CSV format
+	// Log overall results in CSV format: min, max, average, median, standard deviation, total searches
 	logger.Printf(",Overall,%d,%d,%d,%d,%d,%d iterations\n", min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), median.Milliseconds(), stdDev.Milliseconds(), totalSearches)
 
 	totalElapsed := time.Since(totalStart)
