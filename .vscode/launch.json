@@ -10,7 +10,7 @@
         "request": "launch",
         "mode": "debug",
         "program": "${file}",
-        "args": ["-n=10"]
+        "args": ["-n=5"]
         // "program": "${workspaceFolder}/cmd/findfiles",
         // "args": ["--monitor_path", "/Users/alan/Documents/git/findfiles/e2eTest/findfiles_test", "--db_path", "/Users/alan/Documents/git/findfiles/data/files.db"]   
     }]
