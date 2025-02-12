@@ -18,8 +18,8 @@ if [ $? -ne 0 ]; then
     echo "Failed to remove the plist file."
 fi
 
-echo 'Removing executable'
-rm -f /usr/local/bin/findfilesd
+echo 'Removing executables'
+rm -f /usr/local/bin/findfilesd /usr/local/bin/everythingx
 if [ $? -ne 0 ]; then
     echo "Failed to remove the executable."
 fi

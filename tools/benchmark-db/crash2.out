@@ -1,0 +1,494 @@
+Opening database  /var/lib/findfiles/files.db
+2025-02-09 12:46:47.742 ff[43371:825906] +[IMKClient subclass]: chose IMKClient_Modern
+2025-02-09 12:46:47.742 ff[43371:825906] +[IMKInputSession subclass]: chose IMKInputSession_Modern
+	Search: s, Results: 1000, prefixSearch: 61.270583ms, handleEntryChanged 94.541959ms.
+	Search: st, Results: 1000, prefixSearch: 60.515958ms, handleEntryChanged 82.008041ms.
+	Search: ste, Results: 1000, prefixSearch: 101.715667ms, handleEntryChanged 113.943125ms.
+	Search: stea, Results: 428, prefixSearch: 107.690292ms, handleEntryChanged 115.397583ms.
+	Search: steam, Results: 383, prefixSearch: 109.146292ms, handleEntryChanged 117.42775ms.
+	Search: stea, Results: 428, prefixSearch: 98.669833ms, handleEntryChanged 107.818833ms.
+	Search: ste, Results: 1000, prefixSearch: 66.216209ms, handleEntryChanged 80.261ms.
+	Search: st, Results: 1000, prefixSearch: 31.39ms, handleEntryChanged 49.578125ms.
+	Search: s, Results: 1000, prefixSearch: 32.43925ms, handleEntryChanged 45.822958ms.
+SIGTRAP: trace trap
+PC=0x1866763d8 m=7 sigcode=0
+signal arrived during cgo execution
+
+goroutine 4 gp=0x14000103180 m=7 mp=0x14000100808 [syscall]:
+runtime.cgocall(0x104dd7570, 0x1400190fe48)
+	/usr/local/go/src/runtime/cgocall.go:167 +0x44 fp=0x1400190fe10 sp=0x1400190fdd0 pc=0x10468ee24
+github.com/go-gl/glfw/v3.3/glfw._Cfunc_glfwHideWindow(0x12cc386e0)
+	_cgo_gotypes.go:1397 +0x30 fp=0x1400190fe40 sp=0x1400190fe10 pc=0x104c68d80
+github.com/go-gl/glfw/v3.3/glfw.(*Window).Hide.func1(0x1400190fee8?)
+	/Users/alan/go/pkg/mod/github.com/go-gl/glfw/v3.3/glfw@v0.0.0-20240506104042-037f3cc74f2a/window.go:634 +0x48 fp=0x1400190fe80 sp=0x1400190fe40 pc=0x104c72038
+github.com/go-gl/glfw/v3.3/glfw.(*Window).Hide(0x14000102e10?)
+	/Users/alan/go/pkg/mod/github.com/go-gl/glfw/v3.3/glfw@v0.0.0-20240506104042-037f3cc74f2a/window.go:634 +0x1c fp=0x1400190feb0 sp=0x1400190fe80 pc=0x104c71f9c
+fyne.io/fyne/v2/internal/driver/glfw.(*window).Hide.func1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:197 +0x74 fp=0x1400190fee0 sp=0x1400190feb0 pc=0x104c82344
+fyne.io/fyne/v2/internal/driver/glfw.runOnMain(0x14001b92630?)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/loop.go:45 +0xd4 fp=0x1400190ff50 sp=0x1400190fee0 pc=0x104c7ec24
+fyne.io/fyne/v2/internal/driver/glfw.(*window).Hide(0x14000102e00)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:186 +0x5c fp=0x1400190ff80 sp=0x1400190ff50 pc=0x104c822ac
+main.loadUI.func2()
+	/Users/alan/Documents/git/findfiles/cmd/findfiles/ui.go:216 +0x28 fp=0x1400190ffa0 sp=0x1400190ff80 pc=0x104cb8c08
+fyne.io/fyne/v2/internal/driver/common.(*Window).RunEventQueue(...)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/common/window.go:35
+fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).createWindow.func1.gowrap1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:997 +0x48 fp=0x1400190ffd0 sp=0x1400190ffa0 pc=0x104c87f58
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400190ffd0 sp=0x1400190ffd0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).createWindow.func1 in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:997 +0x13c
+
+goroutine 1 gp=0x140000021c0 m=0 mp=0x105c52f60 [syscall, locked to thread]:
+runtime.cgocall(0x104dd631c, 0x140002bae48)
+	/usr/local/go/src/runtime/cgocall.go:167 +0x44 fp=0x140002bae10 sp=0x140002badd0 pc=0x10468ee24
+github.com/go-gl/glfw/v3.3/glfw._Cfunc_glfwTerminate()
+	_cgo_gotypes.go:2417 +0x30 fp=0x140002bae40 sp=0x140002bae10 pc=0x104c6b050
+github.com/go-gl/glfw/v3.3/glfw.Terminate()
+	/Users/alan/go/pkg/mod/github.com/go-gl/glfw/v3.3/glfw@v0.0.0-20240506104042-037f3cc74f2a/glfw.go:52 +0x20 fp=0x140002bae50 sp=0x140002bae40 pc=0x104c6bcd0
+fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).Terminate(...)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/loop_desktop.go:29
+fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).runGL(0x1400036fa00)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/loop.go:126 +0x288 fp=0x140002bafb0 sp=0x140002bae50 pc=0x104c7f298
+fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).Run(0x1400036fa00)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/driver.go:164 +0x78 fp=0x140002bb000 sp=0x140002bafb0 pc=0x104c7d908
+fyne.io/fyne/v2/app.(*fyneApp).Run(0x140001a7d60)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/app/app.go:68 +0x70 fp=0x140002bb030 sp=0x140002bb000 pc=0x104ca9740
+fyne.io/fyne/v2/internal/driver/glfw.(*window).ShowAndRun(0x140002bb0c0?)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:235 +0x2c fp=0x140002bb050 sp=0x140002bb030 pc=0x104c8273c
+main.loadUI()
+	/Users/alan/Documents/git/findfiles/cmd/findfiles/ui.go:246 +0x6a0 fp=0x140002bde70 sp=0x140002bb050 pc=0x104cb8b30
+main.main()
+	/Users/alan/Documents/git/findfiles/cmd/findfiles/main.go:31 +0x194 fp=0x140002bdf40 sp=0x140002bde70 pc=0x104cb7a14
+runtime.main()
+	/usr/local/go/src/runtime/proc.go:272 +0x288 fp=0x140002bdfd0 sp=0x140002bdf40 pc=0x10465f8c8
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002bdfd0 sp=0x140002bdfd0 pc=0x10469da54
+
+goroutine 18 gp=0x14000102380 m=nil [force gc (idle), 3 minutes]:
+runtime.gopark(0x34d0367e41f0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400006a790 sp=0x1400006a770 pc=0x104695318
+runtime.goparkunlock(...)
+	/usr/local/go/src/runtime/proc.go:430
+runtime.forcegchelper()
+	/usr/local/go/src/runtime/proc.go:337 +0xb8 fp=0x1400006a7d0 sp=0x1400006a790 pc=0x10465fc28
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400006a7d0 sp=0x1400006a7d0 pc=0x10469da54
+created by runtime.init.7 in goroutine 1
+	/usr/local/go/src/runtime/proc.go:325 +0x24
+
+goroutine 19 gp=0x14000102540 m=nil [GC sweep wait]:
+runtime.gopark(0x1?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400006af60 sp=0x1400006af40 pc=0x104695318
+runtime.goparkunlock(...)
+	/usr/local/go/src/runtime/proc.go:430
+runtime.bgsweep(0x14000112000)
+	/usr/local/go/src/runtime/mgcsweep.go:317 +0x108 fp=0x1400006afb0 sp=0x1400006af60 pc=0x104649fd8
+runtime.gcenable.gowrap1()
+	/usr/local/go/src/runtime/mgc.go:203 +0x28 fp=0x1400006afd0 sp=0x1400006afb0 pc=0x10463df08
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400006afd0 sp=0x1400006afd0 pc=0x10469da54
+created by runtime.gcenable in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:203 +0x6c
+
+goroutine 20 gp=0x14000102700 m=nil [GC scavenge wait]:
+runtime.gopark(0x11cd9e?, 0xfc409?, 0x0?, 0x0?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400006b760 sp=0x1400006b740 pc=0x104695318
+runtime.goparkunlock(...)
+	/usr/local/go/src/runtime/proc.go:430
+runtime.(*scavengerState).park(0x105c51e40)
+	/usr/local/go/src/runtime/mgcscavenge.go:425 +0x5c fp=0x1400006b790 sp=0x1400006b760 pc=0x10464796c
+runtime.bgscavenge(0x14000112000)
+	/usr/local/go/src/runtime/mgcscavenge.go:658 +0xac fp=0x1400006b7b0 sp=0x1400006b790 pc=0x104647f1c
+runtime.gcenable.gowrap2()
+	/usr/local/go/src/runtime/mgc.go:204 +0x28 fp=0x1400006b7d0 sp=0x1400006b7b0 pc=0x10463dea8
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400006b7d0 sp=0x1400006b7d0 pc=0x10469da54
+created by runtime.gcenable in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:204 +0xac
+
+goroutine 34 gp=0x14000184380 m=nil [finalizer wait, 17 minutes]:
+runtime.gopark(0x0?, 0x10508fe20?, 0x0?, 0x80?, 0x2000000020?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400006e580 sp=0x1400006e560 pc=0x104695318
+runtime.runfinq()
+	/usr/local/go/src/runtime/mfinal.go:193 +0x108 fp=0x1400006e7d0 sp=0x1400006e580 pc=0x10463d008
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400006e7d0 sp=0x1400006e7d0 pc=0x10469da54
+created by runtime.createfing in goroutine 1
+	/usr/local/go/src/runtime/mfinal.go:163 +0x80
+
+goroutine 35 gp=0x14000184540 m=nil [chan receive]:
+runtime.gopark(0x140002f8748?, 0x1047f697c?, 0x60?, 0x35?, 0x1050a7360?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x140002f86f0 sp=0x140002f86d0 pc=0x104695318
+runtime.chanrecv(0x140001800e0, 0x0, 0x1)
+	/usr/local/go/src/runtime/chan.go:639 +0x414 fp=0x140002f8770 sp=0x140002f86f0 pc=0x10462e0e4
+runtime.chanrecv1(0x0?, 0x0?)
+	/usr/local/go/src/runtime/chan.go:489 +0x14 fp=0x140002f87a0 sp=0x140002f8770 pc=0x10462dc94
+runtime.unique_runtime_registerUniqueMapCleanup.func1(...)
+	/usr/local/go/src/runtime/mgc.go:1732
+runtime.unique_runtime_registerUniqueMapCleanup.gowrap1()
+	/usr/local/go/src/runtime/mgc.go:1735 +0x3c fp=0x140002f87d0 sp=0x140002f87a0 pc=0x104640fec
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002f87d0 sp=0x140002f87d0 pc=0x10469da54
+created by unique.runtime_registerUniqueMapCleanup in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:1730 +0xa0
+
+goroutine 37 gp=0x14000184700 m=nil [select, 17 minutes]:
+runtime.gopark(0x140002f9778?, 0x2?, 0x70?, 0x0?, 0x140002f9774?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x140002f9600 sp=0x140002f95e0 pc=0x104695318
+runtime.selectgo(0x140002f9778, 0x140002f9770, 0x0?, 0x0, 0x0?, 0x1)
+	/usr/local/go/src/runtime/select.go:335 +0x67c fp=0x140002f9730 sp=0x140002f9600 pc=0x104672c3c
+database/sql.(*DB).connectionOpener(0x1400036f6c0, {0x10509a9f0, 0x1400024c640})
+	/usr/local/go/src/database/sql/sql.go:1253 +0x80 fp=0x140002f97a0 sp=0x140002f9730 pc=0x10474ce70
+database/sql.OpenDB.gowrap1()
+	/usr/local/go/src/database/sql/sql.go:833 +0x30 fp=0x140002f97d0 sp=0x140002f97a0 pc=0x10474b070
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002f97d0 sp=0x140002f97d0 pc=0x10469da54
+created by database/sql.OpenDB in goroutine 1
+	/usr/local/go/src/database/sql/sql.go:833 +0x128
+
+goroutine 38 gp=0x14000003340 m=nil [select, 17 minutes]:
+runtime.gopark(0x14000070f70?, 0x2?, 0x68?, 0x4a?, 0x14000070ef4?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x14000080d60 sp=0x14000080d40 pc=0x104695318
+runtime.selectgo(0x14000080f70, 0x14000070ef0, 0x0?, 0x0, 0x0?, 0x1)
+	/usr/local/go/src/runtime/select.go:335 +0x67c fp=0x14000080e90 sp=0x14000080d60 pc=0x104672c3c
+fyne.io/fyne/v2/internal/async.(*UnboundedChan[...]).processing(0x1050a1e80)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/async/chan_go1.21.go:74 +0xb4 fp=0x14000080fb0 sp=0x14000080e90 pc=0x104924434
+fyne.io/fyne/v2/internal/async.NewUnboundedChan[...].gowrap1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/async/chan_go1.21.go:51 +0x2c fp=0x14000080fd0 sp=0x14000080fb0 pc=0x104924bcc
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x14000080fd0 sp=0x14000080fd0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/async.NewUnboundedChan[...] in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/async/chan_go1.21.go:51 +0x10c
+
+goroutine 39 gp=0x14000003500 m=3 mp=0x14000075008 [syscall, 17 minutes]:
+syscall.syscall6(0x0?, 0x0?, 0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/usr/local/go/src/runtime/sys_darwin.go:60 +0x50 fp=0x140000713a0 sp=0x140000712e0 pc=0x104699300
+golang.org/x/sys/unix.kevent(0x0?, 0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/Users/alan/go/pkg/mod/golang.org/x/sys@v0.20.0/unix/zsyscall_darwin_arm64.go:275 +0x54 fp=0x14000071410 sp=0x140000713a0 pc=0x104ca53a4
+golang.org/x/sys/unix.Kevent(0x0?, {0x0?, 0x0?, 0x0?}, {0x14000071650?, 0x0?, 0x14000071498?}, 0x104ca77e0?)
+	/Users/alan/go/pkg/mod/golang.org/x/sys@v0.20.0/unix/syscall_bsd.go:397 +0x40 fp=0x14000071450 sp=0x14000071410 pc=0x104ca5250
+github.com/fsnotify/fsnotify.(*Watcher).read(0x0?, {0x14000071650, 0x0?, 0xa})
+	/Users/alan/go/pkg/mod/github.com/fsnotify/fsnotify@v1.7.0/backend_kqueue.go:777 +0x44 fp=0x140000714a0 sp=0x14000071450 pc=0x104ca8b24
+github.com/fsnotify/fsnotify.(*Watcher).readEvents(0x140002e4e00)
+	/Users/alan/go/pkg/mod/github.com/fsnotify/fsnotify@v1.7.0/backend_kqueue.go:547 +0x90 fp=0x140000717b0 sp=0x140000714a0 pc=0x104ca7810
+github.com/fsnotify/fsnotify.NewBufferedWatcher.gowrap1()
+	/Users/alan/go/pkg/mod/github.com/fsnotify/fsnotify@v1.7.0/backend_kqueue.go:184 +0x28 fp=0x140000717d0 sp=0x140000717b0 pc=0x104ca5d58
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140000717d0 sp=0x140000717d0 pc=0x10469da54
+created by github.com/fsnotify/fsnotify.NewBufferedWatcher in goroutine 1
+	/Users/alan/go/pkg/mod/github.com/fsnotify/fsnotify@v1.7.0/backend_kqueue.go:184 +0x1fc
+
+goroutine 40 gp=0x140000036c0 m=nil [chan receive, 17 minutes]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x14000071ea0 sp=0x14000071e80 pc=0x104695318
+runtime.chanrecv(0x14000126230, 0x14000071fa0, 0x1)
+	/usr/local/go/src/runtime/chan.go:639 +0x414 fp=0x14000071f20 sp=0x14000071ea0 pc=0x10462e0e4
+runtime.chanrecv2(0x0?, 0x0?)
+	/usr/local/go/src/runtime/chan.go:494 +0x14 fp=0x14000071f50 sp=0x14000071f20 pc=0x10462dcb4
+fyne.io/fyne/v2/app.watchFile.func1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/app/settings_desktop.go:42 +0x60 fp=0x14000071fd0 sp=0x14000071f50 pc=0x104cad600
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x14000071fd0 sp=0x14000071fd0 pc=0x10469da54
+created by fyne.io/fyne/v2/app.watchFile in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/app/settings_desktop.go:41 +0xe4
+
+goroutine 3 gp=0x14000102fc0 m=nil [select]:
+runtime.gopark(0x140002fa770?, 0x2?, 0xe8?, 0xc6?, 0x140002fa6f4?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x140002fa560 sp=0x140002fa540 pc=0x104695318
+runtime.selectgo(0x140002fa770, 0x140002fa6f0, 0x0?, 0x0, 0x0?, 0x1)
+	/usr/local/go/src/runtime/select.go:335 +0x67c fp=0x140002fa690 sp=0x140002fa560 pc=0x104672c3c
+fyne.io/fyne/v2/internal/async.(*UnboundedChan[...]).processing(0x1050a1e80)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/async/chan_go1.21.go:74 +0xb4 fp=0x140002fa7b0 sp=0x140002fa690 pc=0x104924434
+fyne.io/fyne/v2/internal/async.NewUnboundedChan[...].gowrap1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/async/chan_go1.21.go:51 +0x2c fp=0x140002fa7d0 sp=0x140002fa7b0 pc=0x104924bcc
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002fa7d0 sp=0x140002fa7d0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/async.NewUnboundedChan[...] in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/async/chan_go1.21.go:51 +0x10c
+
+goroutine 6 gp=0x140001036c0 m=nil [select]:
+runtime.gopark(0x140002fbf70?, 0x2?, 0x0?, 0x0?, 0x140002fbef4?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x140002fbd60 sp=0x140002fbd40 pc=0x104695318
+runtime.selectgo(0x140002fbf70, 0x140002fbef0, 0x0?, 0x0, 0x0?, 0x1)
+	/usr/local/go/src/runtime/select.go:335 +0x67c fp=0x140002fbe90 sp=0x140002fbd60 pc=0x104672c3c
+fyne.io/fyne/v2/internal/async.(*UnboundedChan[...]).processing(0x1050a1e80)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/async/chan_go1.21.go:74 +0xb4 fp=0x140002fbfb0 sp=0x140002fbe90 pc=0x104924434
+fyne.io/fyne/v2/internal/async.NewUnboundedChan[...].gowrap1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/async/chan_go1.21.go:51 +0x2c fp=0x140002fbfd0 sp=0x140002fbfb0 pc=0x104924bcc
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002fbfd0 sp=0x140002fbfd0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/async.NewUnboundedChan[...] in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/async/chan_go1.21.go:51 +0x10c
+
+goroutine 7 gp=0x14000103880 m=nil [chan receive]:
+runtime.gopark(0x1046b64e0?, 0x105c7a764?, 0xf8?, 0xee?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400006eef0 sp=0x1400006eed0 pc=0x104695318
+runtime.chanrecv(0x140000ae150, 0x1400006efc0, 0x1)
+	/usr/local/go/src/runtime/chan.go:639 +0x414 fp=0x1400006ef70 sp=0x1400006eef0 pc=0x10462e0e4
+runtime.chanrecv2(0x0?, 0x0?)
+	/usr/local/go/src/runtime/chan.go:494 +0x14 fp=0x1400006efa0 sp=0x1400006ef70 pc=0x10462dcb4
+fyne.io/fyne/v2/internal/driver/common.(*Window).RunEventQueue(...)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/common/window.go:34
+fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).createWindow.func1.gowrap1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:997 +0x54 fp=0x1400006efd0 sp=0x1400006efa0 pc=0x104c87f64
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400006efd0 sp=0x1400006efd0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).createWindow.func1 in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:997 +0x13c
+
+goroutine 8 gp=0x14000103a40 m=nil [chan receive, 17 minutes]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400006f6e0 sp=0x1400006f6c0 pc=0x104695318
+runtime.chanrecv(0x140001804d0, 0x1400006f7b7, 0x1)
+	/usr/local/go/src/runtime/chan.go:639 +0x414 fp=0x1400006f760 sp=0x1400006f6e0 pc=0x10462e0e4
+runtime.chanrecv2(0x0?, 0x0?)
+	/usr/local/go/src/runtime/chan.go:494 +0x14 fp=0x1400006f790 sp=0x1400006f760 pc=0x10462dcb4
+fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).refreshSystrayMenu.func1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/driver_desktop.go:160 +0x3c fp=0x1400006f7d0 sp=0x1400006f790 pc=0x104c7e51c
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400006f7d0 sp=0x1400006f7d0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).refreshSystrayMenu in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/driver_desktop.go:159 +0xe8
+
+goroutine 9 gp=0x14000103c00 m=nil [GC worker (idle)]:
+runtime.gopark(0x34e035ac49e0?, 0x3?, 0x61?, 0xe3?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x14000085f10 sp=0x14000085ef0 pc=0x104695318
+runtime.gcBgMarkWorker(0x14000181b20)
+	/usr/local/go/src/runtime/mgc.go:1363 +0xdc fp=0x14000085fb0 sp=0x14000085f10 pc=0x10464025c
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/local/go/src/runtime/mgc.go:1279 +0x28 fp=0x14000085fd0 sp=0x14000085fb0 pc=0x104640148
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x14000085fd0 sp=0x14000085fd0 pc=0x10469da54
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:1279 +0x140
+
+goroutine 41 gp=0x14000003880 m=nil [GC worker (idle)]:
+runtime.gopark(0x34d9f77cdd18?, 0x1?, 0x6a?, 0x1f?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400006bf10 sp=0x1400006bef0 pc=0x104695318
+runtime.gcBgMarkWorker(0x14000181b20)
+	/usr/local/go/src/runtime/mgc.go:1363 +0xdc fp=0x1400006bfb0 sp=0x1400006bf10 pc=0x10464025c
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/local/go/src/runtime/mgc.go:1279 +0x28 fp=0x1400006bfd0 sp=0x1400006bfb0 pc=0x104640148
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400006bfd0 sp=0x1400006bfd0 pc=0x10469da54
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:1279 +0x140
+
+goroutine 50 gp=0x14000184c40 m=nil [GC worker (idle)]:
+runtime.gopark(0x34d9f77cd0b9?, 0x3?, 0xd7?, 0xc6?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x14000070f10 sp=0x14000070ef0 pc=0x104695318
+runtime.gcBgMarkWorker(0x14000181b20)
+	/usr/local/go/src/runtime/mgc.go:1363 +0xdc fp=0x14000070fb0 sp=0x14000070f10 pc=0x10464025c
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/local/go/src/runtime/mgc.go:1279 +0x28 fp=0x14000070fd0 sp=0x14000070fb0 pc=0x104640148
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x14000070fd0 sp=0x14000070fd0 pc=0x10469da54
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:1279 +0x140
+
+goroutine 10 gp=0x14000103dc0 m=nil [GC worker (idle)]:
+runtime.gopark(0x34e035ac1f12?, 0x1?, 0x41?, 0x67?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x14000070710 sp=0x140000706f0 pc=0x104695318
+runtime.gcBgMarkWorker(0x14000181b20)
+	/usr/local/go/src/runtime/mgc.go:1363 +0xdc fp=0x140000707b0 sp=0x14000070710 pc=0x10464025c
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/local/go/src/runtime/mgc.go:1279 +0x28 fp=0x140000707d0 sp=0x140000707b0 pc=0x104640148
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140000707d0 sp=0x140000707d0 pc=0x10469da54
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:1279 +0x140
+
+goroutine 42 gp=0x14000003a40 m=nil [GC worker (idle)]:
+runtime.gopark(0x34d9e74bc0a8?, 0x1?, 0x59?, 0xe?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400006c710 sp=0x1400006c6f0 pc=0x104695318
+runtime.gcBgMarkWorker(0x14000181b20)
+	/usr/local/go/src/runtime/mgc.go:1363 +0xdc fp=0x1400006c7b0 sp=0x1400006c710 pc=0x10464025c
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/local/go/src/runtime/mgc.go:1279 +0x28 fp=0x1400006c7d0 sp=0x1400006c7b0 pc=0x104640148
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400006c7d0 sp=0x1400006c7d0 pc=0x10469da54
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:1279 +0x140
+
+goroutine 51 gp=0x14000184e00 m=nil [GC worker (idle)]:
+runtime.gopark(0x105c7b800?, 0x3?, 0x9d?, 0x28?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x140002f5710 sp=0x140002f56f0 pc=0x104695318
+runtime.gcBgMarkWorker(0x14000181b20)
+	/usr/local/go/src/runtime/mgc.go:1363 +0xdc fp=0x140002f57b0 sp=0x140002f5710 pc=0x10464025c
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/local/go/src/runtime/mgc.go:1279 +0x28 fp=0x140002f57d0 sp=0x140002f57b0 pc=0x104640148
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002f57d0 sp=0x140002f57d0 pc=0x10469da54
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:1279 +0x140
+
+goroutine 11 gp=0x1400057e000 m=nil [GC worker (idle)]:
+runtime.gopark(0x34d9f77cdc47?, 0x3?, 0x6f?, 0xa3?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400058f710 sp=0x1400058f6f0 pc=0x104695318
+runtime.gcBgMarkWorker(0x14000181b20)
+	/usr/local/go/src/runtime/mgc.go:1363 +0xdc fp=0x1400058f7b0 sp=0x1400058f710 pc=0x10464025c
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/local/go/src/runtime/mgc.go:1279 +0x28 fp=0x1400058f7d0 sp=0x1400058f7b0 pc=0x104640148
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400058f7d0 sp=0x1400058f7d0 pc=0x10469da54
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:1279 +0x140
+
+goroutine 43 gp=0x14000003c00 m=nil [GC worker (idle)]:
+runtime.gopark(0x34e035ad0125?, 0x3?, 0x86?, 0x36?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400006cf10 sp=0x1400006cef0 pc=0x104695318
+runtime.gcBgMarkWorker(0x14000181b20)
+	/usr/local/go/src/runtime/mgc.go:1363 +0xdc fp=0x1400006cfb0 sp=0x1400006cf10 pc=0x10464025c
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/local/go/src/runtime/mgc.go:1279 +0x28 fp=0x1400006cfd0 sp=0x1400006cfb0 pc=0x104640148
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400006cfd0 sp=0x1400006cfd0 pc=0x10469da54
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/usr/local/go/src/runtime/mgc.go:1279 +0x140
+
+goroutine 13 gp=0x14000122380 m=nil [select, 17 minutes, locked to thread]:
+runtime.gopark(0x1400058efa0?, 0x2?, 0xa8?, 0xee?, 0x1400058ef90?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x1400058ee20 sp=0x1400058ee00 pc=0x104695318
+runtime.selectgo(0x1400058efa0, 0x1400058ef8c, 0x0?, 0x0, 0x0?, 0x1)
+	/usr/local/go/src/runtime/select.go:335 +0x67c fp=0x1400058ef50 sp=0x1400058ee20 pc=0x104672c3c
+runtime.ensureSigM.func1()
+	/usr/local/go/src/runtime/signal_unix.go:1077 +0x168 fp=0x1400058efd0 sp=0x1400058ef50 pc=0x10468c8e8
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x1400058efd0 sp=0x1400058efd0 pc=0x10469da54
+created by runtime.ensureSigM in goroutine 57
+	/usr/local/go/src/runtime/signal_unix.go:1060 +0xd8
+
+goroutine 21 gp=0x14000122700 m=12 mp=0x14000608808 [syscall, 17 minutes]:
+runtime.sigNoteSleep(0x104c90450?)
+	/usr/local/go/src/runtime/os_darwin.go:132 +0x20 fp=0x140002f5f90 sp=0x140002f5f50 pc=0x104659d70
+os/signal.signal_recv()
+	/usr/local/go/src/runtime/sigqueue.go:149 +0x2c fp=0x140002f5fb0 sp=0x140002f5f90 pc=0x10469733c
+os/signal.loop()
+	/usr/local/go/src/os/signal/signal_unix.go:23 +0x1c fp=0x140002f5fd0 sp=0x140002f5fb0 pc=0x104c7911c
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002f5fd0 sp=0x140002f5fd0 pc=0x10469da54
+created by os/signal.Notify.func1.1 in goroutine 57
+	/usr/local/go/src/os/signal/signal.go:151 +0x28
+
+goroutine 56 gp=0x1400060afc0 m=nil [chan receive, 17 minutes]:
+runtime.gopark(0x105093d60?, 0x1400011a080?, 0x0?, 0x0?, 0x0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x140002f6ef0 sp=0x140002f6ed0 pc=0x104695318
+runtime.chanrecv(0x140002e4d20, 0x140002f6fc0, 0x1)
+	/usr/local/go/src/runtime/chan.go:639 +0x414 fp=0x140002f6f70 sp=0x140002f6ef0 pc=0x10462e0e4
+runtime.chanrecv2(0x0?, 0x10469da54?)
+	/usr/local/go/src/runtime/chan.go:494 +0x14 fp=0x140002f6fa0 sp=0x140002f6f70 pc=0x10462dcb4
+fyne.io/fyne/v2/internal/app.(*Lifecycle).RunEventQueue(...)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/app/lifecycle.go:127
+fyne.io/fyne/v2/app.(*fyneApp).Run.gowrap1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/app/app.go:67 +0x54 fp=0x140002f6fd0 sp=0x140002f6fa0 pc=0x104ca97b4
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002f6fd0 sp=0x140002f6fd0 pc=0x10469da54
+created by fyne.io/fyne/v2/app.(*fyneApp).Run in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/app/app.go:67 +0x5c
+
+goroutine 57 gp=0x1400060b180 m=nil [chan receive, 17 minutes]:
+runtime.gopark(0x140002f66c8?, 0x104c78bac?, 0x2?, 0x0?, 0x14000e98fc0?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x140002f66a0 sp=0x140002f6680 pc=0x104695318
+runtime.chanrecv(0x140001c6000, 0x0, 0x1)
+	/usr/local/go/src/runtime/chan.go:639 +0x414 fp=0x140002f6720 sp=0x140002f66a0 pc=0x10462e0e4
+runtime.chanrecv1(0x140001c6000?, 0x140002f6788?)
+	/usr/local/go/src/runtime/chan.go:489 +0x14 fp=0x140002f6750 sp=0x140002f6720 pc=0x10462dc94
+fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).catchTerm(0x1400036fa00)
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/driver_desktop.go:199 +0x74 fp=0x140002f67b0 sp=0x140002f6750 pc=0x104c7e7b4
+fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).Run.gowrap1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/driver.go:163 +0x28 fp=0x140002f67d0 sp=0x140002f67b0 pc=0x104c7da78
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002f67d0 sp=0x140002f67d0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).Run in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/driver.go:163 +0x70
+
+goroutine 58 gp=0x1400060b340 m=nil [chan receive, 1 minutes]:
+runtime.gopark(0x140002f7ef8?, 0x10466a190?, 0x38?, 0x7f?, 0x104c81e5c?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x140002f7ee0 sp=0x140002f7ec0 pc=0x104695318
+runtime.chanrecv(0x14000ed8000, 0x140002f7fb7, 0x1)
+	/usr/local/go/src/runtime/chan.go:639 +0x414 fp=0x140002f7f60 sp=0x140002f7ee0 pc=0x10462e0e4
+runtime.chanrecv2(0x0?, 0x0?)
+	/usr/local/go/src/runtime/chan.go:494 +0x14 fp=0x140002f7f90 sp=0x140002f7f60 pc=0x10462dcb4
+fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).refreshSystrayMenu.func1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/driver_desktop.go:160 +0x3c fp=0x140002f7fd0 sp=0x140002f7f90 pc=0x104c7e51c
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002f7fd0 sp=0x140002f7fd0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).refreshSystrayMenu in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/driver_desktop.go:159 +0xe8
+
+goroutine 59 gp=0x1400060b500 m=nil [chan receive, 17 minutes]:
+runtime.gopark(0x105093f00?, 0x140003703f0?, 0x60?, 0x3d?, 0x140001a5050?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x140002f8ee0 sp=0x140002f8ec0 pc=0x104695318
+runtime.chanrecv(0x14000ed8070, 0x140002f8fb7, 0x1)
+	/usr/local/go/src/runtime/chan.go:639 +0x414 fp=0x140002f8f60 sp=0x140002f8ee0 pc=0x10462e0e4
+runtime.chanrecv2(0x0?, 0x0?)
+	/usr/local/go/src/runtime/chan.go:494 +0x14 fp=0x140002f8f90 sp=0x140002f8f60 pc=0x10462dcb4
+fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).refreshSystrayMenu.func1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/driver_desktop.go:160 +0x3c fp=0x140002f8fd0 sp=0x140002f8f90 pc=0x104c7e51c
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002f8fd0 sp=0x140002f8fd0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).refreshSystrayMenu in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/driver_desktop.go:159 +0xe8
+
+goroutine 152 gp=0x1400060b6c0 m=nil [sleep]:
+runtime.gopark(0x34e2cd76c1bf?, 0x104c870c8?, 0x8c?, 0x2e?, 0x104c85e70?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x140002faf50 sp=0x140002faf30 pc=0x104695318
+time.Sleep(0x5f5e100)
+	/usr/local/go/src/runtime/time.go:300 +0xe0 fp=0x140002faf90 sp=0x140002faf50 pc=0x1046996f0
+fyne.io/fyne/v2/internal/driver/glfw.(*window).processFocused.func1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:820 +0x2c fp=0x140002fafd0 sp=0x140002faf90 pc=0x104c8708c
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x140002fafd0 sp=0x140002fafd0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/driver/glfw.(*window).processFocused in goroutine 1
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:819 +0x1c8
+
+goroutine 47 gp=0x14000122a80 m=nil [chan receive]:
+runtime.gopark(0x14000086f98?, 0x104c78344?, 0x48?, 0xfa?, 0x8?)
+	/usr/local/go/src/runtime/proc.go:424 +0xc8 fp=0x14000086ef0 sp=0x14000086ed0 pc=0x104695318
+runtime.chanrecv(0x140002b00e0, 0x0, 0x1)
+	/usr/local/go/src/runtime/chan.go:639 +0x414 fp=0x14000086f70 sp=0x14000086ef0 pc=0x10462e0e4
+runtime.chanrecv1(0x1400036fa48?, 0x0?)
+	/usr/local/go/src/runtime/chan.go:489 +0x14 fp=0x14000086fa0 sp=0x14000086f70 pc=0x10462dc94
+fyne.io/fyne/v2/internal/animation.(*Runner).runAnimations.func1()
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/animation/runner.go:92 +0x3c fp=0x14000086fd0 sp=0x14000086fa0 pc=0x104c7833c
+runtime.goexit({})
+	/usr/local/go/src/runtime/asm_arm64.s:1223 +0x4 fp=0x14000086fd0 sp=0x14000086fd0 pc=0x10469da54
+created by fyne.io/fyne/v2/internal/animation.(*Runner).runAnimations in goroutine 4
+	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/animation/runner.go:90 +0x7c
+
+r0      0x1869a1b81
+r1      0x0
+r2      0x1819e5380
+r3      0x1ec5bfa00
+r4      0x2
+r5      0x10
+r6      0x0
+r7      0x0
+r8      0x1e925d000
+r9      0x2
+r10     0x7e70f01
+r11     0x0
+r12     0x5
+r13     0x12d9be0a0
+r14     0x1eb6c05d8
+r15     0x1eb6c05d8
+r16     0x181c435cc
+r17     0x1f3ce2ed0
+r18     0x0
+r19     0x16e92ea78
+r20     0x600002f48750
+r21     0x600003460940
+r22     0x3
+r23     0x27a64c290
+r24     0x600003450bc0
+r25     0x0
+r26     0x0
+r27     0x0
+r28     0x16e92ebb0
+r29     0x16e92ea60
+lr      0x1866763d8
+sp      0x16e92e9a0
+pc      0x1866763d8
+fault   0x1866763d8
