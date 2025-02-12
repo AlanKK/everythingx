@@ -167,11 +167,7 @@ func benchmarkPrefixSearch() {
 
 	logger := log.New(logFile, "", log.LstdFlags)
 
-	var times = make(map[string][]time.Duration)
 	var allTimes []time.Duration
-	for _, prefix := range searchPrefixes {
-		times[prefix] = []time.Duration{}
-	}
 
 	for i := 0; i < numSearches; i++ {
 		if i%10 == 0 {
@@ -185,43 +181,20 @@ func benchmarkPrefixSearch() {
 			}
 			if len(results) == 0 {
 				log.Printf("No results found for prefix '%s'", prefix)
+				continue
 			}
 			duration := time.Since(searchStart)
-			times[prefix] = append(times[prefix], duration)
 			allTimes = append(allTimes, duration)
 		}
 		totalSearches += len(searchPrefixes)
 	}
 	fmt.Println()
 
-	// Calculate statistics
-	for _, prefix := range searchPrefixes {
-		var total, min, max time.Duration
-		min = time.Duration(math.MaxInt64)
-		for _, t := range times[prefix] {
-			total += t
-			if t < min {
-				min = t
-			}
-			if t > max {
-				max = t
-			}
-		}
-		average := total / time.Duration(numSearches)
-		var sumSquares time.Duration
-		for _, t := range times[prefix] {
-			diff := t - average
-			sumSquares += diff * diff
-		}
-
-		// Calculate median
-		sortedTimes := times[prefix]
-		sort.Slice(sortedTimes, func(i, j int) bool { return sortedTimes[i] < sortedTimes[j] })
-	}
-
 	// Calculate overall statistics
-	var total, min, max time.Duration
+	var total, min, max, average, stdDev time.Duration
 	min = time.Duration(math.MaxInt64)
+	max = time.Duration(math.MinInt64)
+
 	for _, t := range allTimes {
 		total += t
 		if t < min {
@@ -231,13 +204,13 @@ func benchmarkPrefixSearch() {
 			max = t
 		}
 	}
-	average := total / time.Duration(totalSearches)
+	average = total / time.Duration(totalSearches)
 	var sumSquares time.Duration
 	for _, t := range allTimes {
 		diff := t - average
 		sumSquares += diff * diff
 	}
-	stdDev := time.Duration(math.Sqrt(float64(sumSquares) / float64(totalSearches)))
+	stdDev = time.Duration(math.Sqrt(float64(sumSquares) / float64(totalSearches)))
 
 	// Calculate overall median
 	sort.Slice(allTimes, func(i, j int) bool { return allTimes[i] < allTimes[j] })

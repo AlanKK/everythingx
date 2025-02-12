@@ -11,8 +11,8 @@ fi
 echo 'Installing executables'
 cp -f findfilesd /usr/local/bin
 chmod +x /usr/local/bin/findfilesd
-cp -f ff /usr/local/bin
-chmod +x /usr/local/bin/ff
+cp -f everythingx /usr/local/bin
+chmod +x /usr/local/bin/everythingx
 
 echo 'Creating data directory /var/lib/findfiles'
 mkdir /var/lib/findfiles
