@@ -9,8 +9,7 @@
         "type": "go",
         "request": "launch",
         "mode": "debug",
-        //"program": "${file}",
-       // "args": ["-n=10"]
+        "args": ["-name=alan"],
         "program": "${workspaceFolder}/cmd/everythingx",
         // "args": ["--monitor_path", "/Users/alan/Documents/git/findfiles/e2eTest/findfiles_test", "--db_path", "/Users/alan/Documents/git/findfiles/data/files.db"]   
     }]
