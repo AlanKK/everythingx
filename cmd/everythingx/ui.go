@@ -49,9 +49,6 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 		fmt.Println("Error:", err)
 		return
 	}
-	if len(results) == 0 {
-		return
-	}
 
 	searchElapsed := time.Since(searchStart)
 
@@ -59,23 +56,25 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	*tableData = make([]RowData, 0, len(results))
 	var fullpath, dir, base, size, modified string
 
-	for _, r := range results {
-		base = filepath.Base(r.Fullpath)
-		dir = filepath.Dir(r.Fullpath) + "/"
-		size, modified = getFileSizeMod(r.Fullpath)
+	if len(results) > 0 {
+		for _, r := range results {
+			base = filepath.Base(r.Fullpath)
+			dir = filepath.Dir(r.Fullpath) + "/"
+			size, modified = getFileSizeMod(r.Fullpath)
 
-		if r.ObjectType == models.ItemIsDir {
-			base += "/"
-			fullpath += "/"
-			size = "--"
+			if r.ObjectType == models.ItemIsDir {
+				base += "/"
+				fullpath += "/"
+				size = "--"
+			}
+			*tableData = append(*tableData, RowData{
+				Name:         base,
+				Path:         dir,
+				Size:         size,
+				Modified:     modified,
+				SearchResult: r,
+			})
 		}
-		*tableData = append(*tableData, RowData{
-			Name:         base,
-			Path:         dir,
-			Size:         size,
-			Modified:     modified,
-			SearchResult: r,
-		})
 	}
 	t.Refresh()
 
@@ -198,11 +197,10 @@ func getToolTipForFile(path string) string {
 
 func loadUI() {
 	var statusBar *widget.Label
-	printMemUsage()
 
 	a := app.New()
+	a.Settings().SetTheme(&myTheme{})
 	w := a.NewWindow("EverythingX")
-	a.SetIcon(ResourceEverythingXLogo32x32monochromeicon)
 
 	if desk, ok := a.(desktop.App); ok {
 		m := fyne.NewMenu("EverythingX",
@@ -212,7 +210,7 @@ func loadUI() {
 		desk.SetSystemTrayMenu(m)
 	}
 
-	w.SetContent(widget.NewLabel("EverythingX"))
+	//w.SetContent(widget.NewLabel("EverythingX"))
 	w.SetCloseIntercept(func() {
 		w.Hide()
 	})
@@ -229,6 +227,7 @@ func loadUI() {
 	w.Canvas().Focus(entry)
 
 	statusBar = widget.NewLabel("0 objects")
+	statusBar.TextStyle = fyne.TextStyle{Bold: true}
 
 	content := container.NewBorder(
 		entry,
@@ -242,8 +241,6 @@ func loadUI() {
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(content, w.Canvas()))
 
 	w.Resize(fyne.NewSize(1300, 800))
-
-	printMemUsage()
 	w.ShowAndRun()
 
 	// anything below will not be executed until app is closed
