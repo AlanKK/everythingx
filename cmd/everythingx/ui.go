@@ -238,11 +238,10 @@ func getToolTipForFile(path string) string {
 
 func loadUI() {
 	var statusBar *widget.Label
-	printMemUsage()
 
 	a := app.New()
+	a.Settings().SetTheme(&myTheme{})
 	w := a.NewWindow("EverythingX")
-	a.SetIcon(ResourceEverythingXLogo32x32monochromeicon)
 
 	if desk, ok := a.(desktop.App); ok {
 		m := fyne.NewMenu("EverythingX",
@@ -252,7 +251,7 @@ func loadUI() {
 		desk.SetSystemTrayMenu(m)
 	}
 
-	w.SetContent(widget.NewLabel("EverythingX"))
+	//w.SetContent(widget.NewLabel("EverythingX"))
 	w.SetCloseIntercept(func() {
 		w.Hide()
 	})
@@ -269,6 +268,7 @@ func loadUI() {
 	w.Canvas().Focus(entry)
 
 	statusBar = widget.NewLabel("0 objects")
+	statusBar.TextStyle = fyne.TextStyle{Bold: true}
 
 	content := container.NewBorder(
 		entry,
@@ -282,8 +282,6 @@ func loadUI() {
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(content, w.Canvas()))
 
 	w.Resize(fyne.NewSize(1300, 800))
-
-	printMemUsage()
 	w.ShowAndRun()
 
 	// anything below will not be executed until app is closed
