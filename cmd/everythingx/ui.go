@@ -103,21 +103,6 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	)
 }
 
-func splitFileName(filename string, searchTerm string) (string, string, string) {
-	beforeTerm := ""
-	afterTerm := ""
-	actualTerm := ""
-
-	if idx := strings.Index(strings.ToLower(filename), strings.ToLower(searchTerm)); idx != -1 {
-		beforeTerm = filename[:idx]
-		actualTerm = filename[idx : idx+len(searchTerm)]
-		afterTerm = filename[idx+len(searchTerm):]
-	} else {
-		beforeTerm = filename
-	}
-	return beforeTerm, actualTerm, afterTerm
-}
-
 type RowData struct {
 	Name         []string
 	Path         string
@@ -150,18 +135,60 @@ func makeTable() *widget.Table {
 
 			switch id.Col {
 			case 0:
-				nameParts := (*tableData)[id.Row].Name
-				s := &widget.TextSegment{Text: nameParts[0], Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Monospace: true}}}
-				p := &widget.TextSegment{Text: nameParts[1], Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Monospace: true, Bold: true}, ColorName: theme.ColorNameWarning}}
-				e := &widget.TextSegment{Text: nameParts[2], Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Monospace: true}}}
-				label.Segments = []widget.RichTextSegment{s, p, e}
+				fileNameParts := (*tableData)[id.Row].Name
+				var segments []widget.RichTextSegment
+				if fileNameParts[0] != "" {
+					segments = append(segments, &widget.TextSegment{Text: fileNameParts[0],
+						Style: widget.RichTextStyle{
+							Inline:    true,
+							TextStyle: fyne.TextStyle{Monospace: true},
+						},
+					})
+				}
+				if fileNameParts[1] != "" {
+					segments = append(segments, &widget.TextSegment{Text: fileNameParts[1],
+						Style: widget.RichTextStyle{
+							Inline:    true,
+							TextStyle: fyne.TextStyle{Monospace: true, Bold: true},
+							ColorName: theme.ColorNameWarning,
+						},
+					})
+				}
+				if fileNameParts[2] != "" {
+					segments = append(segments, &widget.TextSegment{Text: fileNameParts[2],
+						Style: widget.RichTextStyle{
+							Inline:    true,
+							TextStyle: fyne.TextStyle{Monospace: true},
+						},
+					})
+				}
+				label.Segments = segments
 			case 1:
-				label.Segments = []widget.RichTextSegment{&widget.TextSegment{Text: (*tableData)[id.Row].Path, Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading}}}
+				label.Segments = []widget.RichTextSegment{&widget.TextSegment{
+					Text: (*tableData)[id.Row].Path,
+					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
+						TextStyle: fyne.TextStyle{Monospace: true},
+					},
+				},
+				}
 			case 2:
-				label.Segments = []widget.RichTextSegment{&widget.TextSegment{Text: (*tableData)[id.Row].Size, Style: widget.RichTextStyle{Alignment: fyne.TextAlignTrailing}}}
+				label.Segments = []widget.RichTextSegment{&widget.TextSegment{
+					Text: (*tableData)[id.Row].Size,
+					Style: widget.RichTextStyle{Alignment: fyne.TextAlignTrailing,
+						TextStyle: fyne.TextStyle{Monospace: true},
+					},
+				},
+				}
 			case 3:
-				label.Segments = []widget.RichTextSegment{&widget.TextSegment{Text: (*tableData)[id.Row].Modified, Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading}}}
+				label.Segments = []widget.RichTextSegment{&widget.TextSegment{
+					Text: (*tableData)[id.Row].Modified,
+					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
+						TextStyle: fyne.TextStyle{Monospace: true},
+					},
+				},
+				}
 			}
+			cell.Refresh()
 		},
 	)
 	t.OnSelected = func(id widget.TableCellID) {

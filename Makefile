@@ -4,6 +4,8 @@
 build:
 	go build -o findfilesd ./cmd/service/main.go
 	CGO_LDFLAGS="-Wl,-w" go build -o everythingx ./cmd/everythingx/main.go ./cmd/everythingx/ui.go ./cmd/everythingx/utils.go ./cmd/everythingx/assets.go
+
+all: build
 	go build -o e2etest ./e2eTest/main.go
 
 # Run tests
