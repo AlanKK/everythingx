@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/user"
 	"runtime"
+	"strings"
 	"syscall"
 )
 
@@ -74,4 +75,19 @@ func printMemUsage() {
 
 func bToMb(b uint64) uint64 {
 	return b / 1024 / 1024
+}
+
+func splitFileName(filename string, searchTerm string) (string, string, string) {
+	beforeTerm := ""
+	afterTerm := ""
+	actualTerm := ""
+
+	if idx := strings.Index(strings.ToLower(filename), strings.ToLower(searchTerm)); idx != -1 {
+		beforeTerm = filename[:idx]
+		actualTerm = filename[idx : idx+len(searchTerm)]
+		afterTerm = filename[idx+len(searchTerm):]
+	} else {
+		beforeTerm = filename
+	}
+	return beforeTerm, actualTerm, afterTerm
 }
