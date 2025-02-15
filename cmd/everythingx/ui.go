@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/AlanKK/findfiles/internal/ffdb"
@@ -13,10 +14,10 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
-	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // TODO:
@@ -54,21 +55,25 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 
 	// Preallocate the TableData slice
 	*tableData = make([]RowData, 0, len(results))
-	var fullpath, dir, base, size, modified string
+	var fullpath, base, dir, size, modified string
 
 	if len(results) > 0 {
 		for _, r := range results {
+			fullpath = r.Fullpath
 			base = filepath.Base(r.Fullpath)
-			dir = filepath.Dir(r.Fullpath) + "/"
-			size, modified = getFileSizeMod(r.Fullpath)
+			dir = filepath.Dir(fullpath) + "/"
+			size, modified = getFileSizeMod(fullpath)
 
 			if r.ObjectType == models.ItemIsDir {
-				base += "/"
+				//base += "/"
 				fullpath += "/"
 				size = "--"
 			}
+
+			beforeTerm, searchTerm, afterTerm := splitFileName(base, e.Text)
+
 			*tableData = append(*tableData, RowData{
-				Name:         base,
+				Name:         []string{beforeTerm, searchTerm, afterTerm},
 				Path:         dir,
 				Size:         size,
 				Modified:     modified,
@@ -99,7 +104,7 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 }
 
 type RowData struct {
-	Name         string
+	Name         []string
 	Path         string
 	Size         string
 	Modified     string
@@ -120,41 +125,77 @@ func makeTable() *widget.Table {
 		func() (int, int) { return len(*tableData), 4 },
 		// CreateCell()
 		func() fyne.CanvasObject {
-			l := ttwidget.NewLabel("Template")
-			l.TextStyle = fyne.TextStyle{Monospace: true}
+			l := widget.NewRichText()
 			l.Truncation = fyne.TextTruncateEllipsis
 			return l
 		},
 		// UpdateCell()
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			label := cell.(*ttwidget.Label)
-
-			fynetooltip.SetToolTipTextStyle(fyne.TextStyle{Monospace: true})
-			toolTipText := getToolTipForFile((*tableData)[id.Row].SearchResult.Fullpath)
+			label := cell.(*widget.RichText)
 
 			switch id.Col {
 			case 0:
-				label.SetText((*tableData)[id.Row].Name)
-				label.SetToolTip(toolTipText)
-				label.Alignment = fyne.TextAlignLeading
+				fileNameParts := (*tableData)[id.Row].Name
+				var segments []widget.RichTextSegment
+				if fileNameParts[0] != "" {
+					segments = append(segments, &widget.TextSegment{Text: fileNameParts[0],
+						Style: widget.RichTextStyle{
+							Inline:    true,
+							TextStyle: fyne.TextStyle{Monospace: true},
+						},
+					})
+				}
+				if fileNameParts[1] != "" {
+					segments = append(segments, &widget.TextSegment{Text: fileNameParts[1],
+						Style: widget.RichTextStyle{
+							Inline:    true,
+							TextStyle: fyne.TextStyle{Monospace: true, Bold: true},
+							ColorName: theme.ColorNameWarning,
+						},
+					})
+				}
+				if fileNameParts[2] != "" {
+					segments = append(segments, &widget.TextSegment{Text: fileNameParts[2],
+						Style: widget.RichTextStyle{
+							Inline:    true,
+							TextStyle: fyne.TextStyle{Monospace: true},
+						},
+					})
+				}
+				label.Segments = segments
 			case 1:
-				label.SetText((*tableData)[id.Row].Path)
-				label.SetToolTip(toolTipText)
-				label.Alignment = fyne.TextAlignLeading
+				label.Segments = []widget.RichTextSegment{&widget.TextSegment{
+					Text: (*tableData)[id.Row].Path,
+					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
+						TextStyle: fyne.TextStyle{Monospace: true},
+					},
+				},
+				}
 			case 2:
-				label.SetText((*tableData)[id.Row].Size)
-				label.Alignment = fyne.TextAlignTrailing
+				label.Segments = []widget.RichTextSegment{&widget.TextSegment{
+					Text: (*tableData)[id.Row].Size,
+					Style: widget.RichTextStyle{Alignment: fyne.TextAlignTrailing,
+						TextStyle: fyne.TextStyle{Monospace: true},
+					},
+				},
+				}
 			case 3:
-				label.SetText((*tableData)[id.Row].Modified)
-				label.Alignment = fyne.TextAlignLeading
+				label.Segments = []widget.RichTextSegment{&widget.TextSegment{
+					Text: (*tableData)[id.Row].Modified,
+					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
+						TextStyle: fyne.TextStyle{Monospace: true},
+					},
+				},
+				}
 			}
+			cell.Refresh()
 		},
 	)
 	t.OnSelected = func(id widget.TableCellID) {
 		if id.Row == 0 {
 			return
 		}
-		handleOpenFile((*tableData)[id.Row].Path + (*tableData)[id.Row].Name)
+		handleOpenFile((*tableData)[id.Row].Path + strings.Join((*tableData)[id.Row].Name, ""))
 	}
 
 	t.SetColumnWidth(0, 400) // Name
