@@ -73,9 +73,9 @@ func printMemUsage() {
 	// fmt.Printf("Alloc = %v MB", bToMb(m.Alloc))
 }
 
-func bToMb(b uint64) uint64 {
-	return b / 1024 / 1024
-}
+// func bToMb(b uint64) uint64 {
+// 	return b / 1024 / 1024
+// }
 
 func splitFileName(filename string, searchTerm string) (string, string, string) {
 	beforeTerm := ""
