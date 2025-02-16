@@ -12,6 +12,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
@@ -24,6 +25,14 @@ import (
 // - Add system tray icon: https://docs.fyne.io/explore/systray.html
 
 var maxSearchResults int = 1000
+
+type RowData struct {
+	Name         []string
+	Path         string
+	Size         string
+	Modified     string
+	SearchResult *models.SearchResult
+}
 
 func handleOpenFile(pathname string) {
 	if pathname == "" {
@@ -103,15 +112,6 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	)
 }
 
-type RowData struct {
-	Name         []string
-	Path         string
-	Size         string
-	Modified     string
-	SearchResult *models.SearchResult
-}
-
-// tableData holds the search results to be displayed in the table. Must be always
 // available for the table widget.
 var tableData *[]RowData
 var t *widget.Table
@@ -149,7 +149,7 @@ func makeTable() *widget.Table {
 					segments = append(segments, &widget.TextSegment{Text: fileNameParts[1],
 						Style: widget.RichTextStyle{
 							Inline:    true,
-							TextStyle: fyne.TextStyle{Monospace: true, Bold: true},
+							TextStyle: fyne.TextStyle{Bold: true},
 							ColorName: theme.ColorNameWarning,
 						},
 					})
@@ -236,22 +236,73 @@ func getToolTipForFile(path string) string {
 	return fmt.Sprintf("%s\n\n%s\n", path, lsFormat)
 }
 
+func showAbout() {
+	w := fyne.CurrentApp().NewWindow("About")
+
+	rich := widget.NewRichTextFromMarkdown(`
+# EverythingX 
+
+**Version:** v0.1
+
+**Author:** Alan Keister
+
+**License:** MIT 
+
+More info on [Github](` + GithubURL + `)
+`)
+
+	var img *canvas.Image
+	if fyne.CurrentApp().Settings().ThemeVariant() == theme.VariantDark {
+		img = canvas.NewImageFromResource(ResourceEverythingXLogo32x32monochromeicon)
+	} else {
+		img = canvas.NewImageFromResource(resourceIconblack64x64Png)
+	}
+	img.SetMinSize(fyne.NewSize(128, 128))
+	imgContainer := container.NewCenter(img)
+
+	okButton := container.NewVBox(container.NewCenter(
+		&widget.Button{
+			Text:     "OK",
+			OnTapped: w.Hide}))
+	text := container.NewCenter(rich)
+	content := container.NewBorder(imgContainer, okButton, nil, nil, text)
+
+	w.SetContent(content)
+	w.Resize(fyne.NewSize(400, 300))
+	w.Show()
+}
+
+func showSettings() {
+	// Implement your settings window here
+	w := fyne.CurrentApp().NewWindow("Settings")
+	w.SetContent(widget.NewLabel("Settings content goes here"))
+	w.Resize(fyne.NewSize(400, 300))
+	w.Show()
+}
+
 func loadUI() {
 	var statusBar *widget.Label
+	// printMemUsage()
 
 	a := app.New()
-	a.Settings().SetTheme(&myTheme{})
+	a.Settings().SetTheme(&everythingxTheme{})
 	w := a.NewWindow("EverythingX")
 
 	if desk, ok := a.(desktop.App); ok {
 		m := fyne.NewMenu("EverythingX",
 			fyne.NewMenuItem("Show EverythingX", func() {
 				w.Show()
+			}),
+			fyne.NewMenuItem("Settings", func() {
+				showSettings()
+			}),
+			fyne.NewMenuItem("About...", func() {
+				showAbout()
 			}))
 		desk.SetSystemTrayMenu(m)
 	}
 
-	//w.SetContent(widget.NewLabel("EverythingX"))
+	w.SetContent(widget.NewLabel("EverythingX"))
 	w.SetCloseIntercept(func() {
 		w.Hide()
 	})
@@ -282,6 +333,8 @@ func loadUI() {
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(content, w.Canvas()))
 
 	w.Resize(fyne.NewSize(1300, 800))
+
+	printMemUsage()
 	w.ShowAndRun()
 
 	// anything below will not be executed until app is closed
