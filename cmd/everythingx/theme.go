@@ -7,52 +7,52 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-type myTheme struct{}
+type everythingxTheme struct{}
 
-var _ fyne.Theme = (*myTheme)(nil)
+var _ fyne.Theme = (*everythingxTheme)(nil)
 
-// return bundled font resource
-func (*myTheme) Font(s fyne.TextStyle) fyne.Resource {
+// Roboto Mono. All of these are monospace fonts
+func (*everythingxTheme) Font(s fyne.TextStyle) fyne.Resource {
 	if s.Monospace {
-		return resourceRobotoMonoRegularTtf
+		return resourceRobotoMonoRegular
 	}
 	if s.Bold {
 		if s.Italic {
-			return theme.DefaultTheme().Font(s)
+			return resourceRobotoMonoBoldItalic
 		}
-		return resourceRobotoMonoBoldTtf
+		return resourceRobotoMonoBold
 	}
 	if s.Italic {
-		return resourceRobotoMonoItalicTtf
+		return resourceRobotoMonoItalic
 	}
-	return resourceRobotoMonoRegularTtf
+	return resourceRobotoMonoRegular
 }
 
 // func (*myTheme) Padding() int {
 // 	return theme.DefaultTheme().Padding()
 // }
 
-func (*myTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+func (*everythingxTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
 	return theme.DefaultTheme().Color(n, v)
 }
 
-func (*myTheme) Icon(n fyne.ThemeIconName) fyne.Resource {
+func (*everythingxTheme) Icon(n fyne.ThemeIconName) fyne.Resource {
 	return ResourceEverythingXLogo32x32monochromeicon
 }
 
-func (*myTheme) Size(n fyne.ThemeSizeName) float32 {
+func (*everythingxTheme) Size(n fyne.ThemeSizeName) float32 {
 
 	switch n {
-	// case theme.SizeNameSeparatorThickness:
-	// 	return 1
+	// case theme.SizeNameWindowTitleBarHeight:
+	// return 26 // does nothing
+	// case theme.SizeNameHeadingText: // does nothing
+	// return 24
+	case theme.SizeNameSeparatorThickness:
+		return 0
 	case theme.SizeNameLineSpacing:
 		return 4
 	case theme.SizeNamePadding:
-		return 1
-	case theme.SizeNameHeadingText:
-		return 24
-	case theme.SizeNameWindowTitleBarHeight:
-		return 26
+		return 0
 
 	default:
 		return theme.DefaultTheme().Size(n)
