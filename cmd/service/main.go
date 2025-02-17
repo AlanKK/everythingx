@@ -58,32 +58,42 @@ func fileExists(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-func getCommandLineArgs() (string, string, bool) {
-	monitorPath := flag.String("monitor_path", "/", "Path to monitor for file system events")
-	dbPath := flag.String("db_path", "/var/lib/findfiles/files.db", "Path to the database file")
-	noCache := flag.Bool("nocache", false, "Disable caching")
-	v := flag.Bool("verbose", false, "Enable verbose logging")
-	flag.Parse()
-
-	if *monitorPath == "" {
-		log.Fatal("Monitor path is required")
-	}
-	if *dbPath == "" {
-		log.Fatal("Database path is required")
-	}
-	if *noCache {
-		log.Println("--nocache is enabled.")
-	}
-	if *v {
-		log.Println("--verbose logging is enabled.")
-	}
-	verbose = *v
-	return *monitorPath, *dbPath, *noCache
+type Config struct {
+	MonitorPath string
+	DBPath      string
+	NoCache     bool
+	Verbose     bool
 }
 
-func setupDatabase(databasePath string) *sql.DB {
+func getCommandLineArgs() Config {
+	config := Config{}
+	flag.StringVar(&config.MonitorPath, "monitor_path", "/", "Path to monitor for file system events")
+	flag.StringVar(&config.DBPath, "db_path", "/var/lib/findfiles/files.db", "Path to the database file")
+	flag.BoolVar(&config.NoCache, "nocache", false, "Disable caching")
+	flag.BoolVar(&config.Verbose, "verbose", false, "Enable verbose logging")
+	flag.Parse()
+
+	if config.MonitorPath == "" {
+		log.Fatal("Monitor path is required")
+	}
+	if config.DBPath == "" {
+		log.Fatal("Database path is required")
+	}
+	if config.NoCache {
+		log.Println("--nocache is enabled.")
+	}
+	if config.Verbose {
+		log.Println("--verbose logging is enabled.")
+		verbose = true
+	}
+
+	return config
+}
+
+func setupDatabase(databasePath string) (*sql.DB, bool) {
 	var err error
 	var db *sql.DB
+	var new = false
 
 	if fileExists(databasePath) {
 		db, err = ffdb.OpenDB(databasePath)
@@ -96,6 +106,7 @@ func setupDatabase(databasePath string) *sql.DB {
 		if err != nil {
 			log.Fatal("Error creating database: ", err)
 		}
+		new = true
 	}
 
 	count, err := ffdb.RecordCount(db)
@@ -104,7 +115,7 @@ func setupDatabase(databasePath string) *sql.DB {
 	}
 	log.Printf("Opened database %s. %d records", databasePath, count)
 
-	return db
+	return db, new
 }
 
 func gracefulShutdown(db *sql.DB, es *fsevents.EventStream) {
@@ -118,9 +129,9 @@ func gracefulShutdown(db *sql.DB, es *fsevents.EventStream) {
 
 func main() {
 	log.Println("Starting service with PID", os.Getpid())
-	monitorPath, dbPath, noCache := getCommandLineArgs()
+	config := getCommandLineArgs()
 
-	db := setupDatabase(dbPath)
+	db, dbIsNew := setupDatabase(config.DBPath)
 	if db == nil {
 		log.Fatal("Failed to open database")
 	}
@@ -131,24 +142,29 @@ func main() {
 
 	// Start the database writer thread
 	dbChannel = make(chan *models.EventRecord, 5000)
-	go databaseWriter(db, noCache)
+	go databaseWriter(db, config.NoCache)
 
-	// Start the File System Event listener
-	if !fileExists(monitorPath) {
-		log.Fatalf("Monitor path does not exist: %s", monitorPath)
+	if dbIsNew {
+		log.Println("Database is new. Scanning disk.")
+		scanDisk()
 	}
 
-	dev, err := fsevents.DeviceForPath(monitorPath)
+	// Start the File System Event listener
+	if !fileExists(config.MonitorPath) {
+		log.Fatalf("Monitor path does not exist: %s", config.MonitorPath)
+	}
+
+	dev, err := fsevents.DeviceForPath(config.MonitorPath)
 	if err != nil {
 		log.Fatalf("Failed to retrieve device for path: %v", err)
 	}
 
-	log.Printf("Monitoring path: %s.  Device %d UUID %d", monitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
+	log.Printf("Monitoring path: %s.  Device %d UUID %d", config.MonitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
 
 	es := &fsevents.EventStream{
-		Events:  make(chan []fsevents.Event, 10000), // Provide our own channel to buffer events and prevent hangs
-		Paths:   []string{monitorPath},
-		Latency: 5 * time.Second,
+		Events:  make(chan []fsevents.Event, 30000), // Provide our own channel to buffer events and prevent hangs
+		Paths:   []string{config.MonitorPath},
+		Latency: 60 * time.Second,
 		Device:  0,
 		Flags:   fsevents.FileEvents}
 	es.Start()
@@ -261,7 +277,7 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]m
 	if noCache {
 		maxQueueSize = 1
 	}
-	var delayTime time.Duration = 5 * time.Second
+	var delayTime time.Duration = 60 * time.Second
 
 	*eventRecordQueue = append(*eventRecordQueue, *event)
 
