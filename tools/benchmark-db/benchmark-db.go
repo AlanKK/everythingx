@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/AlanKK/findfiles/internal/ffdb"
-	"github.com/AlanKK/findfiles/internal/models"
+	"github.com/AlanKK/findfiles/internal/shared"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -42,7 +42,7 @@ func main() {
 
 		// Unzip the source database file
 		unzippedSourceDBPath := "/tmp/unzipped_files.db"
-		err = ungzipFile(sourceDBPath, unzippedSourceDBPath)
+		err = shared.GUxzipFile(sourceDBPath, unzippedSourceDBPath)
 		if err != nil {
 			log.Fatalf("Failed to unzip source database: %v", err)
 		}
@@ -131,7 +131,7 @@ func copyData(sourceDB, targetDB *sql.DB) {
 	for rows.Next() {
 		var filename, fullpath string
 		var eventID int
-		var objectType models.ObjectType
+		var objectType shared.ObjectType
 
 		err := rows.Scan(&filename, &fullpath, &eventID, &objectType)
 		if err != nil {

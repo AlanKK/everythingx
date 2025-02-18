@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/AlanKK/findfiles/internal/models"
+	"github.com/AlanKK/findfiles/internal/shared"
 	"github.com/mattn/go-sqlite3"
 )
 
@@ -22,14 +22,9 @@ var prefixSearchStmt *sql.Stmt
 var insertStmt *sql.Stmt
 var deleteStmt *sql.Stmt
 
-func fileExists(filename string) bool {
-	_, err := os.Stat(filename)
-	return !os.IsNotExist(err)
-}
-
 // Creates and opens a new database at the given pathname.
 func CreateDB(pathname string) (*sql.DB, error) {
-	if fileExists(pathname) {
+	if shared.FileExists(pathname) {
 		return nil, os.ErrExist
 	}
 
@@ -48,7 +43,7 @@ func CreateDB(pathname string) (*sql.DB, error) {
 // Opens an existing database
 func OpenDB(pathname string) (*sql.DB, error) {
 	// Check if the database file exists
-	if !fileExists(pathname) {
+	if !shared.FileExists(pathname) {
 		return nil, error(os.ErrNotExist)
 	}
 
@@ -66,7 +61,7 @@ func OpenDB(pathname string) (*sql.DB, error) {
 // Open read-only for the UI.  Can't use PRAGMAS in read-only mode.
 func OpenDBReadOnly(pathname string) (*sql.DB, error) {
 	// Check if the database file exists
-	if !fileExists(pathname) {
+	if !shared.FileExists(pathname) {
 		return nil, error(os.ErrNotExist)
 	}
 
@@ -136,22 +131,17 @@ func prepareStatements(db *sql.DB) {
 }
 
 // Performs a search for filenames starting with the given prefix and returns a limited number of results.
-func PrefixSearch(prefix string, limit ...int) ([]*models.SearchResult, error) {
-	var results []*models.SearchResult
+func PrefixSearch(prefix string, limit int) ([]*shared.SearchResult, error) {
+	var results []*shared.SearchResult
 
-	resultLimit := 200
-	if len(limit) > 0 {
-		resultLimit = limit[0]
-	}
-
-	rows, err := prefixSearchStmt.Query("%"+prefix+"%", resultLimit)
+	rows, err := prefixSearchStmt.Query("%"+prefix+"%", limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		result := &models.SearchResult{
+		result := &shared.SearchResult{
 			Fullpath:   "",
 			ObjectType: 0,
 		}
@@ -182,7 +172,7 @@ func DeleteRecord(db *sql.DB, fullpath string) error {
 }
 
 // Inserts a new record into the database.
-func InsertRecord(db *sql.DB, filename string, path string, eventID uint64, objectType models.ObjectType) error {
+func InsertRecord(db *sql.DB, filename string, path string, eventID uint64, objectType shared.ObjectType) error {
 	_, err := db.Exec("INSERT OR IGNORE INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)", filename, path, eventID, objectType)
 	return err
 }
@@ -256,7 +246,7 @@ func CommitRecords(db *sql.DB) error {
 }
 
 // Stores a batch of events in the database.
-func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
+func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 	if len(*eventRecordQueue) == 0 {
 		log.Println("No events to store")
 		return nil
@@ -271,7 +261,7 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 	var num_committed, num_missing, num_duplicate, num_deleted int
 
 	for _, e := range *eventRecordQueue {
-		if e.FoundOnScan || fileExists(e.Path) {
+		if e.FoundOnScan || shared.FileExists(e.Path) {
 			_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
 			if err != nil {
 				if isDuplicate(err) {
@@ -313,16 +303,11 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]models.EventRecord) error {
 		commitTimeEnd,
 		eventRecordQueue,
 		cap(*eventRecordQueue),
-		bToMb(m.Sys),
-		bToMb(m.Alloc),
+		float64(shared.BToMb(m.Sys)),
+		float64(shared.BToMb(m.Alloc)),
 	)
 
 	return nil
-}
-
-// Converts bytes to megabytes.
-func bToMb(b uint64) float64 {
-	return float64(b) / 1024 / 1024
 }
 
 // Checks if the given error is a SQLite constraint violation error.

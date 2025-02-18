@@ -16,8 +16,8 @@
         "type": "go",
         "request": "launch",
         "mode": "debug",
-        "program": "${workspaceFolder}/cmd/everythingx",
-        "args": ["-name=alan"],
+        "program": "${workspaceFolder}/cmd/cli",
+        "args": ["-b -n alan"],
     },
     {
         "name": "Launch service",
