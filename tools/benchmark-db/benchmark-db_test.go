@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/AlanKK/findfiles/internal/ffdb"
-	"github.com/AlanKK/findfiles/internal/models"
+	"github.com/AlanKK/findfiles/internal/shared"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -72,7 +72,7 @@ func TestCopyData(t *testing.T) {
 	defer targetDB.Close()
 
 	// Insert test data into the source database
-	_, err = sourceDB.Exec("INSERT INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)", "testfile", "/path/to/testfile", 1, models.ItemIsFile)
+	_, err = sourceDB.Exec("INSERT INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)", "testfile", "/path/to/testfile", 1, shared.ItemIsFile)
 	if err != nil {
 		t.Fatalf("Failed to insert test data into source database: %v", err)
 	}
@@ -84,14 +84,14 @@ func TestCopyData(t *testing.T) {
 	row := targetDB.QueryRow("SELECT filename, fullpath, event_id, object_type FROM files")
 	var filename, fullpath string
 	var eventID int
-	var objectType models.ObjectType
+	var objectType shared.ObjectType
 
 	err = row.Scan(&filename, &fullpath, &eventID, &objectType)
 	if err != nil {
 		t.Fatalf("Failed to query target database: %v", err)
 	}
 
-	if filename != "testfile" || fullpath != "/path/to/testfile" || eventID != 1 || objectType != models.ItemIsFile {
-		t.Errorf("Unexpected data in target database. Got (%s, %s, %d, %d), want (testfile, /path/to/testfile, 1, %d)", filename, fullpath, eventID, objectType, models.ItemIsFile)
+	if filename != "testfile" || fullpath != "/path/to/testfile" || eventID != 1 || objectType != shared.ItemIsFile {
+		t.Errorf("Unexpected data in target database. Got (%s, %s, %d, %d), want (testfile, /path/to/testfile, 1, %d)", filename, fullpath, eventID, objectType, shared.ItemIsFile)
 	}
 }
