@@ -19,7 +19,7 @@ if [ $? -ne 0 ]; then
 fi
 
 echo 'Removing executables'
-rm -f /usr/local/bin/findfilesd /usr/local/bin/everythingx
+rm -f /usr/local/bin/findfilesd /usr/local/bin/everythingx /usr/local/bin/ev
 if [ $? -ne 0 ]; then
     echo "Failed to remove the executable."
 fi

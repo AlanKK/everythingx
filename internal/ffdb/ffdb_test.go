@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/AlanKK/findfiles/internal/models"
+	"github.com/AlanKK/findfiles/internal/shared"
 )
 
 func TestCreateDB(t *testing.T) {
@@ -30,24 +30,14 @@ func TestCreateDB(t *testing.T) {
 	}
 
 	// Check if the filename index exists
-	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_filename_fullpath'")
+	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_filename'")
 	var indexName string
 	err = row.Scan(&indexName)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if indexName != "idx_filename_fullpath" {
-		t.Fatalf("Expected index name to be 'idx_filename_fullpath', got %s", indexName)
-	}
-
-	// Check if the fullpath index exists
-	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_fullpath'")
-	err = row.Scan(&indexName)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	if indexName != "idx_fullpath" {
-		t.Fatalf("Expected index name to be 'idx_fullpath', got %s", indexName)
+	if indexName != "idx_filename" {
+		t.Fatalf("Expected index name to be 'idx_filename', got %s", indexName)
 	}
 }
 
@@ -64,9 +54,9 @@ func TestGetRecord(t *testing.T) {
 
 	// Insert test data
 	for i := 1; i < 100; i++ {
-		result := models.SearchResult{
+		result := shared.SearchResult{
 			Fullpath:   fmt.Sprintf("/path/to/testfile%02d.txt", i),
-			ObjectType: models.ItemIsFile,
+			ObjectType: shared.ItemIsFile,
 		}
 		_, err = db.Exec("INSERT INTO files (filename, fullpath, object_type) VALUES (?, ?, ?)", filepath.Base(result.Fullpath), result.Fullpath, result.ObjectType)
 		if err != nil {
@@ -81,12 +71,12 @@ func TestGetRecord(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	expectedResults := []models.SearchResult{
-		{Fullpath: "/path/to/testfile01.txt", ObjectType: models.ItemIsFile},
-		{Fullpath: "/path/to/testfile02.txt", ObjectType: models.ItemIsFile},
-		{Fullpath: "/path/to/testfile03.txt", ObjectType: models.ItemIsFile},
-		{Fullpath: "/path/to/testfile04.txt", ObjectType: models.ItemIsFile},
-		{Fullpath: "/path/to/testfile05.txt", ObjectType: models.ItemIsFile},
+	expectedResults := []shared.SearchResult{
+		{Fullpath: "/path/to/testfile01.txt", ObjectType: shared.ItemIsFile},
+		{Fullpath: "/path/to/testfile02.txt", ObjectType: shared.ItemIsFile},
+		{Fullpath: "/path/to/testfile03.txt", ObjectType: shared.ItemIsFile},
+		{Fullpath: "/path/to/testfile04.txt", ObjectType: shared.ItemIsFile},
+		{Fullpath: "/path/to/testfile05.txt", ObjectType: shared.ItemIsFile},
 	}
 	if len(results) != len(expectedResults) {
 		t.Fatalf("Expected %d results, got %d", len(expectedResults), len(results))
@@ -180,7 +170,7 @@ func TestInsertRecord(t *testing.T) {
 	defer os.Remove(testDBPath)
 
 	// Insert a record
-	err = InsertRecord(db, "testfile1.txt", "/path/to/testfile1.txt", 0, models.ItemIsFile)
+	err = InsertRecord(db, "testfile1.txt", "/path/to/testfile1.txt", 0, shared.ItemIsFile)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -294,12 +284,12 @@ func TestFileExists(t *testing.T) {
 	defer os.Remove(tempFile.Name())
 
 	// Test that the file exists
-	if !fileExists(tempFile.Name()) {
+	if shared.FileExists(tempFile.Name()) {
 		t.Fatalf("Expected file to exist, but it does not")
 	}
 
 	// Test that a non-existent file does not exist
-	if fileExists("nonexistentfile.txt") {
+	if shared.FileExists("nonexistentfile.txt") {
 		t.Fatalf("Expected file to not exist, but it does")
 	}
 }
@@ -315,7 +305,7 @@ func TestBulkStoreEvents(t *testing.T) {
 	defer db.Close()
 	defer os.Remove(testDBPath)
 
-	events := []models.EventRecord{
+	events := []shared.EventRecord{
 		{Filename: "testfile1.txt", Path: "/tmp/testfile1.txt", EventID: 1, ObjectType: 0},
 		{Filename: "testfile2.txt", Path: "/tmp/testfile2.txt", EventID: 2, ObjectType: 0},
 		{Filename: "testfile3.txt", Path: "/tmp/testfile3.txt", EventID: 3, ObjectType: 0},
@@ -331,7 +321,7 @@ func TestBulkStoreEvents(t *testing.T) {
 	defer os.Remove(events[0].Path)
 
 	// Insert the event that should be deleted
-	err = InsertRecord(db, "testfile3.txt", "/tmp/testfile3.txt", 0, models.ItemIsFile)
+	err = InsertRecord(db, "testfile3.txt", "/tmp/testfile3.txt", 0, shared.ItemIsFile)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -382,7 +372,7 @@ func TestBulkStoreDuplicates(t *testing.T) {
 	defer db.Close()
 	defer os.Remove(testDBPath)
 
-	events := []models.EventRecord{
+	events := []shared.EventRecord{
 		{Filename: "testfile1.txt", Path: "/tmp/testfile1.txt", EventID: 1, ObjectType: 0},
 		{Filename: "testfile2.txt", Path: "/tmp/testfile2.txt", EventID: 2, ObjectType: 0},
 		{Filename: "testfile3.txt", Path: "/tmp/testfile3.txt", EventID: 3, ObjectType: 0},
@@ -577,7 +567,7 @@ func TestRecordCount(t *testing.T) {
 
 	// Insert test data
 	for i := 1; i <= 10; i++ {
-		err = InsertRecord(db, fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i), 0, models.ItemIsFile)
+		err = InsertRecord(db, fmt.Sprintf("testfile%02d.txt", i), fmt.Sprintf("/path/to/testfile%02d.txt", i), 0, shared.ItemIsFile)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -606,9 +596,9 @@ func TestBulkStoreOrdering(t *testing.T) {
 	defer os.Remove(testDBPath)
 
 	numItems := 1000
-	events := []models.EventRecord{}
+	events := []shared.EventRecord{}
 	for i := 1; i <= numItems; i++ {
-		events = append(events, models.EventRecord{
+		events = append(events, shared.EventRecord{
 			Filename:   fmt.Sprintf("testfile%d.txt", i),
 			Path:       fmt.Sprintf("/tmp/testfile%d.txt", i),
 			EventID:    uint64(i),
@@ -617,7 +607,7 @@ func TestBulkStoreOrdering(t *testing.T) {
 	}
 
 	for i := 1; i <= numItems; i++ {
-		events = append(events, models.EventRecord{
+		events = append(events, shared.EventRecord{
 			Filename:   fmt.Sprintf("testfile%d.txt", i),
 			Path:       fmt.Sprintf("/tmp/testfile%d.txt", i),
 			EventID:    uint64(i),
@@ -645,13 +635,13 @@ func TestBulkStoreOrdering(t *testing.T) {
 	events = events[:0]
 
 	for i := 1; i <= numItems; i++ {
-		events = append(events, models.EventRecord{
+		events = append(events, shared.EventRecord{
 			Filename:   fmt.Sprintf("testfile%d.txt", i),
 			Path:       fmt.Sprintf("/tmp/testfile%d.txt", i),
 			EventID:    uint64(i),
 			ObjectType: 0,
 		})
-		events = append(events, models.EventRecord{
+		events = append(events, shared.EventRecord{
 			Filename:   fmt.Sprintf("testfile%d.txt", i),
 			Path:       fmt.Sprintf("/tmp/testfile%d.txt", i),
 			EventID:    uint64(i),

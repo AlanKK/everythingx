@@ -6,22 +6,20 @@ import (
 	"os"
 
 	"github.com/AlanKK/findfiles/internal/ffdb"
+	"github.com/AlanKK/findfiles/internal/shared"
 )
 
-func fileExists(filename string) bool {
-	_, err := os.Stat(filename)
-	return !os.IsNotExist(err)
-}
-
 func main() {
-	dbFile, searchTerm := getCommandLineArgs()
+	dbFile, searchTerm, verbose := getCommandLineArgs()
 
-	if !fileExists(dbFile) {
+	if !shared.FileExists(dbFile) {
 		fmt.Println("Database does not exist ", dbFile)
 		os.Exit(1)
 	}
 
-	fmt.Println("Opening database ", dbFile)
+	if verbose {
+		fmt.Println("Opening database ", dbFile)
+	}
 	_, err := ffdb.OpenDBReadOnly(dbFile)
 	if err != nil {
 		fmt.Println("Error opening database: ", dbFile, err)
@@ -34,9 +32,12 @@ func main() {
 			fmt.Println("Error searching for ", searchTerm, err)
 			os.Exit(1)
 		}
+		// for _, r := range results {
+		// 	before, term, after := shared.splitFileName(r.Fullpath, searchTerm)
+		// 	fmt.Printf("%s\033[1m%s\033[0m%s\n", before, term, after)
+		// }
 		for _, r := range results {
-			before, term, after := splitFileName(r.Fullpath, searchTerm)
-			fmt.Printf("%s\033[1m%s\033[0m%s\n", before, term, after)
+			fmt.Println(r.Fullpath)
 		}
 		os.Exit(0)
 	}
@@ -44,8 +45,9 @@ func main() {
 	loadUI()
 }
 
-func getCommandLineArgs() (string, string) {
+func getCommandLineArgs() (string, string, bool) {
 	dbFile := flag.String("db_path", "/var/lib/findfiles/files.db", "Path to the database file")
+	verbose := flag.Bool("verbose", false, "Enable verbose logging")
 	searchTerm := flag.String("name", "", "Search term")
 	flag.Parse()
 
@@ -53,5 +55,5 @@ func getCommandLineArgs() (string, string) {
 		fmt.Println("Database path is required")
 		os.Exit(1)
 	}
-	return *dbFile, *searchTerm
+	return *dbFile, *searchTerm, *verbose
 }

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/AlanKK/findfiles/internal/ffdb"
-	"github.com/AlanKK/findfiles/internal/models"
+	"github.com/AlanKK/findfiles/internal/shared"
 
 	"github.com/fsnotify/fsevents"
 )
@@ -47,7 +47,7 @@ var noteDescription = map[fsevents.EventFlags]string{
 	fsevents.ItemIsSymlink:     "IsSymLink",
 }
 
-var dbChannel chan *models.EventRecord
+var dbChannel chan *shared.EventRecord
 
 const ignorePath = "/System/Volumes/Data"
 
@@ -141,7 +141,7 @@ func main() {
 	}()
 
 	// Start the database writer thread
-	dbChannel = make(chan *models.EventRecord, 5000)
+	dbChannel = make(chan *shared.EventRecord, 5000)
 	go databaseWriter(db, config.NoCache)
 
 	if dbIsNew {
@@ -234,19 +234,19 @@ func setupSignalHandlers(db *sql.DB, es *fsevents.EventStream) {
 	}()
 }
 
-func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
-	var objType models.ObjectType
+func buildEventRecord(fsevent *fsevents.Event) *shared.EventRecord {
+	var objType shared.ObjectType
 
 	isFile := fsevent.Flags&fsevents.ItemIsFile == fsevents.ItemIsFile
 	isDir := fsevent.Flags&fsevents.ItemIsDir == fsevents.ItemIsDir
 	isSymlink := fsevent.Flags&fsevents.ItemIsSymlink == fsevents.ItemIsSymlink
 
 	if isFile {
-		objType = models.ItemIsFile
+		objType = shared.ItemIsFile
 	} else if isDir {
-		objType = models.ItemIsDir
+		objType = shared.ItemIsDir
 	} else if isSymlink {
-		objType = models.ItemIsSymlink
+		objType = shared.ItemIsSymlink
 	}
 
 	if verbose {
@@ -259,7 +259,7 @@ func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 		log.Printf("Event: %s created=%d removed=%d renamed=%d note=%s", fsevent.Path, fsevent.Flags&fsevents.ItemCreated, fsevent.Flags&fsevents.ItemRemoved, fsevent.Flags&fsevents.ItemRenamed, note)
 	}
 
-	eventRecord := &models.EventRecord{
+	eventRecord := &shared.EventRecord{
 		Filename:   filepath.Base(fsevent.Path),
 		Path:       fsevent.Path,
 		ObjectType: objType,
@@ -272,7 +272,7 @@ func buildEventRecord(fsevent *fsevents.Event) *models.EventRecord {
 
 // Create an delay before writing to the db.  Apple's File System Events seems
 // to send file create events but the files are quickly deleted or don't exist.
-func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]models.EventRecord, event *models.EventRecord, noCache bool) {
+func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]shared.EventRecord, event *shared.EventRecord, noCache bool) {
 	maxQueueSize := 100000 // Set a queue size limit to keep memory usage in check
 	if noCache {
 		maxQueueSize = 1
@@ -312,7 +312,7 @@ func deleteMissing(db *sql.DB) {
 		}
 
 		if !fileExists(fullpath) {
-			eventRecord := &models.EventRecord{
+			eventRecord := &shared.EventRecord{
 				Filename:   "",
 				Path:       fullpath,
 				ObjectType: 0,
@@ -341,7 +341,7 @@ func scanDisk() {
 	startTime := time.Now()
 
 	var fileCount, dirCount int
-	var objType models.ObjectType = models.ItemIsFile
+	var objType shared.ObjectType = shared.ItemIsFile
 
 	filepath.WalkDir("/", func(path string, file fs.DirEntry, err error) error {
 		if strings.HasPrefix(path, ignorePath) {
@@ -349,13 +349,13 @@ func scanDisk() {
 		}
 		if file.IsDir() {
 			dirCount++
-			objType = models.ItemIsDir
+			objType = shared.ItemIsDir
 		} else {
 			fileCount++
-			objType = models.ItemIsFile
+			objType = shared.ItemIsFile
 		}
 
-		eventRecord := &models.EventRecord{
+		eventRecord := &shared.EventRecord{
 			Filename:    file.Name(),
 			Path:        path,
 			ObjectType:  objType,
@@ -376,7 +376,7 @@ func databaseWriter(db *sql.DB, noCache bool) {
 	log.Println("databaseWriter thread started.")
 
 	var lastFlushTime time.Time = time.Now()
-	var eventRecordQueue = []models.EventRecord{}
+	var eventRecordQueue = []shared.EventRecord{}
 	log.Printf("Queue %p", &eventRecordQueue)
 
 	for event := range dbChannel {

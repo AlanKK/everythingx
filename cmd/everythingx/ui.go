@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/AlanKK/findfiles/internal/ffdb"
-	"github.com/AlanKK/findfiles/internal/models"
+	"github.com/AlanKK/findfiles/internal/shared"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -22,7 +22,9 @@ import (
 )
 
 // TODO:
-// - Add system tray icon: https://docs.fyne.io/explore/systray.html
+// File icons
+// copy path to clipboard
+// tooltips
 
 var maxSearchResults int = 1000
 
@@ -31,7 +33,7 @@ type RowData struct {
 	Path         string
 	Size         string
 	Modified     string
-	SearchResult *models.SearchResult
+	SearchResult *shared.SearchResult
 }
 
 func handleOpenFile(pathname string) {
@@ -71,15 +73,15 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 			fullpath = r.Fullpath
 			base = filepath.Base(r.Fullpath)
 			dir = filepath.Dir(fullpath) + "/"
-			size, modified = getFileSizeMod(fullpath)
+			size, modified = shared.GetFileSizeMod(fullpath)
 
-			if r.ObjectType == models.ItemIsDir {
+			if r.ObjectType == shared.ItemIsDir {
 				//base += "/"
 				fullpath += "/"
 				size = "--"
 			}
 
-			beforeTerm, searchTerm, afterTerm := splitFileName(base, e.Text)
+			beforeTerm, searchTerm, afterTerm := shared.SplitFileName(base, e.Text)
 
 			*tableData = append(*tableData, RowData{
 				Name:         []string{beforeTerm, searchTerm, afterTerm},
@@ -100,7 +102,7 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	}
 	statusBar.SetText(resultText)
 
-	printMemUsage()
+	shared.PrintMemUsage()
 
 	elapsed := time.Since(start)
 	fmt.Printf(
@@ -131,7 +133,7 @@ func makeTable() *widget.Table {
 		},
 		// UpdateCell()
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			label := cell.(*widget.RichText)
+			richText := cell.(*widget.RichText)
 
 			switch id.Col {
 			case 0:
@@ -162,9 +164,9 @@ func makeTable() *widget.Table {
 						},
 					})
 				}
-				label.Segments = segments
+				richText.Segments = segments
 			case 1:
-				label.Segments = []widget.RichTextSegment{&widget.TextSegment{
+				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
 					Text: (*tableData)[id.Row].Path,
 					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
 						TextStyle: fyne.TextStyle{Monospace: true},
@@ -172,7 +174,7 @@ func makeTable() *widget.Table {
 				},
 				}
 			case 2:
-				label.Segments = []widget.RichTextSegment{&widget.TextSegment{
+				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
 					Text: (*tableData)[id.Row].Size,
 					Style: widget.RichTextStyle{Alignment: fyne.TextAlignTrailing,
 						TextStyle: fyne.TextStyle{Monospace: true},
@@ -180,7 +182,7 @@ func makeTable() *widget.Table {
 				},
 				}
 			case 3:
-				label.Segments = []widget.RichTextSegment{&widget.TextSegment{
+				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
 					Text: (*tableData)[id.Row].Modified,
 					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
 						TextStyle: fyne.TextStyle{Monospace: true},
@@ -228,7 +230,7 @@ func makeTable() *widget.Table {
 }
 
 func getToolTipForFile(path string) string {
-	lsFormat, err := getFileInfo(path)
+	lsFormat, err := shared.GetFileInfo(path)
 	if err != nil {
 		return "No access"
 	}
@@ -334,7 +336,7 @@ func loadUI() {
 
 	w.Resize(fyne.NewSize(1300, 800))
 
-	printMemUsage()
+	shared.PrintMemUsage()
 	w.ShowAndRun()
 
 	// anything below will not be executed until app is closed

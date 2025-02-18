@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/AlanKK/findfiles/internal/models"
+	"github.com/AlanKK/findfiles/internal/shared"
 	"github.com/fsnotify/fsevents"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -14,7 +14,7 @@ func TestBuildEventRecord(t *testing.T) {
 	tests := []struct {
 		name       string
 		fsevent    fsevents.Event
-		wantRecord *models.EventRecord
+		wantRecord *shared.EventRecord
 	}{
 		{
 			name: "File created",
@@ -23,10 +23,10 @@ func TestBuildEventRecord(t *testing.T) {
 				Path:  "/testfile.txt",
 				Flags: fsevents.ItemCreated | fsevents.ItemIsFile,
 			},
-			wantRecord: &models.EventRecord{
+			wantRecord: &shared.EventRecord{
 				Filename:   "testfile.txt",
 				Path:       "/testfile.txt",
-				ObjectType: models.ItemIsFile,
+				ObjectType: shared.ItemIsFile,
 				EventID:    1,
 			},
 		},
@@ -37,10 +37,10 @@ func TestBuildEventRecord(t *testing.T) {
 				Path:  "/tmp/testfile.txt",
 				Flags: fsevents.ItemRemoved | fsevents.ItemIsFile,
 			},
-			wantRecord: &models.EventRecord{
+			wantRecord: &shared.EventRecord{
 				Filename:   "testfile.txt",
 				Path:       "/tmp/testfile.txt",
-				ObjectType: models.ItemIsFile,
+				ObjectType: shared.ItemIsFile,
 				EventID:    2,
 			},
 		},
@@ -51,10 +51,10 @@ func TestBuildEventRecord(t *testing.T) {
 				Path:  "/Users/testdir",
 				Flags: fsevents.ItemCreated | fsevents.ItemIsDir,
 			},
-			wantRecord: &models.EventRecord{
+			wantRecord: &shared.EventRecord{
 				Filename:   "testdir",
 				Path:       filepath.Join("/Users", "testdir"),
-				ObjectType: models.ItemIsDir,
+				ObjectType: shared.ItemIsDir,
 				EventID:    3,
 			},
 		},
@@ -65,10 +65,10 @@ func TestBuildEventRecord(t *testing.T) {
 				Path:  "/path/to/testlink",
 				Flags: fsevents.ItemCreated | fsevents.ItemIsSymlink,
 			},
-			wantRecord: &models.EventRecord{
+			wantRecord: &shared.EventRecord{
 				Filename:   "testlink",
 				Path:       "/path/to/testlink",
-				ObjectType: models.ItemIsSymlink,
+				ObjectType: shared.ItemIsSymlink,
 				EventID:    4,
 			},
 		},
