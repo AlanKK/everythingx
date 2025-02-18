@@ -7,6 +7,7 @@ toolchain go1.23.3
 require (
 	fyne.io/fyne/v2 v2.6.0-alpha1
 	github.com/dweymouth/fyne-tooltip v0.3.0
+	github.com/jessevdk/go-flags v1.6.1
 )
 
 require (
