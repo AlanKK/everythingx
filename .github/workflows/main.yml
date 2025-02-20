@@ -12,6 +12,8 @@ jobs:
     strategy:
       matrix:
         architecture: [arm64]
+    env:
+      BUILD_MAC: true
         
     steps:
     - uses: actions/checkout@v4
@@ -25,16 +27,13 @@ jobs:
       run: make zip
 
     - name: Rename zip
-      run: mv everythingx.zip everythingx.${{ matrix.architecture }}.zip
+      if: ${{ env.BUILD_MAC == 'true' }}
+      run: mv everythingx.zip everythingx.macos-${{ matrix.architecture }}.zip
 
     - name: Upload package
+      if: ${{ env.BUILD_MAC == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: everythingx.${{ matrix.architecture }}.zip
-        path: everythingx.${{ matrix.architecture }}.zip
+        name: everythingx.macos-${{ matrix.architecture }}.zip
+        path: everythingx.macos-${{ matrix.architecture }}.zip
 
-    # - name: Package app bundles
-    #   run: >
-    #     make package_macos &&
-    #     make bundledeps_macos_homebrew &&
-    #     make zip_macos
