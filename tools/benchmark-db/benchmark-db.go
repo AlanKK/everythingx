@@ -42,7 +42,7 @@ func main() {
 
 		// Unzip the source database file
 		unzippedSourceDBPath := "/tmp/unzipped_files.db"
-		err = shared.GUxzipFile(sourceDBPath, unzippedSourceDBPath)
+		err = shared.GUnZipFile(sourceDBPath, unzippedSourceDBPath)
 		if err != nil {
 			log.Fatalf("Failed to unzip source database: %v", err)
 		}

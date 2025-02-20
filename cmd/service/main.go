@@ -53,11 +53,6 @@ const ignorePath = "/System/Volumes/Data"
 
 var verbose bool
 
-func fileExists(filename string) bool {
-	_, err := os.Stat(filename)
-	return !os.IsNotExist(err)
-}
-
 type Config struct {
 	MonitorPath string
 	DBPath      string
@@ -95,7 +90,7 @@ func setupDatabase(databasePath string) (*sql.DB, bool) {
 	var db *sql.DB
 	var new = false
 
-	if fileExists(databasePath) {
+	if shared.FileExists(databasePath) {
 		db, err = ffdb.OpenDB(databasePath)
 		if err != nil {
 			log.Println("Database does not exist: ", databasePath)
@@ -150,7 +145,7 @@ func main() {
 	}
 
 	// Start the File System Event listener
-	if !fileExists(config.MonitorPath) {
+	if !shared.FileExists(config.MonitorPath) {
 		log.Fatalf("Monitor path does not exist: %s", config.MonitorPath)
 	}
 
@@ -311,7 +306,7 @@ func deleteMissing(db *sql.DB) {
 			log.Fatal(err)
 		}
 
-		if !fileExists(fullpath) {
+		if !shared.FileExists(fullpath) {
 			eventRecord := &shared.EventRecord{
 				Filename:   "",
 				Path:       fullpath,
@@ -340,19 +335,37 @@ func scanDisk() {
 	//       It would save about 150MB ram after a scan
 	startTime := time.Now()
 
-	var fileCount, dirCount int
+	var fileCount, dirCount, linkCount, pipeCount, socketCount, charDeviceCount, blockDeviceCount int
 	var objType shared.ObjectType = shared.ItemIsFile
 
 	filepath.WalkDir("/", func(path string, file fs.DirEntry, err error) error {
 		if strings.HasPrefix(path, ignorePath) {
 			return nil
 		}
-		if file.IsDir() {
-			dirCount++
-			objType = shared.ItemIsDir
-		} else {
+		switch {
+		case file.Type().IsRegular():
 			fileCount++
 			objType = shared.ItemIsFile
+		case file.IsDir():
+			dirCount++
+			objType = shared.ItemIsDir
+		case file.Type()&fs.ModeSymlink != 0:
+			linkCount++
+			objType = shared.ItemIsSymlink
+		case file.Type()&fs.ModeNamedPipe != 0:
+			pipeCount++
+			objType = shared.ItemIsNamedPipe
+		case file.Type()&fs.ModeSocket != 0:
+			socketCount++
+			objType = shared.ItemIsSocket
+		case file.Type()&fs.ModeCharDevice != 0:
+			charDeviceCount++
+			objType = shared.ItemIsCharDevice
+		case file.Type()&fs.ModeDevice != 0:
+			blockDeviceCount++
+			objType = shared.ItemIsBlockDevice
+		default:
+			log.Printf("Unknown file type: %s", path)
 		}
 
 		eventRecord := &shared.EventRecord{
@@ -369,7 +382,7 @@ func scanDisk() {
 		return nil
 	})
 
-	log.Printf("Scan complete. Files/dirs: %d/%d. Elapsed time: %s", fileCount, dirCount, time.Since(startTime).String())
+	log.Printf("Scan complete. Files/dirs: %d/%d. Pipes: %d, Sockets: %d, Char Devices: %d, Block Devices: %d. Elapsed time: %s", fileCount, dirCount, pipeCount, socketCount, charDeviceCount, blockDeviceCount, time.Since(startTime).String())
 }
 
 func databaseWriter(db *sql.DB, noCache bool) {

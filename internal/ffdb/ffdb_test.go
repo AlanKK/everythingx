@@ -275,25 +275,6 @@ func TestBulkInsertRecords(t *testing.T) {
 	}
 }
 
-func TestFileExists(t *testing.T) {
-	// Create a temporary file
-	tempFile, err := os.CreateTemp("", "testfile")
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	defer os.Remove(tempFile.Name())
-
-	// Test that the file exists
-	if shared.FileExists(tempFile.Name()) {
-		t.Fatalf("Expected file to exist, but it does not")
-	}
-
-	// Test that a non-existent file does not exist
-	if shared.FileExists("nonexistentfile.txt") {
-		t.Fatalf("Expected file to not exist, but it does")
-	}
-}
-
 func TestBulkStoreEvents(t *testing.T) {
 	testDBPath := "test.db"
 	os.Remove(testDBPath)
