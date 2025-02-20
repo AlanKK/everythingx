@@ -2,10 +2,8 @@ package shared
 
 import (
 	"compress/gzip"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/user"
 	"runtime"
@@ -15,7 +13,7 @@ import (
 
 func FileExists(filename string) bool {
 	_, err := os.Stat(filename)
-	return errors.Is(err, fs.ErrExist)
+	return !os.IsNotExist(err)
 }
 
 func GetFileInfo(path string) (string, error) {

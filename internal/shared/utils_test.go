@@ -62,3 +62,23 @@ func TestGetFileInfo(t *testing.T) {
 		}
 	}
 }
+
+func TestFileExists(t *testing.T) {
+	// Test that a non-existent file does not exist
+	if FileExists("/tmp/nonexistentfile.txt") {
+		t.Fatalf("Expected file to not exist, but it does")
+	}
+
+	// Create a temporary file
+	tempFile, err := os.CreateTemp("/tmp", "testfile")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer os.Remove(tempFile.Name())
+
+	// Test that the file exists
+	if !FileExists(tempFile.Name()) {
+		t.Fatalf("Expected file to exist, but it does not")
+	}
+
+}
