@@ -1,0 +1,42 @@
+name: Build Mac arm64
+
+on:
+  push:
+    branches: [ "build-macos-arm64" ]
+  pull_request:
+    branches: [ "build-macos-arm64" ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        architecture: [arm64]
+    env:
+      BUILD_MAC: true
+        
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+
+    - name: test
+      run: make test
+      
+    - name: Build
+      run: make zip
+
+    - name: Rename zip
+      if: ${{ env.BUILD_MAC == 'true' }}
+      run: mv everythingx.zip everythingx.macos-${{ matrix.architecture }}.zip
+
+    - name: Upload package
+      if: ${{ env.BUILD_MAC == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: everythingx.macos-${{ matrix.architecture }}.zip
+        path: everythingx.macos-${{ matrix.architecture }}.zip
+
