@@ -99,7 +99,7 @@ func SplitFileName(filename string, searchTerm string) (string, string, string) 
 	return beforeTerm, actualTerm, afterTerm
 }
 
-func GUxzipFile(sourcePath, targetPath string) error {
+func GUnZipFile(sourcePath, targetPath string) error {
 	// Open the gzip file
 	gzipFile, err := os.Open(sourcePath)
 	if err != nil {

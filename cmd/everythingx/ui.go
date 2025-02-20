@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/AlanKK/findfiles/internal/ffdb"
@@ -76,7 +75,7 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 			size, modified = shared.GetFileSizeMod(fullpath)
 
 			if r.ObjectType == shared.ItemIsDir {
-				//base += "/"
+				base += "/"
 				fullpath += "/"
 				size = "--"
 			}
@@ -197,7 +196,12 @@ func makeTable() *widget.Table {
 		if id.Row == 0 {
 			return
 		}
-		handleOpenFile((*tableData)[id.Row].Path + strings.Join((*tableData)[id.Row].Name, ""))
+		statusBar.Text = getToolTipForFile((*tableData)[id.Row].SearchResult.Fullpath)
+		statusBar.TextStyle.Monospace = true
+		statusBar.Wrapping = fyne.TextWrapWord
+		statusBar.Refresh()
+		// Open Finder
+		// handleOpenFile((*tableData)[id.Row].Path + strings.Join((*tableData)[id.Row].Name, ""))
 	}
 
 	t.SetColumnWidth(0, 400) // Name
@@ -282,8 +286,9 @@ func showSettings() {
 	w.Show()
 }
 
+var statusBar *widget.Label
+
 func loadUI() {
-	var statusBar *widget.Label
 	// printMemUsage()
 
 	a := app.New()

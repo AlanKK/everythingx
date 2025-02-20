@@ -6,6 +6,10 @@ const (
 	ItemIsFile ObjectType = iota
 	ItemIsDir
 	ItemIsSymlink
+	ItemIsNamedPipe
+	ItemIsSocket
+	ItemIsCharDevice
+	ItemIsBlockDevice
 )
 
 type SearchResult struct {
