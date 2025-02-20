@@ -1,0 +1,33 @@
+name: Build Mac arm64
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+
+    - name: Build
+      run: make
+
+    # - name: Package app bundles
+    #   run: >
+    #     make package_macos &&
+    #     make bundledeps_macos_homebrew &&
+    #     make zip_macos
+
+    - name: Upload package
+      uses: actions/upload-artifact@v4
+      with:
+        name: EverythingX.zip
+        path: EverythingX.zip
