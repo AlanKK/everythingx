@@ -2,9 +2,9 @@ name: Build Mac arm64
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "build-macos-arm64" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "build-macos-arm64" ]
 
 jobs:
   build:
