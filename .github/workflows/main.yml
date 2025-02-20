@@ -18,7 +18,7 @@ jobs:
         go-version: '1.24'
 
     - name: Build
-      run: make
+      run: make zip
 
     # - name: Package app bundles
     #   run: >
@@ -29,5 +29,5 @@ jobs:
     - name: Upload package
       uses: actions/upload-artifact@v4
       with:
-        name: EverythingX.zip
-        path: EverythingX.zip
+        name: everythingx.macos-arm64.zip
+        path: everythingx.macos-arm64.zip
