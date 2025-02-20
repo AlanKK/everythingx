@@ -9,10 +9,10 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 echo 'Installing executables'
-cp -f findfilesd /usr/local/bin
+cp -f bin/findfilesd /usr/local/bin
 chmod +x /usr/local/bin/findfilesd
-cp -f everythingx /usr/local/bin
-cp -f ev /usr/local/bin
+cp -f bin/everythingx /usr/local/bin
+cp -f bin/ev /usr/local/bin
 chmod +x /usr/local/bin/everythingx /usr/local/bin/ev
 
 echo 'Creating data directory /var/lib/findfiles'
