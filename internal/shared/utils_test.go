@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"compress/gzip"
 	"os"
 	"strings"
 	"testing"
@@ -80,5 +81,45 @@ func TestFileExists(t *testing.T) {
 	if !FileExists(tempFile.Name()) {
 		t.Fatalf("Expected file to exist, but it does not")
 	}
+}
+func TestGUnZipFile(t *testing.T) {
+	// Create a temporary gzip file for testing
+	sourceFile, err := os.CreateTemp("", "testfile.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(sourceFile.Name())
 
+	// Write some gzipped data to the file
+	gzipWriter := gzip.NewWriter(sourceFile)
+	if _, err := gzipWriter.Write([]byte("Hello, World!")); err != nil {
+		t.Fatal(err)
+	}
+	gzipWriter.Close()
+	sourceFile.Close()
+
+	// Create a temporary target file
+	targetFile, err := os.CreateTemp("", "testfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(targetFile.Name())
+	targetFile.Close()
+
+	// Test GUnZipFile function
+	err = GUnZipFile(sourceFile.Name(), targetFile.Name())
+	if err != nil {
+		t.Errorf("GUnZipFile(%q, %q) returned error: %v", sourceFile.Name(), targetFile.Name(), err)
+	}
+
+	// Verify the contents of the target file
+	content, err := os.ReadFile(targetFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedContent := "Hello, World!"
+	if string(content) != expectedContent {
+		t.Errorf("GUnZipFile(%q, %q) = %q; want %q", sourceFile.Name(), targetFile.Name(), string(content), expectedContent)
+	}
 }
