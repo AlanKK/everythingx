@@ -8,7 +8,11 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        architecture: [arm64]
+        
     steps:
     - uses: actions/checkout@v4
 
@@ -20,14 +24,17 @@ jobs:
     - name: Build
       run: make zip
 
+    - name: Rename zip
+      run: mv everythingx.zip everythingx.${{ matrix.architecture }}.zip
+
+    - name: Upload package
+      uses: actions/upload-artifact@v4
+      with:
+        name: everythingx.${{ matrix.architecture }}.zip
+        path: everythingx.${{ matrix.architecture }}.zip
+
     # - name: Package app bundles
     #   run: >
     #     make package_macos &&
     #     make bundledeps_macos_homebrew &&
     #     make zip_macos
-
-    - name: Upload package
-      uses: actions/upload-artifact@v4
-      with:
-        name: everythingx.macos-arm64.zip
-        path: everythingx.macos-arm64.zip
