@@ -29,7 +29,7 @@ func main() {
 	rootDir := filepath.Join(currentDir, "findfiles_test", randomString(10))
 	testDirs := filepath.Join(rootDir, "testdirs")
 	dbPath := filepath.Join(rootDir, "files.db")
-	findfilesd := "./findfilesd"
+	findfilesd := "./bin/findfilesd"
 
 	if err := os.MkdirAll(testDirs, 0755); err != nil {
 		log.Printf("failed to create directory: %s. %v", rootDir, err)
