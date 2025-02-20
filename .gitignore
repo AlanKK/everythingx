@@ -8,19 +8,13 @@ data/files.db*
 data/files.db-journal
 test.db-shm
 test.db-wal
-cmd/service/service
 cmd/service/main.txt
 cmd/service/main.txt.old.old
 cmd/service/main.txt.old
 cmd/tools/create-db/create-db
 cmd/tools/scan-disk/scan-disk
 cmd/service/out.txt
-cmd/service/findfiles
 cmd/tools/check-files/check-files
-cmd/service/filefind
-cmd/service/findfilesd
-ff
-findfilesd
 data/myscan-md5.txt
 data/md5-go-scan.txt
 e2eTest/findfiles_test
@@ -31,5 +25,4 @@ tools/benchmark-db/files.db.gz
 tools/benchmark-db/benchmark.db-wal
 tools/benchmark-db/benchmark.db-shm
 tools/benchmark-db/nohup.out
-ev
-/everythingx
+/bin/
