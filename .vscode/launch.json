@@ -24,7 +24,7 @@
         "type": "go",
         "request": "launch",
         "mode": "debug",
-        "program": "${workspaceFolder}/cmd/service/findfilesd",
+        "program": "${workspaceFolder}/cmd/service/main.go",
         "args": ["--db_path", "/Users/alan/Downloads/files.db"]   
     },
     {
