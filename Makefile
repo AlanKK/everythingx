@@ -38,9 +38,6 @@ uninstall:
 	 sudo ./uninstall.sh
 	
 zip: build
-	 zip -r everythingx.zip bin/*
-
-zip: build
 	 zip -r everythingx.zip bin/* install.sh uninstall.sh
 
 .PHONY: build test deps lint install clean uninstall zip
