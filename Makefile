@@ -1,12 +1,11 @@
 # Variables
 GO := go
-BUILD_DIR := ./cmd
-SERVICE_DIR := $(BUILD_DIR)/service
-EVERYTHINGX_DIR := $(BUILD_DIR)/everythingx
-CLI_DIR := $(BUILD_DIR)/cli
+SERVICE_DIR := ./cmd/service
+APP_DIR := ./cmd/everythingx
+CLI_DIR := ./cmd/cli
 E2E_TEST_DIR := ./e2eTest
 TOOLS_DIR := ./tools
-OUTPUT_DIR := .
+OUTPUT_DIR := ./bin
 
 # Build targets
 build: $(OUTPUT_DIR)/findfilesd $(OUTPUT_DIR)/everythingx $(OUTPUT_DIR)/ev
@@ -14,7 +13,7 @@ build: $(OUTPUT_DIR)/findfilesd $(OUTPUT_DIR)/everythingx $(OUTPUT_DIR)/ev
 $(OUTPUT_DIR)/findfilesd: $(SERVICE_DIR)/main.go
 	 $(GO) build -o $@ $<
 
-$(OUTPUT_DIR)/everythingx: $(EVERYTHINGX_DIR)/*.go
+$(OUTPUT_DIR)/everythingx: $(APP_DIR)/*.go
 	 CGO_LDFLAGS="-Wl,-w" $(GO) build -o $@ $^
 
 $(OUTPUT_DIR)/ev: $(CLI_DIR)/main.go
@@ -41,7 +40,7 @@ install: build
 # Clean target
 clean:
 	 rm -f $(OUTPUT_DIR)/*
-	 rm -f $(SERVICE_DIR)/findfilesd $(EVERYTHINGX_DIR)/everythingx $(E2E_TEST_DIR)/e2etest
+	 rm -f $(SERVICE_DIR)/findfilesd $(APP_DIR)/everythingx $(E2E_TEST_DIR)/e2etest
 	 rm -f $(TOOLS_DIR)/check-missing-files/check-missing-files $(TOOLS_DIR)/create-db/create-db $(TOOLS_DIR)/scan-disk/scan-disk
 	 rm -rf ./findfiles_test/*
 
