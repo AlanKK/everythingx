@@ -49,7 +49,7 @@ uninstall:
 	 sudo ./uninstall.sh
 
 zip: build
-	 zip -r everythingx.zip bin/*
+	 zip -r everythingx.zip bin/* install.sh uninstall.sh
 
 # Phony targets
 .PHONY: build test deps lint install clean uninstall
