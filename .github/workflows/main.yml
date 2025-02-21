@@ -33,11 +33,13 @@ jobs:
       if: ${{ env.BUILD_MAC == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: everythingx.${{ matrix.os }}-${{ matrix.architecture }}.zip
+        name: everythingx.${{ RUNNER_OS }}-${{ RUNNER_OS }}
         path: |
-          bin/* 
+          bin/everythingx
+          bin/ev
+          bin/findfilesd
           install.sh 
           uninstall.sh 
-          cmd/service/*.plist 
+          cmd/service/com.example.findfiles.plist 
         if-no-files-found: error
 
