@@ -60,8 +60,10 @@ type Config struct {
 	Verbose     bool
 }
 
+var config Config
+
 func getCommandLineArgs() Config {
-	config := Config{}
+	config = Config{}
 	flag.StringVar(&config.MonitorPath, "monitor_path", "/", "Path to monitor for file system events")
 	flag.StringVar(&config.DBPath, "db_path", "/var/lib/findfiles/files.db", "Path to the database file")
 	flag.BoolVar(&config.NoCache, "nocache", false, "Disable caching")
@@ -156,10 +158,16 @@ func main() {
 
 	log.Printf("Monitoring path: %s.  Device %d UUID %d", config.MonitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
 
+	var latency time.Duration = 60 * time.Second
+	if config.NoCache {
+		latency = 500 * time.Millisecond
+		log.Printf("No cache is enabled. %dms fsevents and all events will be written to the database immediately.", latency.Milliseconds())
+	}
+
 	es := &fsevents.EventStream{
 		Events:  make(chan []fsevents.Event, 30000), // Provide our own channel to buffer events and prevent hangs
 		Paths:   []string{config.MonitorPath},
-		Latency: 60 * time.Second,
+		Latency: latency,
 		Device:  0,
 		Flags:   fsevents.FileEvents}
 	es.Start()
@@ -236,11 +244,12 @@ func buildEventRecord(fsevent *fsevents.Event) *shared.EventRecord {
 	isDir := fsevent.Flags&fsevents.ItemIsDir == fsevents.ItemIsDir
 	isSymlink := fsevent.Flags&fsevents.ItemIsSymlink == fsevents.ItemIsSymlink
 
-	if isFile {
+	switch {
+	case isFile:
 		objType = shared.ItemIsFile
-	} else if isDir {
+	case isDir:
 		objType = shared.ItemIsDir
-	} else if isSymlink {
+	case isSymlink:
 		objType = shared.ItemIsSymlink
 	}
 
@@ -338,7 +347,7 @@ func scanDisk() {
 	var fileCount, dirCount, linkCount, pipeCount, socketCount, charDeviceCount, blockDeviceCount int
 	var objType shared.ObjectType = shared.ItemIsFile
 
-	filepath.WalkDir("/", func(path string, file fs.DirEntry, err error) error {
+	filepath.WalkDir(config.MonitorPath, func(path string, file fs.DirEntry, err error) error {
 		if strings.HasPrefix(path, ignorePath) {
 			return nil
 		}

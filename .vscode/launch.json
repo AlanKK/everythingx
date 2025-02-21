@@ -32,7 +32,7 @@
         "type": "go",
         "request": "launch",
         "mode": "debug",
-        "program": "${workspaceFolder}/e2eTest/main",
+        "program": "${workspaceFolder}/e2eTest/main.go",
         "args": ["--monitor_path", "/Users/alan/Documents/git/findfiles/e2eTest/findfiles_test", "--db_path", "/Users/alan/Documents/git/findfiles/data/files.db"]   
     }]
 }
