@@ -8,10 +8,9 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
     strategy:
       matrix:
-        architecture: [arm64]
+        os: [macos-latest, macos-13]
     env:
       BUILD_MAC: true
         
