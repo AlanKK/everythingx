@@ -29,17 +29,22 @@ jobs:
     - name: Build
       run: make
 
+    - name: Copy for packaging
+      run: |
+        cp bin/* .
+        cp cmd/service/com.example.findfiles.plist .
+
     - name: Upload package
       if: ${{ env.BUILD_MAC == 'true' }}
       uses: actions/upload-artifact@v4
       with:
         name: everythingx.${{ runner.os }}-${{ runner.arch }}
         path: |
-          bin/everythingx
-          bin/ev
-          bin/findfilesd
+          everythingx
+          ev
+          findfilesd
           install.sh 
           uninstall.sh 
-          cmd/service/com.example.findfiles.plist 
+          com.example.findfiles.plist 
         if-no-files-found: error
 
