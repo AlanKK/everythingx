@@ -18,6 +18,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Env
+      run: |
+        env
+        whoami
+        ls -al
+        df -h
+        uname -a
+
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
@@ -27,16 +35,12 @@ jobs:
       run: make test
       
     - name: Build
-      run: make zip
-
-    - name: Rename zip
-      if: ${{ env.BUILD_MAC == 'true' }}
-      run: mv everythingx.zip everythingx.macos-${{ matrix.architecture }}.zip
+      run: make
 
     - name: Upload package
       if: ${{ env.BUILD_MAC == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: everythingx.macos-${{ matrix.architecture }}.zip
+        name: bin/* install.sh uninstall.sh *.plist
         path: everythingx.macos-${{ matrix.architecture }}.zip
 
