@@ -16,9 +16,10 @@ $(BIN_DIR)/everythingx: $(APP_DIR)/*.go
 $(BIN_DIR)/ev: $(CLI_DIR)/main.go
 	 go build -o $@ $<
 
-all: build $(BIN_DIR)/e2etest
+e2e: build $(E2E_TEST_DIR)/e2etest
+	$(E2E_TEST_DIR)/e2etest
 
-$(BIN_DIR)/e2etest: $(E2E_TEST_DIR)/main.go
+$(E2E_TEST_DIR)/e2etest: $(E2E_TEST_DIR)/main.go
 	 go build -o $@ $<
 
 test:

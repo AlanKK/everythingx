@@ -29,14 +29,13 @@ func main() {
 	rootDir := filepath.Join(currentDir, "findfiles_test", randomString(10))
 	testDirs := filepath.Join(rootDir, "testdirs")
 	dbPath := filepath.Join(rootDir, "files.db")
-	findfilesd := "./bin/findfilesd"
+	findfilesd := "bin/findfilesd"
 
 	if err := os.MkdirAll(testDirs, 0755); err != nil {
-		log.Printf("failed to create directory: %s. %v", rootDir, err)
-		return
+		log.Fatalf("failed to create directory: %s. %v", rootDir, err)
 	}
 
-	log.Printf("Running program with root directory: %s\n", rootDir)
+	log.Printf("Running program with root directory: %s, currentDir %s\n", rootDir, currentDir)
 
 	resultChan := make(chan *exec.Cmd)
 	log.Println("Starting service")
@@ -55,8 +54,7 @@ func main() {
 
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		log.Printf("Failed to open database: %v\n", err)
-		return
+		log.Fatalf("Failed to open database: %v\n", err)
 	}
 	defer db.Close()
 
@@ -74,43 +72,38 @@ func main() {
 		log.Printf("==========  Running iteration %d/%d  ==========", i, iterations)
 		// Stage 1: Create directory hierarchy and populate with files
 		if err := createHierarchy(params); err != nil {
-			log.Printf("Error in createHierarchy: %v\n", err)
-			return
+			log.Fatalf("Error in createHierarchy: %v\n", err)
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(15 * time.Second)
 
 		// Stage 2: Validate that all of the files and directories are in the database
 		if err := validateInDB(db, params); err != nil {
-			log.Printf("Error in validateInDB: %v\n", err)
-			return
+			log.Fatalf("Error in validateInDB: %v\n", err)
 		}
 
 		// Stage 3: Rename each of the files to a new naming scheme
 		if err := renameFiles(params); err != nil {
-			log.Printf("Error in renameFiles: %v\n", err)
-			return
+			log.Fatalf("Error in renameFiles: %v\n", err)
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(15 * time.Second)
 
 		// Stage 4: Validate the database contains the newly named files and old ones are not in the db
 		if err := validateRenamedInDB(db, params); err != nil {
-			log.Printf("Error in validateRenamedInDB: %v\n", err)
-			return
+			log.Fatalf("Error in validateRenamedInDB: %v\n", err)
 		}
 
 		// Stage 5: Delete all files and directories
 		if err := deleteHierarchy(params); err != nil {
-			log.Printf("Error in deleteHierarchy: %v\n", err)
-			return
+			log.Fatalf("Error in deleteHierarchy: %v\n", err)
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(15 * time.Second)
 
 		// Stage 6: Validate that none of the files and directories are in the database
 		if err := validateNotInDB(db, params); err != nil {
-			log.Printf("Error in validateNotInDB: %v\n", err)
-			return
+			log.Fatalf("Error in validateNotInDB: %v\n", err)
 		}
 	}
+	log.Println("All tests passed")
 }
 
 func startService(findfilesd string, rootDir string, testDirs string, dbPath string, resultChan chan *exec.Cmd) {
@@ -122,15 +115,13 @@ func startService(findfilesd string, rootDir string, testDirs string, dbPath str
 	logFile := filepath.Join(rootDir, "service.log")
 	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		log.Printf("Failed to open log file: %v\n", err)
-		return
+		log.Fatalf("Failed to open log file: %v\n", err)
 	}
 	cmd.Stdout = file
 	cmd.Stderr = file
 
 	if err := cmd.Start(); err != nil {
-		log.Printf("Failed to start executable: %v\n", err)
-		return
+		log.Fatalf("Failed to start executable: %v\n", err)
 	}
 	resultChan <- cmd
 
@@ -165,8 +156,7 @@ func waitForServiceReady(rootDir string) {
 
 	file, err := os.Open(logFile)
 	if err != nil {
-		log.Printf("Failed to open log file: %v\n", err)
-		return
+		log.Fatalf("Failed to open log file: %v\n", err)
 	}
 	defer file.Close()
 
