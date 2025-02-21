@@ -35,4 +35,5 @@ jobs:
       with:
         name: everythingx.macos-${{ matrix.architecture }}.zip
         path: bin/* install.sh uninstall.sh *.plist 
+          if-no-files-found error
 
