@@ -27,3 +27,5 @@ tools/benchmark-db/benchmark.db-shm
 tools/benchmark-db/nohup.out
 /bin/
 everythingx.zip
+**/__debug_*
+findfiles_test/*
