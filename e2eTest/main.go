@@ -58,7 +58,7 @@ func main() {
 	}
 	defer db.Close()
 
-	iterations := 5
+	iterations := 2
 	for i := 1; i <= iterations; i++ {
 		// Having too many FilesPerDir too quickly can cause the Apple's FSE to hang
 		params := &Params{
