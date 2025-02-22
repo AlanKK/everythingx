@@ -55,6 +55,6 @@ jobs:
           everythingxd
           install.sh 
           uninstall.sh 
-          com.example.everythingx.plist 
+          com.example.everythingxd.plist 
         if-no-files-found: error
 
