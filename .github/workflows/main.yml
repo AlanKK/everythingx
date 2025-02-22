@@ -1,4 +1,4 @@
-name: Build Mac arm64
+name: Build Mac - Apple Silicon and Intel
 
 on:
   push:
