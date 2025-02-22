@@ -12,12 +12,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, macos-13-arm64]
+        os: [macos-latest, macos-13]
         arch: [amd64, arm64]
         exclude:
           - os: macos-latest
             arch: arm64
-          - os: macos-13-arm64
+          - os: macos-13
             arch: amd64     
     env:
       BUILD_MAC: true
@@ -42,7 +42,7 @@ jobs:
     - name: Copy for packaging
       run: |
         cp bin/* .
-        cp cmd/service/com.example.findfiles.plist .
+        cp cmd/service/com.example.everythingx.plist .
 
     - name: Upload package
       if: ${{ env.BUILD_MAC == 'true' }}
@@ -52,9 +52,9 @@ jobs:
         path: |
           everythingx
           ev
-          findfilesd
+          everythingxd
           install.sh 
           uninstall.sh 
-          com.example.findfiles.plist 
+          com.example.everythingx.plist 
         if-no-files-found: error
 

@@ -26,10 +26,10 @@ type Params struct {
 
 func main() {
 	currentDir, _ := os.Getwd()
-	rootDir := filepath.Join(currentDir, "findfiles_test", randomString(10))
+	rootDir := filepath.Join(currentDir, "everythingx_test", randomString(10))
 	testDirs := filepath.Join(rootDir, "testdirs")
 	dbPath := filepath.Join(rootDir, "files.db")
-	findfilesd := "bin/findfilesd"
+	everythingxd := "bin/everythingxd"
 
 	if err := os.MkdirAll(testDirs, 0755); err != nil {
 		log.Fatalf("failed to create directory: %s. %v", rootDir, err)
@@ -40,7 +40,7 @@ func main() {
 	resultChan := make(chan *exec.Cmd)
 	log.Println("Starting service")
 
-	go startService(findfilesd, rootDir, testDirs, dbPath, resultChan)
+	go startService(everythingxd, rootDir, testDirs, dbPath, resultChan)
 	waitForServiceReady(rootDir)
 	log.Println("Done waiting for service to start")
 
@@ -106,11 +106,11 @@ func main() {
 	log.Println("All tests passed")
 }
 
-func startService(findfilesd string, rootDir string, testDirs string, dbPath string, resultChan chan *exec.Cmd) {
+func startService(everythingxd string, rootDir string, testDirs string, dbPath string, resultChan chan *exec.Cmd) {
 	args := []string{"--monitor_path=" + testDirs, "--db_path=" + dbPath, "--nocache"}
 	log.Printf("Starting service with args: %v\n", args)
 
-	cmd := exec.Command(findfilesd, args...)
+	cmd := exec.Command(everythingxd, args...)
 
 	logFile := filepath.Join(rootDir, "service.log")
 	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
@@ -237,7 +237,7 @@ func validateInDB(db *sql.DB, p *Params) error {
 		}
 	}
 	if missing > 0 {
-		log.Printf("%d files missing from the DB", missing)
+		log.Fatalf("%d files missing from the DB", missing)
 	} else {
 		log.Printf("All files found in the DB")
 	}

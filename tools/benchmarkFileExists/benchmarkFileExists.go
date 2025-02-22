@@ -26,7 +26,7 @@ func fileExists2(filename string) bool {
 
 func main() {
 	// Open the database
-	db, err := sql.Open("sqlite3", "/var/lib/findfiles/files.db")
+	db, err := sql.Open("sqlite3", "/var/lib/everythingx/files.db")
 	if err != nil {
 		panic(err)
 	}

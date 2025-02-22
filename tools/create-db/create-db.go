@@ -4,11 +4,11 @@ import (
 	"flag"
 	"log"
 
-	"github.com/AlanKK/findfiles/internal/ffdb"
+	"github.com/AlanKK/everythingx/internal/ffdb"
 )
 
 func main() {
-	pathname := flag.String("path", "/Users/alan/Documents/findfiles/files.db", "Path to the database file")
+	pathname := flag.String("path", "/Users/alan/Documents/everythingx/files.db", "Path to the database file")
 	flag.Parse()
 
 	db, err := ffdb.CreateDB(*pathname)

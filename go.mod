@@ -1,4 +1,4 @@
-module github.com/AlanKK/findfiles
+module github.com/AlanKK/everythingx
 
 go 1.23.1
 

@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/AlanKK/findfiles/internal/shared"
+	"github.com/AlanKK/everythingx/internal/shared"
 	"github.com/mattn/go-sqlite3"
 )
 

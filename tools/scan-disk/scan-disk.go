@@ -23,7 +23,7 @@ func main() {
 	fileCount := 0
 	dirCount := 0
 
-	outputFile, err := os.Create("/Users/alan/Documents/git/findfiles/data/myscan-md5.txt")
+	outputFile, err := os.Create("/Users/alan/Documents/git/everythingx/data/myscan-md5.txt")
 	if err != nil {
 		log.Fatalf("Error creating output file: %v", err)
 	}

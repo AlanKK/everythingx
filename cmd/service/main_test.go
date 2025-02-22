@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/AlanKK/findfiles/internal/shared"
+	"github.com/AlanKK/everythingx/internal/shared"
 	"github.com/fsnotify/fsevents"
 
 	_ "github.com/mattn/go-sqlite3"

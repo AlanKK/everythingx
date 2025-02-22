@@ -3,20 +3,20 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.example.findfiles</string>
+    <string>com.example.everythingx</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/findfilesd</string>
+        <string>/usr/local/bin/everythingxd</string>
         <string>--monitor_path=/</string>
-        <string>--db_path=/var/lib/findfiles/files.db</string>
+        <string>--db_path=/var/lib/everythingx/files.db</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardErrorPath</key>
-    <string>/var/log/findfilesd.log</string>
+    <string>/var/log/everythingxd.log</string>
     <key>StandardOutPath</key>
-    <string>/var/log/findfilesd.log</string>
+    <string>/var/log/everythingxd.log</string>
 </dict>
 </plist>

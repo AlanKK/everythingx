@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AlanKK/findfiles/internal/ffdb"
-	"github.com/AlanKK/findfiles/internal/shared"
+	"github.com/AlanKK/everythingx/internal/ffdb"
+	"github.com/AlanKK/everythingx/internal/shared"
 
 	"github.com/fsnotify/fsevents"
 )
@@ -65,7 +65,7 @@ var config Config
 func getCommandLineArgs() Config {
 	config = Config{}
 	flag.StringVar(&config.MonitorPath, "monitor_path", "/", "Path to monitor for file system events")
-	flag.StringVar(&config.DBPath, "db_path", "/var/lib/findfiles/files.db", "Path to the database file")
+	flag.StringVar(&config.DBPath, "db_path", "/var/lib/everythingx/files.db", "Path to the database file")
 	flag.BoolVar(&config.NoCache, "nocache", false, "Disable caching")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Enable verbose logging")
 	flag.Parse()
@@ -158,7 +158,7 @@ func main() {
 
 	log.Printf("Monitoring path: %s.  Device %d UUID %d", config.MonitorPath, dev, fsevents.EventIDForDeviceBeforeTime(dev, time.Now()))
 
-	var latency time.Duration = 60 * time.Second
+	var latency time.Duration = 10 * time.Second
 	if config.NoCache {
 		latency = 500 * time.Millisecond
 		log.Printf("No cache is enabled. %dms fsevents and all events will be written to the database immediately.", latency.Milliseconds())
@@ -281,7 +281,7 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]s
 	if noCache {
 		maxQueueSize = 1
 	}
-	var delayTime time.Duration = 60 * time.Second
+	var delayTime time.Duration = 10 * time.Second
 
 	*eventRecordQueue = append(*eventRecordQueue, *event)
 
