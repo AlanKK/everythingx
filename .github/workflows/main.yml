@@ -42,7 +42,7 @@ jobs:
     - name: Copy for packaging
       run: |
         cp bin/* .
-        cp cmd/service/com.example.everythingx.plist .
+        cp cmd/service/com.example.everythingxd.plist .
 
     - name: Upload package
       if: ${{ env.BUILD_MAC == 'true' }}
