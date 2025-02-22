@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	GithubURL = "https://github.com/AlanKK/findfiles"
+	GithubURL = "https://github.com/AlanKK/everythingx"
 )
 
 // Use Finder icon

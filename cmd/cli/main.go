@@ -6,15 +6,15 @@ import (
 	"os"
 	"sort"
 
-	"github.com/AlanKK/findfiles/internal/ffdb"
-	"github.com/AlanKK/findfiles/internal/shared"
+	"github.com/AlanKK/everythingx/internal/ffdb"
+	"github.com/AlanKK/everythingx/internal/shared"
 	flags "github.com/jessevdk/go-flags"
 )
 
 // Options struct to hold the command-line options
 type Options struct {
-	DBPath     string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/findfiles/files.db"`
-	SearchTerm string `short:"n" long:"name" description:"Search term, full or partial filename"`
+	SearchTerm string `positional-arg-name:"searchTerm" description:"Search term, full or partial filename"`
+	DBPath     string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/everythingx/files.db"`
 	Verbose    bool   `short:"v" long:"verbose" description:"Enable verbose logging"`
 	Highlight  bool   `short:"b" long:"highlight" description:"Highlight (bold) search term in results for readability"`
 }

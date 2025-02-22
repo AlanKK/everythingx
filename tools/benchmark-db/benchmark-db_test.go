@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/AlanKK/findfiles/internal/ffdb"
-	"github.com/AlanKK/findfiles/internal/shared"
+	"github.com/AlanKK/everythingx/internal/ffdb"
+	"github.com/AlanKK/everythingx/internal/shared"
 	_ "github.com/mattn/go-sqlite3"
 )
 

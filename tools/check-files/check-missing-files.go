@@ -12,7 +12,7 @@ import (
 // Get files from the database and check if they exist
 // Print counts.
 func main() {
-	filename := "/Users/alan/Documents/findfiles/files.db"
+	filename := "/Users/alan/Documents/everythingx/files.db"
 	db, err := sql.Open("sqlite3", filename)
 	if err != nil {
 		log.Fatal(err)
