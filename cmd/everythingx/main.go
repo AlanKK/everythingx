@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/AlanKK/findfiles/internal/ffdb"
-	"github.com/AlanKK/findfiles/internal/shared"
+	"github.com/AlanKK/everythingx/internal/ffdb"
+	"github.com/AlanKK/everythingx/internal/shared"
 )
 
+// TODO: need to ask for full disk access on macOS to get all files under /Users/username
 func main() {
 	dbFile, searchTerm, verbose := getCommandLineArgs()
 
@@ -46,7 +47,7 @@ func main() {
 }
 
 func getCommandLineArgs() (string, string, bool) {
-	dbFile := flag.String("db_path", "/var/lib/findfiles/files.db", "Path to the database file")
+	dbFile := flag.String("db_path", "/var/lib/everythingx/files.db", "Path to the database file")
 	verbose := flag.Bool("verbose", false, "Enable verbose logging")
 	searchTerm := flag.String("name", "", "Search term")
 	flag.Parse()

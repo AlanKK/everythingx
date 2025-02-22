@@ -5,9 +5,9 @@ E2E_TEST_DIR := ./e2eTest
 TOOLS_DIR := ./tools
 BIN_DIR := ./bin
 
-build: test $(BIN_DIR)/findfilesd $(BIN_DIR)/everythingx $(BIN_DIR)/ev
+build: test $(BIN_DIR)/everythingxd $(BIN_DIR)/everythingx $(BIN_DIR)/ev
 
-$(BIN_DIR)/findfilesd: $(SERVICE_DIR)/main.go
+$(BIN_DIR)/everythingxd: $(SERVICE_DIR)/main.go
 	 go build -o $@ $<
 
 $(BIN_DIR)/everythingx: $(APP_DIR)/*.go
@@ -30,10 +30,11 @@ install: build
 
 clean:
 	 rm -f $(BIN_DIR)/*
-	 rm -f $(BIN_DIR)/findfilesd $(BIN_DIR)/everythingx $(BIN_DIR)/ev $(BIN_DIR)/e2etest
-	 rm -f $(SERVICE_DIR)/findfilesd $(APP_DIR)/everythingx $(E2E_TEST_DIR)/e2etest
+	 rm -f $(SERVICE_DIR)/everythingxd $(APP_DIR)/everythingx $(E2E_TEST_DIR)/e2etest
 	 rm -f $(TOOLS_DIR)/check-missing-files/check-missing-files $(TOOLS_DIR)/create-db/create-db $(TOOLS_DIR)/scan-disk/scan-disk
-	 rm -rf ./findfiles_test/* ./everythingx.zip
+	 rm -f $(TOOLS_DIR)/benchmark-db/benchmark-db $(TOOLS_DIR)/benchmark-db/benchmark.db 
+	 rm -rf ./everythingx_test/* 
+	 rm -f ./everythingx.zip
 
 uninstall:
 	 sudo ./uninstall.sh

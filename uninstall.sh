@@ -7,29 +7,29 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 echo 'Stopping and unloading the service with launchd'
-launchctl bootout system /Library/LaunchDaemons/com.example.findfiles.plist
+launchctl bootout system /Library/LaunchDaemons/com.example.everythingxd.plist
 if [ $? -ne 0 ]; then
     echo "Failed to unload the service. It might not be loaded."
 fi
 
 echo 'Removing launchd service plist file'
-rm -f /Library/LaunchDaemons/com.example.findfiles.plist
+rm -f /Library/LaunchDaemons/com.example.everythingxd.plist
 if [ $? -ne 0 ]; then
     echo "Failed to remove the plist file."
 fi
 
 echo 'Removing executables'
-rm -f /usr/local/bin/findfilesd /usr/local/bin/everythingx /usr/local/bin/ev
+rm -f /usr/local/bin/everythingxd /usr/local/bin/everythingx /usr/local/bin/ev
 if [ $? -ne 0 ]; then
     echo "Failed to remove the executable."
 fi
 
 echo 'Removing data directory'
-rm -rf /var/lib/findfiles
+rm -rf /var/lib/everythingx
 if [ $? -ne 0 ]; then
     echo "Failed to remove the data directory."
 fi
 
-# You may also remove /var/log/findfiles.log
+# You may also remove /var/log/everythingx.log
 
 echo 'Uninstallation complete.'
