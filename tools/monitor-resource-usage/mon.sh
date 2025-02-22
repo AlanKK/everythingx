@@ -1,7 +1,7 @@
 #!/bin/bash
 
-LOG_FILE="findfilesd_usage.log"
-PROCESS_NAME="findfilesd"
+LOG_FILE="everythingxd_usage.log"
+PROCESS_NAME="everythingxd"
 
 echo "Timestamp,CPU%,Memory(MB)" > $LOG_FILE
 

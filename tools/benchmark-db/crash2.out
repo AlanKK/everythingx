@@ -1,4 +1,4 @@
-Opening database  /var/lib/findfiles/files.db
+Opening database  /var/lib/everythingx/files.db
 2025-02-09 12:46:47.742 ff[43371:825906] +[IMKClient subclass]: chose IMKClient_Modern
 2025-02-09 12:46:47.742 ff[43371:825906] +[IMKInputSession subclass]: chose IMKInputSession_Modern
 	Search: s, Results: 1000, prefixSearch: 61.270583ms, handleEntryChanged 94.541959ms.
@@ -30,7 +30,7 @@ fyne.io/fyne/v2/internal/driver/glfw.runOnMain(0x14001b92630?)
 fyne.io/fyne/v2/internal/driver/glfw.(*window).Hide(0x14000102e00)
 	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:186 +0x5c fp=0x1400190ff80 sp=0x1400190ff50 pc=0x104c822ac
 main.loadUI.func2()
-	/Users/alan/Documents/git/findfiles/cmd/findfiles/ui.go:216 +0x28 fp=0x1400190ffa0 sp=0x1400190ff80 pc=0x104cb8c08
+	/Users/alan/Documents/git/everythingx/cmd/everythingx/ui.go:216 +0x28 fp=0x1400190ffa0 sp=0x1400190ff80 pc=0x104cb8c08
 fyne.io/fyne/v2/internal/driver/common.(*Window).RunEventQueue(...)
 	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/common/window.go:35
 fyne.io/fyne/v2/internal/driver/glfw.(*gLDriver).createWindow.func1.gowrap1()
@@ -58,9 +58,9 @@ fyne.io/fyne/v2/app.(*fyneApp).Run(0x140001a7d60)
 fyne.io/fyne/v2/internal/driver/glfw.(*window).ShowAndRun(0x140002bb0c0?)
 	/Users/alan/go/pkg/mod/fyne.io/fyne/v2@v2.5.2/internal/driver/glfw/window.go:235 +0x2c fp=0x140002bb050 sp=0x140002bb030 pc=0x104c8273c
 main.loadUI()
-	/Users/alan/Documents/git/findfiles/cmd/findfiles/ui.go:246 +0x6a0 fp=0x140002bde70 sp=0x140002bb050 pc=0x104cb8b30
+	/Users/alan/Documents/git/everythingx/cmd/everythingx/ui.go:246 +0x6a0 fp=0x140002bde70 sp=0x140002bb050 pc=0x104cb8b30
 main.main()
-	/Users/alan/Documents/git/findfiles/cmd/findfiles/main.go:31 +0x194 fp=0x140002bdf40 sp=0x140002bde70 pc=0x104cb7a14
+	/Users/alan/Documents/git/everythingx/cmd/everythingx/main.go:31 +0x194 fp=0x140002bdf40 sp=0x140002bde70 pc=0x104cb7a14
 runtime.main()
 	/usr/local/go/src/runtime/proc.go:272 +0x288 fp=0x140002bdfd0 sp=0x140002bdf40 pc=0x10465f8c8
 runtime.goexit({})

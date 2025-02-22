@@ -42,7 +42,7 @@ jobs:
     - name: Copy for packaging
       run: |
         cp bin/* .
-        cp cmd/service/com.example.findfiles.plist .
+        cp cmd/service/com.example.everythingx.plist .
 
     - name: Upload package
       if: ${{ env.BUILD_MAC == 'true' }}
@@ -52,9 +52,9 @@ jobs:
         path: |
           everythingx
           ev
-          findfilesd
+          everythingxd
           install.sh 
           uninstall.sh 
-          com.example.findfiles.plist 
+          com.example.everythingx.plist 
         if-no-files-found: error
 

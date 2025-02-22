@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AlanKK/findfiles/internal/ffdb"
-	"github.com/AlanKK/findfiles/internal/shared"
+	"github.com/AlanKK/everythingx/internal/ffdb"
+	"github.com/AlanKK/everythingx/internal/shared"
 
 	"github.com/fsnotify/fsevents"
 )
@@ -65,7 +65,7 @@ var config Config
 func getCommandLineArgs() Config {
 	config = Config{}
 	flag.StringVar(&config.MonitorPath, "monitor_path", "/", "Path to monitor for file system events")
-	flag.StringVar(&config.DBPath, "db_path", "/var/lib/findfiles/files.db", "Path to the database file")
+	flag.StringVar(&config.DBPath, "db_path", "/var/lib/everythingx/files.db", "Path to the database file")
 	flag.BoolVar(&config.NoCache, "nocache", false, "Disable caching")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Enable verbose logging")
 	flag.Parse()

@@ -1,8 +1,4 @@
-data/1M.txt
-data/1000.txt
-data/all-files.txt
 main
-FileFind.git
 .DS_Store
 data/files.db*
 data/files.db-journal
@@ -17,8 +13,8 @@ cmd/service/out.txt
 cmd/tools/check-files/check-files
 data/myscan-md5.txt
 data/md5-go-scan.txt
-e2eTest/findfiles_test
-tools/monitor-resource-usage/findfilesd_usage.log
+e2eTest/everythingx_test
+tools/monitor-resource-usage/everythingxd_usage.log
 tools/benchmark-db/benchmark-db
 tools/benchmark-db/benchmark.db
 tools/benchmark-db/files.db.gz
@@ -28,4 +24,7 @@ tools/benchmark-db/nohup.out
 /bin/
 everythingx.zip
 **/__debug_*
-findfiles_test/*
+everythingx_test/*
+e2eTest/e2etest
+tools/benchmark-db/crash2.out
+tools/benchmark-db/crash2.out
