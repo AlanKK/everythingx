@@ -30,6 +30,19 @@ jobs:
       with:
         go-version: '1.24'
 
+    - name: Set release name
+      id: set_release_name
+      run: |
+        RELEASE_ARCH="macos-"
+        if [[ "$(uname -m)" == "arm64" ]]; then
+          RELEASE_ARCH+="arm64"
+        elif [[ "$(uname -m)" == "x86_64" ]]; then
+          RELEASE_ARCH+="intel-amd64"
+        else
+          echo "Unknown architecture: $(uname -m)"
+          exit 1
+        fi
+
     - name: Env
       run: env
       
@@ -51,7 +64,7 @@ jobs:
       if: ${{ env.BUILD_MAC == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: everythingx.${{ runner.os }}-${{ runner.arch }}
+        name: everythingx_vAlpha-1.${{ env.RELEASE_ARCH }}
         path: |
           everythingx
           ev
