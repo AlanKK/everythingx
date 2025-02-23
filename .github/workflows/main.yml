@@ -44,7 +44,7 @@ jobs:
         fi
         echo "Release arch $RELEASE_ARCH"
       env: 
-        RELEASE_ARCH: $RELEASE_ARCH
+        RELEASE_ARCH: ${{ RELEASE_ARCH }}
       
     - name: test
       run: make test
