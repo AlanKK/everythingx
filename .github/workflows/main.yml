@@ -43,7 +43,8 @@ jobs:
           exit 1
         fi
         echo "Release arch $RELEASE_ARCH"
-        env: RELEASE_ARCH: ${{ vars.RELEASE_ARCH }}
+      env: 
+        RELEASE_ARCH: ${{ vars.RELEASE_ARCH }}
 
     - name: Env
       run: env
