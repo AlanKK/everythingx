@@ -43,7 +43,7 @@ jobs:
           exit 1
         fi
         echo "Release arch $RELEASE_STR"
-        echo "RELEASE_ARCH=$RELEASE_STR" >> $GITHUB_OUTPUT # Corrected output setting
+        echo "RELEASE_ARCH=$RELEASE_STR" >> $GITHUB_OUTPUT
       
     - name: test
       run: make test
@@ -63,7 +63,7 @@ jobs:
       if: ${{ env.BUILD_MAC == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: everythingx_vAlpha-1.${{ steps.set_release_name.outputs.RELEASE_ARCH }}
+        name: everythingx_alpha-1.${{ steps.set_release_name.outputs.RELEASE_ARCH }}
         path: |
           everythingx
           ev
