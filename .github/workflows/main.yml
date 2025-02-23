@@ -67,7 +67,7 @@ jobs:
       if: ${{ env.BUILD_MAC == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: everythingx_vAlpha-1.${{ env.RELEASE_ARCH }}
+        name: everythingx_vAlpha-1.${{ vars.RELEASE_ARCH }}
         path: |
           everythingx
           ev
