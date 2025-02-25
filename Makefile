@@ -35,6 +35,7 @@ clean:
 	 rm -f $(TOOLS_DIR)/benchmark-db/benchmark-db $(TOOLS_DIR)/benchmark-db/benchmark.db 
 	 rm -rf ./everythingx_test/* 
 	 rm -f ./everythingx.zip
+	 rm -rf ./EverythingX.app
 
 uninstall:
 	 sudo ./uninstall.sh
@@ -43,6 +44,6 @@ zip: build app
 	 zip -r everythingx.zip bin/* install.sh uninstall.sh EverythingX.app
 
 app: build
-	 ~/go/bin/fyne package --release -os darwin -name EverythingX -icon assets/logo-512x512-orangefolder.png -appID com.example.everythingx -executable $(BIN_DIR)/everythingx
+	 ~/go/bin/fyne package --release -os darwin -name EverythingX -icon assets/logo-512x512-orangefolder.png -appID com.github.alankk.everythingx -executable $(BIN_DIR)/everythingx
 
 .PHONY: build test deps lint install clean uninstall zip package app
