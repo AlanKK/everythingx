@@ -13,24 +13,27 @@ import (
 
 // Options struct to hold the command-line options
 type Options struct {
-	SearchTerm string `positional-arg-name:"searchTerm" description:"Search term, full or partial filename"`
-	DBPath     string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/everythingx/files.db"`
-	Verbose    bool   `short:"v" long:"verbose" description:"Enable verbose logging"`
-	Highlight  bool   `short:"b" long:"highlight" description:"Highlight (bold) search term in results for readability"`
+	Args struct {
+		SearchTerm string `positional-arg-name:"searchTerm" description:"Search term, full or partial filename"`
+	} `positional-args:"yes" required:"yes"`
+	DBPath    string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/everythingx/files.db"`
+	Verbose   bool   `short:"v" long:"verbose" description:"Enable verbose logging"`
+	Highlight bool   `short:"b" long:"highlight" description:"Highlight (bold) search term in results for readability"`
 }
 
 func main() {
 	var opts Options
-	parser := flags.NewParser(&opts, flags.Default)
+	parser := flags.NewParser(&opts, flags.Default|flags.PrintErrors|flags.HelpFlag)
 
 	_, err := parser.Parse()
 	if err != nil {
-		fmt.Println("Error parsing flags: ", err)
+		parser.WriteHelp(os.Stdout)
 		os.Exit(1)
 	}
 
-	if opts.SearchTerm == "" {
+	if opts.Args.SearchTerm == "" {
 		fmt.Println("Search term is required.")
+		parser.WriteHelp(os.Stdout)
 		os.Exit(1)
 	}
 
@@ -49,10 +52,10 @@ func main() {
 	}
 	defer db.Close()
 
-	if opts.SearchTerm != "" {
-		results, err := ffdb.PrefixSearch(opts.SearchTerm, math.MaxInt)
+	if opts.Args.SearchTerm != "" {
+		results, err := ffdb.PrefixSearch(opts.Args.SearchTerm, math.MaxInt)
 		if err != nil {
-			fmt.Println("Error searching for ", opts.SearchTerm, err)
+			fmt.Println("Error searching for ", opts.Args.SearchTerm, err)
 			os.Exit(1)
 		}
 
@@ -62,7 +65,7 @@ func main() {
 
 		if opts.Highlight {
 			for _, r := range results {
-				before, term, after := shared.SplitFileName(r.Fullpath, opts.SearchTerm)
+				before, term, after := shared.SplitFileName(r.Fullpath, opts.Args.SearchTerm)
 				fmt.Printf("%s\033[1m%s\033[0m%s\n", before, term, after)
 			}
 		} else {
