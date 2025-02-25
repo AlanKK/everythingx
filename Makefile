@@ -5,7 +5,7 @@ E2E_TEST_DIR := ./e2eTest
 TOOLS_DIR := ./tools
 BIN_DIR := ./bin
 
-build: test $(BIN_DIR)/everythingxd $(BIN_DIR)/everythingx $(BIN_DIR)/ev
+build: $(BIN_DIR)/everythingxd $(BIN_DIR)/everythingx $(BIN_DIR)/ev
 
 $(BIN_DIR)/everythingxd: $(SERVICE_DIR)/main.go
 	 go build -o $@ $<
@@ -39,10 +39,10 @@ clean:
 uninstall:
 	 sudo ./uninstall.sh
 	
-zip: build
+zip: build app
 	 zip -r everythingx.zip bin/* install.sh uninstall.sh EverythingX.app
 
 app: build
-	 ~/go/bin/fyne package --release -os darwin -name EverythingX -icon assets/icon_128x128.png -appID com.example.everythingx -executable $(BIN_DIR)/everythingx
+	 ~/go/bin/fyne package --release -os darwin -name EverythingX -icon assets/logo-512x512-orangefolder.png -appID com.example.everythingx -executable $(BIN_DIR)/everythingx
 
-.PHONY: build test deps lint install clean uninstall zip package
+.PHONY: build test deps lint install clean uninstall zip package app

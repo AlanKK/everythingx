@@ -37,7 +37,7 @@ func (*everythingxTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color
 }
 
 func (*everythingxTheme) Icon(n fyne.ThemeIconName) fyne.Resource {
-	return ResourceEverythingXLogo32x32monochromeicon
+	return resourceLogo512x512OrangewhitefolderPng
 }
 
 func (*everythingxTheme) Size(n fyne.ThemeSizeName) float32 {
