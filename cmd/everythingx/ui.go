@@ -248,7 +248,7 @@ func showAbout() {
 	rich := widget.NewRichTextFromMarkdown(`
 # EverythingX 
 
-**Version:** v0.1
+**Version:** alpha-1
 
 **Author:** Alan Keister
 

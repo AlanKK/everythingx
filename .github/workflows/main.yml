@@ -57,7 +57,7 @@ jobs:
     - name: Copy for packaging
       run: |
         cp bin/* .
-        cp cmd/service/com.example.everythingxd.plist .
+        cp cmd/service/com.github.alankk.everythingxd.plist .
 
     - name: Upload package
       if: ${{ env.BUILD_MAC == 'true' }}
@@ -70,6 +70,6 @@ jobs:
           everythingxd
           install.sh 
           uninstall.sh 
-          com.example.everythingxd.plist 
+          com.github.alankk.everythingxd.plist 
         if-no-files-found: error
 
