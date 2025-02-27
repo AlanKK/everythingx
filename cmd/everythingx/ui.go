@@ -259,9 +259,9 @@ More info on [Github](` + GithubURL + `)
 
 	var img *canvas.Image
 	if fyne.CurrentApp().Settings().ThemeVariant() == theme.VariantDark {
-		img = canvas.NewImageFromResource(resourceLogo512x512OrangewhitefolderPng)
+		img = canvas.NewImageFromResource(resourceFolderWhiteOrange5122xPng) // Orange white 512
 	} else {
-		img = canvas.NewImageFromResource(resourceLogo512x512OrangefolderPng)
+		img = canvas.NewImageFromResource(resourceFolderOrangeBlack5122xPng) // orange black 512
 	}
 	img.SetMinSize(fyne.NewSize(128, 128))
 	imgContainer := container.NewCenter(img)
