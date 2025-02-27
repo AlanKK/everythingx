@@ -25,7 +25,7 @@ $(E2E_TEST_DIR)/e2etest: $(E2E_TEST_DIR)/main.go
 test:
 	 go test ./... | grep -v "\[no test files\]"
 
-install: build
+install: build app
 	 sudo ./install.sh
 
 clean:
@@ -44,6 +44,17 @@ zip: build app
 	 zip -r everythingx.zip bin/* install.sh uninstall.sh EverythingX.app
 
 app: build
-	 ~/go/bin/fyne package --release -os darwin -name EverythingX -icon assets/logo-512x512-orangefolder.png -appID com.github.alankk.everythingx -executable $(BIN_DIR)/everythingx
+	 ~/go/bin/fyne package --release -os darwin -name EverythingX -icon assets/icons/retina/orange-black/folder-orange-black-512@2x.png -appID com.github.alankk.everythingx -executable $(BIN_DIR)/everythingx
 
-.PHONY: build test deps lint install clean uninstall zip package app
+pkg: app 
+    #  --install-location "/" 
+	pkgbuild \
+     --root package/pkg \
+     --identifier "com.github.alankk.pkg.EverythingX" \
+     --version "alpha-1" \
+     --install-location "/" \
+	 --component-plist package/components.plist \
+     --scripts package/scripts/postinstall \
+     package/EverythingX.pkg
+
+.PHONY: build test deps lint install clean uninstall zip package app pkg
