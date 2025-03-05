@@ -124,6 +124,21 @@ func gracefulShutdown(db *sql.DB, es *fsevents.EventStream) {
 	os.Exit(0)
 }
 
+func scanHomeDirs() {
+	startTime := time.Now()
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("Failed to get user home directory: %v", err)
+	}
+	log.Printf("Scanning %s", homeDir)
+
+	scanDisk(homeDir)
+
+	elapsedTime := time.Since(startTime)
+	log.Printf("Scan of %s completed in %s", homeDir, elapsedTime)
+}
+
 func main() {
 	log.Println("Starting service with PID", os.Getpid())
 	config := getCommandLineArgs()
@@ -143,7 +158,7 @@ func main() {
 
 	if dbIsNew {
 		log.Println("Database is new. Scanning disk.")
-		scanDisk()
+		scanDisk(config.MonitorPath)
 	}
 
 	// Start the File System Event listener
@@ -173,7 +188,9 @@ func main() {
 	es.Start()
 
 	go func() {
+		scanTimer := time.Now()
 		log.Println("Event listener ready.")
+
 		for msg := range es.Events {
 			for _, event := range msg {
 				if strings.HasPrefix(event.Path, ignorePath) {
@@ -189,6 +206,11 @@ func main() {
 				if event.Flags&fsevents.MustScanSubDirs == fsevents.MustScanSubDirs {
 					log.Printf("Warning: MustScanSubdirs found for %s", event.Path)
 				}
+			}
+			// if time.Since(scanTimer) > 24*time.Hour {
+			if time.Since(scanTimer) > 10*time.Second {
+				scanHomeDirs()
+				scanTimer = time.Now()
 			}
 		}
 	}()
@@ -212,10 +234,6 @@ func setupSignalHandlers(db *sql.DB, es *fsevents.EventStream) {
 	usr1Chan := make(chan os.Signal, 1)
 	signal.Notify(usr1Chan, syscall.SIGUSR1)
 
-	// Handle SIGUSR2 to trigger disk scan
-	usr2Chan := make(chan os.Signal, 1)
-	signal.Notify(usr2Chan, syscall.SIGUSR2)
-
 	go func() {
 		log.Println("Signal handler thread started.")
 		for {
@@ -228,9 +246,7 @@ func setupSignalHandlers(db *sql.DB, es *fsevents.EventStream) {
 				gracefulShutdown(db, es)
 			case <-usr1Chan:
 				log.Println("Received SIGUSR1. Starting scan...")
-				scanDisk()
-			case <-usr2Chan:
-				log.Println("Received SIGUSR2. Starting db audit...")
+				scanDisk(config.MonitorPath)
 				deleteMissing(db)
 			}
 		}
@@ -339,7 +355,7 @@ func deleteMissing(db *sql.DB) {
 	log.Printf("DB Audit complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
 }
 
-func scanDisk() {
+func scanDisk(path string) {
 	// TODO: figure out how to use a separate eventRecordQueue for the scan that can be deleted when the scan is done.
 	//       It would save about 150MB ram after a scan
 	startTime := time.Now()
@@ -347,7 +363,7 @@ func scanDisk() {
 	var fileCount, dirCount, linkCount, pipeCount, socketCount, charDeviceCount, blockDeviceCount int
 	var objType shared.ObjectType = shared.ItemIsFile
 
-	filepath.WalkDir(config.MonitorPath, func(path string, file fs.DirEntry, err error) error {
+	filepath.WalkDir(path, func(path string, file fs.DirEntry, err error) error {
 		if strings.HasPrefix(path, ignorePath) {
 			return nil
 		}
