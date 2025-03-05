@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 
 	"strings"
 	"syscall"
@@ -127,9 +128,14 @@ func gracefulShutdown(db *sql.DB, es *fsevents.EventStream) {
 func scanHomeDirs() {
 	startTime := time.Now()
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Printf("Failed to get user home directory: %v", err)
+	homeDir := "/Users"
+	switch runtime.GOOS {
+	case "darwin":
+		homeDir = "/Users"
+	case "linux", "freebsd", "openbsd", "netbsd":
+		homeDir = "/home"
+	default:
+		log.Printf("Unsupported operating system: %s", runtime.GOOS)
 	}
 	log.Printf("Scanning %s", homeDir)
 
@@ -207,8 +213,7 @@ func main() {
 					log.Printf("Warning: MustScanSubdirs found for %s", event.Path)
 				}
 			}
-			// if time.Since(scanTimer) > 24*time.Hour {
-			if time.Since(scanTimer) > 10*time.Second {
+			if time.Since(scanTimer) > 24*time.Hour {
 				scanHomeDirs()
 				scanTimer = time.Now()
 			}
