@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 
 	"strings"
 	"syscall"
@@ -128,18 +127,11 @@ func gracefulShutdown(db *sql.DB, es *fsevents.EventStream) {
 func scanHomeDirs() {
 	startTime := time.Now()
 
-	homeDir := "/Users"
-	switch runtime.GOOS {
-	case "darwin":
-		homeDir = "/Users"
-	case "linux", "freebsd", "openbsd", "netbsd":
-		homeDir = "/home"
-	default:
-		log.Printf("Unsupported operating system: %s", runtime.GOOS)
-	}
+	homeDir := shared.GetHomeDirPath()
 	log.Printf("Scanning %s", homeDir)
 
 	scanDisk(homeDir)
+	deleteMissing(homeDir)
 
 	elapsedTime := time.Since(startTime)
 	log.Printf("Scan of %s completed in %s", homeDir, elapsedTime)
@@ -252,7 +244,7 @@ func setupSignalHandlers(db *sql.DB, es *fsevents.EventStream) {
 			case <-usr1Chan:
 				log.Println("Received SIGUSR1. Starting scan...")
 				scanDisk(config.MonitorPath)
-				deleteMissing(db)
+				deleteMissing(config.MonitorPath)
 			}
 		}
 	}()
@@ -319,23 +311,17 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]s
 
 // Scan the database for file paths and checks if they still exist on the filesystem.
 // If a file is missing, it creates an EventRecord with a delete action.
-func deleteMissing(db *sql.DB) {
+func deleteMissing(root string) {
 	startTime := time.Now()
 
-	rows, err := db.Query("SELECT fullpath FROM files")
+	rows, err := ffdb.FullPathLikeQuery(root)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rows.Close()
 
 	var totalFiles, filesExist, filesMissing int
 
-	for rows.Next() {
-		var fullpath string
-		if err := rows.Scan(&fullpath); err != nil {
-			log.Fatal(err)
-		}
-
+	for _, fullpath := range *rows {
 		if !shared.FileExists(fullpath) {
 			eventRecord := &shared.EventRecord{
 				Filename:   "",
@@ -351,10 +337,6 @@ func deleteMissing(db *sql.DB) {
 			filesExist++
 		}
 		totalFiles++
-	}
-
-	if err := rows.Err(); err != nil {
-		log.Fatal(err)
 	}
 
 	log.Printf("DB Audit complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
