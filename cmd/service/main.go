@@ -5,6 +5,7 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
 	"github.com/AlanKK/everythingx/internal/shared"
+	"github.com/AlanKK/everythingx/internal/version"
 
 	"github.com/fsnotify/fsevents"
 )
@@ -63,11 +65,13 @@ type Config struct {
 var config Config
 
 func getCommandLineArgs() Config {
+	var showVersion bool
 	config = Config{}
 	flag.StringVar(&config.MonitorPath, "monitor_path", "/", "Path to monitor for file system events")
 	flag.StringVar(&config.DBPath, "db_path", "/var/lib/everythingx/files.db", "Path to the database file")
 	flag.BoolVar(&config.NoCache, "nocache", false, "Disable caching")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Enable verbose logging")
+	flag.BoolVar(&showVersion, "version", false, "Display version information and exit")
 	flag.Parse()
 
 	if config.MonitorPath == "" {
@@ -82,6 +86,10 @@ func getCommandLineArgs() Config {
 	if config.Verbose {
 		log.Println("--verbose logging is enabled.")
 		verbose = true
+	}
+	if showVersion {
+		fmt.Println("everythingxd service", version.Info())
+		os.Exit(0)
 	}
 
 	return config
@@ -138,8 +146,8 @@ func scanHomeDirs() {
 }
 
 func main() {
-	log.Println("Starting service with PID", os.Getpid())
 	config := getCommandLineArgs()
+	log.Printf("Starting service with PID %d (%s)", os.Getpid(), version.Info())
 
 	db, dbIsNew := setupDatabase(config.DBPath)
 	if db == nil {
@@ -205,7 +213,8 @@ func main() {
 					log.Printf("Warning: MustScanSubdirs found for %s", event.Path)
 				}
 			}
-			if time.Since(scanTimer) > 24*time.Hour {
+			// if time.Since(scanTimer) > 24*time.Hour {
+			if time.Since(scanTimer) > 2*time.Hour {
 				scanHomeDirs()
 				scanTimer = time.Now()
 			}
