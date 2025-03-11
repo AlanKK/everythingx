@@ -348,7 +348,7 @@ func deleteMissing(root string) {
 		totalFiles++
 	}
 
-	log.Printf("DB Audit complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
+	log.Printf("DB cleanup complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
 }
 
 func scanDisk(path string) {

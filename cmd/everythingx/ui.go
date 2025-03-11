@@ -21,10 +21,9 @@ import (
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 )
 
-// TODO:
-// File icons
-// copy path to clipboard
-// tooltips
+// TODO: File icons
+// TODO: copy path to clipboard
+// TODO: tooltips
 
 var maxSearchResults int = 1000
 
