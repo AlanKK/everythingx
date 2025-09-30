@@ -4,12 +4,26 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/user"
 	"runtime"
 	"strings"
 	"syscall"
 )
+
+func GetHomeDirPath() string {
+	homeDir := "/Users"
+	switch runtime.GOOS {
+	case "darwin":
+		homeDir = "/Users"
+	case "linux", "freebsd", "openbsd", "netbsd":
+		homeDir = "/home"
+	default:
+		log.Printf("Unsupported operating system: %s", runtime.GOOS)
+	}
+	return homeDir
+}
 
 func FileExists(filename string) bool {
 	_, err := os.Stat(filename)

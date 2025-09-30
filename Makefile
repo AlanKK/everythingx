@@ -5,16 +5,21 @@ E2E_TEST_DIR := ./e2eTest
 TOOLS_DIR := ./tools
 BIN_DIR := ./bin
 
+VERSION := $(shell git describe --tags --always --dirty)
+COMMIT := $(shell git rev-parse --short HEAD)
+BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS := -ldflags "-X github.com/AlanKK/everythingx/internal/version.Version=${VERSION} -X github.com/AlanKK/everythingx/internal/version.Commit=${COMMIT} -X github.com/AlanKK/everythingx/internal/version.BuildDate=${BUILD_DATE}"
+
 build: $(BIN_DIR)/everythingxd $(BIN_DIR)/everythingx $(BIN_DIR)/ev
 
 $(BIN_DIR)/everythingxd: $(SERVICE_DIR)/main.go
-	 go build -o $@ $<
+	 go build ${LDFLAGS} -o $@ $<
 
 $(BIN_DIR)/everythingx: $(APP_DIR)/*.go
-	 CGO_LDFLAGS="-Wl,-w" go build -o $@ $^
+	 CGO_LDFLAGS="-Wl,-w" go build ${LDFLAGS} -o $@ $^
 
 $(BIN_DIR)/ev: $(CLI_DIR)/main.go
-	 go build -o $@ $<
+	 go build ${LDFLAGS} -o $@ $<
 
 e2e: build $(E2E_TEST_DIR)/e2etest
 	$(E2E_TEST_DIR)/e2etest
