@@ -8,6 +8,7 @@ import (
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
 	"github.com/AlanKK/everythingx/internal/shared"
+	"github.com/AlanKK/everythingx/internal/version"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -20,10 +21,9 @@ import (
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 )
 
-// TODO:
-// File icons
-// copy path to clipboard
-// tooltips
+// TODO: File icons
+// TODO: copy path to clipboard
+// TODO: tooltips
 
 var maxSearchResults int = 1000
 
@@ -248,7 +248,7 @@ func showAbout() {
 	rich := widget.NewRichTextFromMarkdown(`
 # EverythingX 
 
-**Version:** alpha-1
+**Version:** ` + version.ShortInfo() + `
 
 **Author:** Alan KK
 
