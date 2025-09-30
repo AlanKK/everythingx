@@ -645,3 +645,74 @@ func TestBulkStoreOrdering(t *testing.T) {
 		t.Fatalf("Expected 0 records, got %d", count)
 	}
 }
+func TestFullPathLikeQuery(t *testing.T) {
+	testDBPath := "test.db"
+	os.Remove(testDBPath)
+
+	db, err := CreateDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+
+	// Insert test data
+	testData := []struct {
+		filename string
+		fullpath string
+	}{
+		{"file1.txt", "/path/to/file1.txt"},
+		{"file2.txt", "/path/to/file2.txt"},
+		{"file3.txt", "/path/to/file3.txt"},
+		{"anotherfile.txt", "/another/path/to/file.txt"},
+	}
+
+	for _, data := range testData {
+		err = InsertRecord(db, data.filename, data.fullpath, 0, shared.ItemIsFile)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+	}
+
+	// Test FullPathLikeQuery function
+	results, err := FullPathLikeQuery("/path/to/file")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	expectedResults := []string{
+		"/path/to/file1.txt",
+		"/path/to/file2.txt",
+		"/path/to/file3.txt",
+	}
+
+	if len(*results) != len(expectedResults) {
+		t.Fatalf("Expected %d results, got %d", len(expectedResults), len(*results))
+	}
+
+	for i, result := range *results {
+		if result != expectedResults[i] {
+			t.Fatalf("Expected result %s, got %s", expectedResults[i], result)
+		}
+	}
+
+	// Test with a different prefix
+	results, err = FullPathLikeQuery("/another/path/to")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	expectedResults = []string{
+		"/another/path/to/file.txt",
+	}
+
+	if len(*results) != len(expectedResults) {
+		t.Fatalf("Expected %d results, got %d", len(expectedResults), len(*results))
+	}
+
+	for i, result := range *results {
+		if result != expectedResults[i] {
+			t.Fatalf("Expected result %s, got %s", expectedResults[i], result)
+		}
+	}
+}

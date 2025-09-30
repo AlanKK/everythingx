@@ -21,6 +21,7 @@ var records []struct {
 var prefixSearchStmt *sql.Stmt
 var insertStmt *sql.Stmt
 var deleteStmt *sql.Stmt
+var fullPathLikeStmt *sql.Stmt
 
 // Creates and opens a new database at the given pathname.
 func CreateDB(pathname string) (*sql.DB, error) {
@@ -128,6 +129,11 @@ func prepareStatements(db *sql.DB) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	fullPathLikeStmt, err = db.Prepare("SELECT fullpath FROM files where fullpath like ?")
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 // Performs a search for filenames starting with the given prefix and returns a limited number of results.
@@ -175,6 +181,27 @@ func DeleteRecord(db *sql.DB, fullpath string) error {
 func InsertRecord(db *sql.DB, filename string, path string, eventID uint64, objectType shared.ObjectType) error {
 	_, err := db.Exec("INSERT OR IGNORE INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)", filename, path, eventID, objectType)
 	return err
+}
+
+func FullPathLikeQuery(path string) (*[]string, error) {
+	var results []string
+
+	rows, err := fullPathLikeStmt.Query(path + "%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var result string
+		err = rows.Scan(&result)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+
+	return &results, nil
 }
 
 // Collects records and commits them to the database when enough records are collected.

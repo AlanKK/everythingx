@@ -5,6 +5,7 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
 	"github.com/AlanKK/everythingx/internal/shared"
+	"github.com/AlanKK/everythingx/internal/version"
 
 	"github.com/fsnotify/fsevents"
 )
@@ -63,11 +65,13 @@ type Config struct {
 var config Config
 
 func getCommandLineArgs() Config {
+	var showVersion bool
 	config = Config{}
 	flag.StringVar(&config.MonitorPath, "monitor_path", "/", "Path to monitor for file system events")
 	flag.StringVar(&config.DBPath, "db_path", "/var/lib/everythingx/files.db", "Path to the database file")
 	flag.BoolVar(&config.NoCache, "nocache", false, "Disable caching")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Enable verbose logging")
+	flag.BoolVar(&showVersion, "version", false, "Display version information and exit")
 	flag.Parse()
 
 	if config.MonitorPath == "" {
@@ -82,6 +86,10 @@ func getCommandLineArgs() Config {
 	if config.Verbose {
 		log.Println("--verbose logging is enabled.")
 		verbose = true
+	}
+	if showVersion {
+		fmt.Println("everythingxd service", version.Info())
+		os.Exit(0)
 	}
 
 	return config
@@ -124,9 +132,22 @@ func gracefulShutdown(db *sql.DB, es *fsevents.EventStream) {
 	os.Exit(0)
 }
 
+func scanHomeDirs() {
+	startTime := time.Now()
+
+	homeDir := shared.GetHomeDirPath()
+	log.Printf("Scanning %s", homeDir)
+
+	scanDisk(homeDir)
+	deleteMissing(homeDir)
+
+	elapsedTime := time.Since(startTime)
+	log.Printf("Scan of %s completed in %s", homeDir, elapsedTime)
+}
+
 func main() {
-	log.Println("Starting service with PID", os.Getpid())
 	config := getCommandLineArgs()
+	log.Printf("Starting service with PID %d (%s)", os.Getpid(), version.Info())
 
 	db, dbIsNew := setupDatabase(config.DBPath)
 	if db == nil {
@@ -143,7 +164,7 @@ func main() {
 
 	if dbIsNew {
 		log.Println("Database is new. Scanning disk.")
-		scanDisk()
+		scanDisk(config.MonitorPath)
 	}
 
 	// Start the File System Event listener
@@ -173,7 +194,9 @@ func main() {
 	es.Start()
 
 	go func() {
+		scanTimer := time.Now()
 		log.Println("Event listener ready.")
+
 		for msg := range es.Events {
 			for _, event := range msg {
 				if strings.HasPrefix(event.Path, ignorePath) {
@@ -189,6 +212,11 @@ func main() {
 				if event.Flags&fsevents.MustScanSubDirs == fsevents.MustScanSubDirs {
 					log.Printf("Warning: MustScanSubdirs found for %s", event.Path)
 				}
+			}
+			// if time.Since(scanTimer) > 24*time.Hour {
+			if time.Since(scanTimer) > 2*time.Hour {
+				scanHomeDirs()
+				scanTimer = time.Now()
 			}
 		}
 	}()
@@ -212,10 +240,6 @@ func setupSignalHandlers(db *sql.DB, es *fsevents.EventStream) {
 	usr1Chan := make(chan os.Signal, 1)
 	signal.Notify(usr1Chan, syscall.SIGUSR1)
 
-	// Handle SIGUSR2 to trigger disk scan
-	usr2Chan := make(chan os.Signal, 1)
-	signal.Notify(usr2Chan, syscall.SIGUSR2)
-
 	go func() {
 		log.Println("Signal handler thread started.")
 		for {
@@ -228,10 +252,8 @@ func setupSignalHandlers(db *sql.DB, es *fsevents.EventStream) {
 				gracefulShutdown(db, es)
 			case <-usr1Chan:
 				log.Println("Received SIGUSR1. Starting scan...")
-				scanDisk()
-			case <-usr2Chan:
-				log.Println("Received SIGUSR2. Starting db audit...")
-				deleteMissing(db)
+				scanDisk(config.MonitorPath)
+				deleteMissing(config.MonitorPath)
 			}
 		}
 	}()
@@ -298,23 +320,17 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]s
 
 // Scan the database for file paths and checks if they still exist on the filesystem.
 // If a file is missing, it creates an EventRecord with a delete action.
-func deleteMissing(db *sql.DB) {
+func deleteMissing(root string) {
 	startTime := time.Now()
 
-	rows, err := db.Query("SELECT fullpath FROM files")
+	rows, err := ffdb.FullPathLikeQuery(root)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rows.Close()
 
 	var totalFiles, filesExist, filesMissing int
 
-	for rows.Next() {
-		var fullpath string
-		if err := rows.Scan(&fullpath); err != nil {
-			log.Fatal(err)
-		}
-
+	for _, fullpath := range *rows {
 		if !shared.FileExists(fullpath) {
 			eventRecord := &shared.EventRecord{
 				Filename:   "",
@@ -332,14 +348,10 @@ func deleteMissing(db *sql.DB) {
 		totalFiles++
 	}
 
-	if err := rows.Err(); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Printf("DB Audit complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
+	log.Printf("DB cleanup complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
 }
 
-func scanDisk() {
+func scanDisk(path string) {
 	// TODO: figure out how to use a separate eventRecordQueue for the scan that can be deleted when the scan is done.
 	//       It would save about 150MB ram after a scan
 	startTime := time.Now()
@@ -347,7 +359,7 @@ func scanDisk() {
 	var fileCount, dirCount, linkCount, pipeCount, socketCount, charDeviceCount, blockDeviceCount int
 	var objType shared.ObjectType = shared.ItemIsFile
 
-	filepath.WalkDir(config.MonitorPath, func(path string, file fs.DirEntry, err error) error {
+	filepath.WalkDir(path, func(path string, file fs.DirEntry, err error) error {
 		if strings.HasPrefix(path, ignorePath) {
 			return nil
 		}

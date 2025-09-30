@@ -8,6 +8,7 @@ import (
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
 	"github.com/AlanKK/everythingx/internal/shared"
+	"github.com/AlanKK/everythingx/internal/version"
 	flags "github.com/jessevdk/go-flags"
 )
 
@@ -15,9 +16,10 @@ import (
 type Options struct {
 	Args struct {
 		SearchTerm string `positional-arg-name:"searchTerm" description:"Search term, full or partial filename"`
-	} `positional-args:"yes" required:"yes"`
+	} `positional-args:"yes"`
 	DBPath    string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/everythingx/files.db"`
 	Verbose   bool   `short:"v" long:"verbose" description:"Enable verbose logging"`
+	Version   bool   `long:"version" description:"Show version information"`
 	Highlight bool   `short:"b" long:"highlight" description:"Highlight (bold) search term in results for readability"`
 }
 
@@ -29,6 +31,11 @@ func main() {
 	if err != nil {
 		parser.WriteHelp(os.Stdout)
 		os.Exit(1)
+	}
+
+	if opts.Version {
+		fmt.Println(version.Info())
+		os.Exit(0)
 	}
 
 	if opts.Args.SearchTerm == "" {
