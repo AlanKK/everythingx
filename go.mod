@@ -8,6 +8,7 @@ require (
 	github.com/fsnotify/fsevents v0.2.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/mattn/go-sqlite3 v1.14.24
+	github.com/stretchr/testify v1.8.4
 )
 
 require (
@@ -36,6 +37,7 @@ require (
 	github.com/rymdport/portal v0.4.1 // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
+  dependabot/go_modules/fyne.io/fyne/v2-2.6.1
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	golang.org/x/image v0.24.0 // indirect
