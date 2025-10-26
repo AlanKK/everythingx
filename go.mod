@@ -7,7 +7,7 @@ require (
 	github.com/dweymouth/fyne-tooltip v0.2.1
 	github.com/fsnotify/fsevents v0.2.0
 	github.com/jessevdk/go-flags v1.6.1
-	github.com/mattn/go-sqlite3 v1.14.24
+	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/stretchr/testify v1.10.0
 )
 
