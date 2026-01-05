@@ -13,12 +13,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, macos-15]
+        os: [macos-latest, macos-15-intel]
         arch: [amd64, arm64]
         exclude:
           - os: macos-latest
             arch: arm64
-          - os: macos-15
+          - os: macos-15-intel
             arch: amd64     
     env:
       BUILD_MAC: true
