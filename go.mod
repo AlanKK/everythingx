@@ -3,7 +3,7 @@ module github.com/AlanKK/everythingx
 go 1.23.3
 
 require (
-	fyne.io/fyne/v2 v2.7.0
+	fyne.io/fyne/v2 v2.7.1
 	github.com/dweymouth/fyne-tooltip v0.4.0
 	github.com/fsnotify/fsevents v0.2.0
 	github.com/jessevdk/go-flags v1.6.1
