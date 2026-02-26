@@ -14,27 +14,15 @@ import (
 )
 
 // Mock implementations for testing
-var originalFileExists func(string) bool
-var fullPathLikeQuery func(string) (*[]string, error)
 var originalDbChannel chan *shared.EventRecord
-var mockFileExists func(string) bool
-
-func init() {
-	// Store the real implementation
-	mockFileExists = shared.FileExists
-}
 
 func setupTest() {
-	// Save original functions
-	originalFileExists = mockFileExists
-	fullPathLikeQuery = ffdb.FullPathLikeQuery
 	originalDbChannel = dbChannel
 }
 
 func teardownTest() {
-	// Restore original functions
-	mockFileExists = originalFileExists
-	// Can't restore ffdb.FullPathLikeQuery directly
+	fileExists = shared.FileExists
+	fullPathLikeQuery = ffdb.FullPathLikeQuery
 	dbChannel = originalDbChannel
 }
 
@@ -83,7 +71,7 @@ func TestDeleteMissing(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 
 			// Mock FileExists
-			mockFileExists = func(path string) bool {
+			fileExists = func(path string) bool {
 				exists, found := tc.existingFiles[path]
 				return found && exists
 			}
@@ -128,7 +116,7 @@ func TestDeleteMissing(t *testing.T) {
 				assert.Equal(t, "", event.Filename, "filename should be empty")
 				assert.Contains(t, tc.dbPaths, event.Path, "path should be in original list")
 				assert.Equal(t, shared.ObjectType(0), event.ObjectType, "object type should be 0")
-				assert.Equal(t, int64(0), event.EventID, "event ID should be 0")
+				assert.Equal(t, uint64(0), event.EventID, "event ID should be 0")
 				assert.Equal(t, int64(0), event.EventTime, "event time should be 0")
 
 				// Verify this was actually a missing file
