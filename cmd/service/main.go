@@ -50,6 +50,8 @@ var noteDescription = map[fsevents.EventFlags]string{
 }
 
 var dbChannel chan *shared.EventRecord
+var fullPathLikeQuery = ffdb.FullPathLikeQuery
+var fileExists = shared.FileExists
 
 const ignorePath = "/System/Volumes/Data"
 
@@ -323,7 +325,7 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]s
 func deleteMissing(root string) {
 	startTime := time.Now()
 
-	rows, err := ffdb.FullPathLikeQuery(root)
+	rows, err := fullPathLikeQuery(root)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -331,7 +333,7 @@ func deleteMissing(root string) {
 	var totalFiles, filesExist, filesMissing int
 
 	for _, fullpath := range *rows {
-		if !shared.FileExists(fullpath) {
+		if !fileExists(fullpath) {
 			eventRecord := &shared.EventRecord{
 				Filename:   "",
 				Path:       fullpath,
