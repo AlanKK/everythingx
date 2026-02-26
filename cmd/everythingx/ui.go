@@ -19,11 +19,11 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
-// TODO: File icons
-// TODO: copy path to clipboard
-// TODO: tooltips
+// TODO:
+// File icons
 
 var maxSearchResults int = 1000
 
@@ -99,6 +99,7 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	} else {
 		resultText = fmt.Sprintf("%d objects", len(results))
 	}
+	lastResultText = resultText
 	statusBar.SetText(resultText)
 
 	shared.PrintMemUsage()
@@ -113,9 +114,40 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	)
 }
 
+// tooltipCell is a RichText cell that lazily fetches file info on hover.
+type tooltipCell struct {
+	ttwidget.RichText
+	path string
+	col  int
+}
+
+func newTooltipCell() *tooltipCell {
+	c := &tooltipCell{}
+	c.Truncation = fyne.TextTruncateEllipsis
+	c.RichText.ExtendBaseWidget(c)
+	return c
+}
+
+func (c *tooltipCell) MouseIn(e *desktop.MouseEvent) {
+	c.SetToolTip(getToolTipForFile(c.path))
+	c.RichText.MouseIn(e)
+}
+
+func (c *tooltipCell) Tapped(_ *fyne.PointEvent) {
+	if c.col == 0 && c.path != "" {
+		mainWindow.Clipboard().SetContent(c.path)
+		statusBar.SetText("✓ Copied!")
+		time.AfterFunc(1500*time.Millisecond, func() {
+			statusBar.SetText(lastResultText)
+		})
+	}
+}
+
 // available for the table widget.
 var tableData *[]RowData
 var t *widget.Table
+var mainWindow fyne.Window
+var lastResultText string
 
 func makeTable() *widget.Table {
 	data := make([]RowData, 0, maxSearchResults)
@@ -126,13 +158,13 @@ func makeTable() *widget.Table {
 		func() (int, int) { return len(*tableData), 4 },
 		// CreateCell()
 		func() fyne.CanvasObject {
-			l := widget.NewRichText()
-			l.Truncation = fyne.TextTruncateEllipsis
-			return l
+			return newTooltipCell()
 		},
 		// UpdateCell()
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			richText := cell.(*widget.RichText)
+			richText := cell.(*tooltipCell)
+			richText.path = (*tableData)[id.Row].SearchResult.Fullpath
+			richText.col = id.Col
 
 			switch id.Col {
 			case 0:
@@ -193,15 +225,7 @@ func makeTable() *widget.Table {
 		},
 	)
 	t.OnSelected = func(id widget.TableCellID) {
-		if id.Row == 0 {
-			return
-		}
-		statusBar.Text = getToolTipForFile((*tableData)[id.Row].SearchResult.Fullpath)
-		statusBar.TextStyle.Monospace = true
-		statusBar.Wrapping = fyne.TextWrapWord
-		statusBar.Refresh()
-		// Open Finder
-		// handleOpenFile((*tableData)[id.Row].Path + strings.Join((*tableData)[id.Row].Name, ""))
+		t.UnselectAll()
 	}
 
 	t.SetColumnWidth(0, 400) // Name
@@ -294,6 +318,7 @@ func loadUI() {
 	a := app.New()
 	a.Settings().SetTheme(&everythingxTheme{})
 	w := a.NewWindow("EverythingX")
+	mainWindow = w
 
 	if desk, ok := a.(desktop.App); ok {
 		m := fyne.NewMenu("EverythingX",
