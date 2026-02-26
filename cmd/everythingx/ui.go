@@ -8,6 +8,7 @@ import (
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
 	"github.com/AlanKK/everythingx/internal/shared"
+	"github.com/AlanKK/everythingx/internal/version"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -271,7 +272,7 @@ func showAbout() {
 	rich := widget.NewRichTextFromMarkdown(`
 # EverythingX 
 
-**Version:** alpha-1
+**Version:** ` + version.ShortInfo() + `
 
 **Author:** Alan Keister
 

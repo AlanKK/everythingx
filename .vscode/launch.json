@@ -33,7 +33,7 @@
         "request": "launch",
         "mode": "debug",
         "program": "${workspaceFolder}/cmd/service/main.go",
-        "args": ["--db_path", "/Users/alan/Downloads/files.db"]   
+        "args": ["--monitor_path", "/Users/alan/Documents", "--db_path", "/Users/alan/Downloads/files.db"]   
     },
     {
         "name": "Launch e2e test",
