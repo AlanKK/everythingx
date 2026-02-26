@@ -138,7 +138,9 @@ func (c *tooltipCell) Tapped(_ *fyne.PointEvent) {
 		mainWindow.Clipboard().SetContent(c.path)
 		statusBar.SetText("✓ Copied!")
 		time.AfterFunc(1500*time.Millisecond, func() {
-			statusBar.SetText(lastResultText)
+			fyne.Do(func() {
+				statusBar.SetText(lastResultText)
+			})
 		})
 	}
 }
