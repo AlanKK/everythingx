@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/AlanKK/everythingx/internal/ffdb"
+	"github.com/AlanKK/everythingx/internal/mmindex"
 	"github.com/AlanKK/everythingx/internal/shared"
 	"github.com/AlanKK/everythingx/internal/version"
 
@@ -55,11 +55,13 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	}
 
 	searchStart := time.Now()
-	results, err := ffdb.PrefixSearch(e.Text, maxSearchResults)
+	idx, err := mmindex.Open()
 	if err != nil {
-		fmt.Println("Error:", err)
+		fmt.Println("Error opening index:", err)
 		return
 	}
+	defer idx.Close()
+	results := idx.Search(e.Text, maxSearchResults)
 
 	searchElapsed := time.Since(searchStart)
 

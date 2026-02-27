@@ -6,7 +6,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/AlanKK/everythingx/internal/ffdb"
+	"github.com/AlanKK/everythingx/internal/mmindex"
 	"github.com/AlanKK/everythingx/internal/shared"
 	"github.com/AlanKK/everythingx/internal/version"
 	flags "github.com/jessevdk/go-flags"
@@ -17,10 +17,8 @@ type Options struct {
 	Args struct {
 		SearchTerm string `positional-arg-name:"searchTerm" description:"Search term, full or partial filename"`
 	} `positional-args:"yes"`
-	DBPath    string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/everythingx/files.db"`
-	Verbose   bool   `short:"v" long:"verbose" description:"Enable verbose logging"`
-	Version   bool   `long:"version" description:"Show version information"`
-	Highlight bool   `short:"b" long:"highlight" description:"Highlight (bold) search term in results for readability"`
+	Version   bool `long:"version" description:"Show version information"`
+	Highlight bool `short:"b" long:"highlight" description:"Highlight (bold) search term in results for readability"`
 }
 
 func main() {
@@ -44,42 +42,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	if !shared.FileExists(opts.DBPath) {
-		fmt.Println("Database does not exist ", opts.DBPath)
-		os.Exit(1)
-	}
-
-	if opts.Verbose {
-		fmt.Println("Opening database ", opts.DBPath)
-	}
-	db, err := ffdb.OpenDBReadOnly(opts.DBPath)
+	idx, err := mmindex.Open()
 	if err != nil {
-		fmt.Println("Error opening database: ", opts.DBPath, err)
+		fmt.Println("Error opening index:", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer idx.Close()
 
-	if opts.Args.SearchTerm != "" {
-		results, err := ffdb.PrefixSearch(opts.Args.SearchTerm, math.MaxInt)
-		if err != nil {
-			fmt.Println("Error searching for ", opts.Args.SearchTerm, err)
-			os.Exit(1)
+	results := idx.Search(opts.Args.SearchTerm, math.MaxInt)
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Fullpath < results[j].Fullpath
+	})
+
+	if opts.Highlight {
+		for _, r := range results {
+			before, term, after := shared.SplitFileName(r.Fullpath, opts.Args.SearchTerm)
+			fmt.Printf("%s\033[1m%s\033[0m%s\n", before, term, after)
 		}
-
-		sort.Slice(results, func(i, j int) bool {
-			return results[i].Fullpath < results[j].Fullpath
-		})
-
-		if opts.Highlight {
-			for _, r := range results {
-				before, term, after := shared.SplitFileName(r.Fullpath, opts.Args.SearchTerm)
-				fmt.Printf("%s\033[1m%s\033[0m%s\n", before, term, after)
-			}
-		} else {
-			for _, r := range results {
-				fmt.Println(r.Fullpath)
-			}
+	} else {
+		for _, r := range results {
+			fmt.Println(r.Fullpath)
 		}
-		os.Exit(0)
 	}
 }

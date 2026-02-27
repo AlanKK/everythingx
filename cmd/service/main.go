@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
+	"github.com/AlanKK/everythingx/internal/mmindex"
 	"github.com/AlanKK/everythingx/internal/shared"
 	"github.com/AlanKK/everythingx/internal/version"
 
@@ -52,6 +53,16 @@ var noteDescription = map[fsevents.EventFlags]string{
 var dbChannel chan *shared.EventRecord
 var fullPathLikeQuery = ffdb.FullPathLikeQuery
 var fileExists = shared.FileExists
+
+// rebuildCh signals the index rebuild goroutine. Capacity 1 coalesces rapid bursts.
+var rebuildCh = make(chan struct{}, 1)
+
+func triggerRebuild() {
+	select {
+	case rebuildCh <- struct{}{}:
+	default: // rebuild already pending
+	}
+}
 
 const ignorePath = "/System/Volumes/Data"
 
@@ -168,6 +179,18 @@ func main() {
 		log.Println("Database is new. Scanning disk.")
 		scanDisk(config.MonitorPath)
 	}
+
+	// Build the initial mmap index, then rebuild it after every DB flush.
+	if err := mmindex.Build(db); err != nil {
+		log.Println("mmindex initial build failed:", err)
+	}
+	go func() {
+		for range rebuildCh {
+			if err := mmindex.Build(db); err != nil {
+				log.Println("mmindex rebuild failed:", err)
+			}
+		}
+	}()
 
 	// Start the File System Event listener
 	if !shared.FileExists(config.MonitorPath) {
@@ -315,6 +338,7 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]s
 		if err != nil {
 			log.Println("Error writing to db: ", err)
 		}
+		triggerRebuild()
 		*eventRecordQueue = (*eventRecordQueue)[:0] // clear the queue
 		*lastFlushTime = time.Now()
 	}
