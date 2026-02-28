@@ -29,18 +29,23 @@ var magic = [4]byte{'E', 'V', 'I', 'N'}
 //	  [N]  fullpath bytes
 //	  [1]  uint8  object_type
 
-// Build reads all rows from db sorted by filename and atomically writes the
-// binary index to IndexPath. The old file remains valid for existing mappings
+// Build writes the binary index to IndexPath.
+func Build(db *sql.DB) error {
+	return BuildAt(db, IndexPath)
+}
+
+// BuildAt reads all rows from db sorted by filename and atomically writes the
+// binary index to path. The old file remains valid for existing mappings
 // because the rename only replaces the directory entry; the old inode persists
 // until all mappings are closed.
-func Build(db *sql.DB) error {
+func BuildAt(db *sql.DB, path string) error {
 	rows, err := db.Query("SELECT filename, fullpath, object_type FROM files ORDER BY filename ASC")
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
-	tmp := IndexPath + ".tmp"
+	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {
 		return err
@@ -106,7 +111,7 @@ func Build(db *sql.DB) error {
 	}
 	f.Close()
 
-	if err := os.Rename(tmp, IndexPath); err != nil {
+	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
 	success = true
@@ -120,9 +125,14 @@ type Index struct {
 	data []byte
 }
 
-// Open memory-maps the index file. The caller must call Close when done.
+// Open memory-maps IndexPath. The caller must call Close when done.
 func Open() (*Index, error) {
-	f, err := os.Open(IndexPath)
+	return OpenAt(IndexPath)
+}
+
+// OpenAt memory-maps the index file at path. The caller must call Close when done.
+func OpenAt(path string) (*Index, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}

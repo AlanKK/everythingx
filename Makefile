@@ -30,6 +30,11 @@ $(E2E_TEST_DIR)/e2etest: $(E2E_TEST_DIR)/main.go
 test:
 	 go test ./... | grep -v "\[no test files\]"
 
+bench: tools/benchmark-db/benchmark.db
+	 go test -bench=. -benchtime=5s -count=3 ./tools/benchmark-db/
+
+tools/benchmark-db/benchmark.db:
+	 cd tools/benchmark-db && go run . -n 100
 install: build app
 	 sudo ./install.sh
 
@@ -37,7 +42,7 @@ clean:
 	 rm -f $(BIN_DIR)/*
 	 rm -f $(SERVICE_DIR)/everythingxd $(APP_DIR)/everythingx $(E2E_TEST_DIR)/e2etest
 	 rm -f $(TOOLS_DIR)/check-missing-files/check-missing-files $(TOOLS_DIR)/create-db/create-db $(TOOLS_DIR)/scan-disk/scan-disk
-	 rm -f $(TOOLS_DIR)/benchmark-db/benchmark-db $(TOOLS_DIR)/benchmark-db/benchmark.db 
+	 rm -f $(TOOLS_DIR)/benchmark-db/benchmark-db $(TOOLS_DIR)/benchmark-db/benchmark.db $(TOOLS_DIR)/benchmark-db/benchmark.idx
 	 rm -rf ./everythingx_test/* 
 	 rm -f ./everythingx.zip
 	 rm -rf ./EverythingX.app
@@ -62,4 +67,4 @@ pkg: app
      --scripts package/scripts/postinstall \
      package/EverythingX.pkg
 
-.PHONY: build test deps lint install clean uninstall zip package app pkg
+.PHONY: build test bench deps lint install clean uninstall zip package app pkg
