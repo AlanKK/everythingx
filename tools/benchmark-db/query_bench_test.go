@@ -8,7 +8,6 @@ import (
 	"github.com/AlanKK/everythingx/internal/ffdb"
 	"github.com/AlanKK/everythingx/internal/mmindex"
 	_ "github.com/mattn/go-sqlite3"
-	zsqlite "zombiezen.com/go/sqlite"
 )
 
 const mmIndexPath = "./benchmark.idx"
@@ -56,61 +55,6 @@ func BenchmarkPrefixSearch_Mattn(b *testing.B) {
 			b.Fatalf("search error: %v", err)
 		}
 		_ = results
-	}
-}
-
-func BenchmarkPrefixSearch_InMemory(b *testing.B) {
-	db, err := ffdb.OpenDBReadOnly(targetDBPath)
-	if err != nil {
-		b.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-
-	idx, err := ffdb.LoadIndex(db)
-	if err != nil {
-		b.Fatalf("load index: %v", err)
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		prefix := benchPrefixes[i%len(benchPrefixes)]
-		results := idx.Search(prefix, maxSearchResults)
-		_ = results
-	}
-}
-
-func BenchmarkPrefixSearch_Zombiezen(b *testing.B) {
-	conn, err := zsqlite.OpenConn(targetDBPath, zsqlite.OpenReadOnly|zsqlite.OpenURI)
-	if err != nil {
-		b.Fatalf("open conn: %v", err)
-	}
-	defer conn.Close()
-
-	const query = "SELECT fullpath, object_type FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?"
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		prefix := "%" + benchPrefixes[i%len(benchPrefixes)] + "%"
-
-		stmt := conn.Prep(query)
-		stmt.BindText(1, prefix)
-		stmt.BindInt64(2, int64(maxSearchResults))
-
-		for {
-			rowReturned, err := stmt.Step()
-			if err != nil {
-				b.Fatalf("step error: %v", err)
-			}
-			if !rowReturned {
-				break
-			}
-			_ = stmt.ColumnText(0)
-			_ = stmt.ColumnInt(1)
-		}
-
-		if err := stmt.Reset(); err != nil {
-			b.Fatalf("reset error: %v", err)
-		}
 	}
 }
 

@@ -20,3 +20,6 @@ e2eTest/e2etest
 tools/benchmark-db/crash2.out
 EverythingX.app/*
 package/*
+service
+benchmark-db
+cli
