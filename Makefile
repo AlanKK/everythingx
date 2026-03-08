@@ -1,6 +1,7 @@
 SERVICE_DIR := ./cmd/service
 APP_DIR := ./cmd/everythingx
 CLI_DIR := ./cmd/cli
+SWIFT_UI_DIR := ./cmd/swift-ui
 E2E_TEST_DIR := ./e2eTest
 TOOLS_DIR := ./tools
 BIN_DIR := ./bin
@@ -62,4 +63,10 @@ pkg: app
      --scripts package/scripts/postinstall \
      package/EverythingX.pkg
 
-.PHONY: build test deps lint install clean uninstall zip package app pkg
+swift-app:
+	 cd $(SWIFT_UI_DIR) && swift build -c release
+
+swift-app-debug:
+	 cd $(SWIFT_UI_DIR) && swift build
+
+.PHONY: build test deps lint install clean uninstall zip package app pkg swift-app swift-app-debug
