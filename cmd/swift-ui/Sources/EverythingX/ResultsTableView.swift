@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ResultsTableView: View {
@@ -8,7 +9,7 @@ struct ResultsTableView: View {
         Table(viewModel.rows, selection: $selection) {
             TableColumn("Name") { row in
                 HighlightedNameCell(parts: row.nameParts)
-                    .help(viewModel.tooltipText(for: row))
+                    .nsTooltip(viewModel.tooltipText(for: row))
                     .onTapGesture {
                         viewModel.copyToClipboard(path: row.fullpath)
                     }
@@ -22,6 +23,7 @@ struct ResultsTableView: View {
                     .lineLimit(1)
                     .truncationMode(.head)
                     .allowsTightening(true)
+                    .nsTooltip(viewModel.tooltipText(for: row))
             }
             .width(min: 150, ideal: 600)
 
@@ -30,6 +32,7 @@ struct ResultsTableView: View {
                     .font(.system(.body, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .lineLimit(1)
+                    .nsTooltip(viewModel.tooltipText(for: row))
             }
             .width(70)
 
@@ -37,6 +40,7 @@ struct ResultsTableView: View {
                 Text(row.modified)
                     .font(.system(.body, design: .monospaced))
                     .lineLimit(1)
+                    .nsTooltip(viewModel.tooltipText(for: row))
             }
             .width(190)
         }
@@ -86,3 +90,29 @@ private struct HighlightedNameCell: View {
         return result
     }
 }
+
+// MARK: - NSView tooltip shim
+
+/// Sets NSView.toolTip directly, bypassing SwiftUI's .help() which does not
+/// reliably propagate through Table cell views on macOS.
+private struct NSTooltipModifier: ViewModifier {
+    let text: String
+    func body(content: Content) -> some View {
+        content.background(TooltipNSView(text: text))
+    }
+}
+
+private struct TooltipNSView: NSViewRepresentable {
+    let text: String
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.toolTip = text
+    }
+}
+
+extension View {
+    func nsTooltip(_ text: String) -> some View {
+        modifier(NSTooltipModifier(text: text))
+    }
+}
+
