@@ -7,7 +7,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var aboutWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // When running as a plain binary (not a .app bundle), macOS won't
+        // automatically grant foreground/keyboard focus. Explicitly request it.
+        NSApp.setActivationPolicy(.regular)
         setupStatusItem()
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async {
+            NSApp.windows.first(where: { !($0 is NSPanel) })?.makeKeyAndOrderFront(nil)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -37,7 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first(where: { !($0 is NSPanel) })?.makeKeyAndOrderFront(nil)
+        if let win = NSApp.windows.first(where: { !($0 is NSPanel) }) {
+            win.makeKeyAndOrderFront(nil)
+        }
     }
 
     @objc private func showSettings() {
