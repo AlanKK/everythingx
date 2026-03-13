@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -25,6 +26,10 @@ type Params struct {
 }
 
 func main() {
+	if runtime.GOOS == "linux" && os.Getuid() != 0 {
+		log.Fatal("e2eTest must be run as root on Linux (fanotify requires elevated privileges). Run: sudo make e2e")
+	}
+
 	currentDir, _ := os.Getwd()
 	rootDir := filepath.Join(currentDir, "everythingx_test", randomString(10))
 	testDirs := filepath.Join(rootDir, "testdirs")
@@ -152,7 +157,6 @@ func waitForServiceReady(rootDir string) {
 
 	logFile := filepath.Join(rootDir, "service.log")
 	waitForFileExists(logFile)
-	time.Sleep(5 * time.Second) // some extra time to make sure the service is ready
 
 	file, err := os.Open(logFile)
 	if err != nil {
@@ -161,8 +165,12 @@ func waitForServiceReady(rootDir string) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
+	deadline := time.Now().Add(60 * time.Second)
 
 	for {
+		if time.Now().After(deadline) {
+			log.Fatalf("Timed out waiting for service to start. Check %s for errors.", logFile)
+		}
 		for scanner.Scan() {
 			line := scanner.Text()
 			if strings.Contains(line, "Event listener ready") {
@@ -172,6 +180,7 @@ func waitForServiceReady(rootDir string) {
 		if err := scanner.Err(); err != nil {
 			log.Printf("Error reading stdout: %v\n", err)
 		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
@@ -217,7 +226,7 @@ func validateNotInDB(db *sql.DB, p *Params) error {
 		}
 	}
 	if found > 0 {
-		log.Printf("%d files were not deleted from the DB", found)
+		log.Fatalf("%d files were not deleted from the DB", found)
 	} else {
 		log.Printf("All files were deleted from the DB")
 	}

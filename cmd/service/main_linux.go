@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/binary"
 	"fmt"
@@ -86,51 +85,55 @@ func resolvePathFromFD(fd int32) string {
 }
 
 // parseFanotifyEvents reads raw bytes from the fanotify fd and returns EventRecords.
-// It handles both FD-based events (older) and DFID_NAME events (kernel 5.9+).
-func parseFanotifyEvents(buf []byte) []*shared.EventRecord {
+// mountFDMap maps filesystem IDs (fsid) to O_PATH file descriptors, used by
+// parseDFIDNamePath to resolve parent directory file handles via open_by_handle_at.
+func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) []*shared.EventRecord {
 	var records []*shared.EventRecord
-	r := bytes.NewReader(buf)
+	n := len(buf)
 
-	for r.Len() >= int(sizeofEventMetadata) {
-		var meta fanotifyEventMetadata
-		if err := binary.Read(r, binary.NativeEndian, &meta); err != nil {
+	for offset := 0; offset+int(sizeofEventMetadata) <= n; {
+		eventLen := binary.NativeEndian.Uint32(buf[offset:])
+		vers := buf[offset+4]
+		mask := binary.NativeEndian.Uint64(buf[offset+8:])
+		fd := int32(binary.NativeEndian.Uint32(buf[offset+16:]))
+
+		if vers != fanotifyMetadataVersion {
 			break
 		}
-		if meta.Vers != fanotifyMetadataVersion {
+
+		eventEnd := offset + int(eventLen)
+		if eventEnd > n {
 			break
 		}
 
-		// Remaining bytes in this event after the fixed header
-		extraLen := int(meta.EventLen) - int(sizeofEventMetadata)
-		var extraBuf []byte
-		if extraLen > 0 {
-			extraBuf = make([]byte, extraLen)
-			if _, err := r.Read(extraBuf); err != nil {
-				break
-			}
-		}
+		extraStart := offset + int(sizeofEventMetadata)
+		offset = eventEnd // advance past this event
 
 		var path string
-		if meta.Fd >= 0 {
-			// FD-based fallback: resolve via /proc/self/fd
-			path = resolvePathFromFD(meta.Fd)
-			unix.Close(int(meta.Fd))
-		} else if len(extraBuf) > 0 {
-			// DFID_NAME: parse info records to extract dir path + filename
-			path = parseDFIDNamePath(extraBuf)
+		if fd >= 0 {
+			path = resolvePathFromFD(fd)
+			unix.Close(int(fd))
+		} else if extraStart < eventEnd {
+			// Slice directly from buf — no copy needed
+			path = parseDFIDNamePath(buf[extraStart:eventEnd], mountFDMap)
 		}
 
 		if path == "" || shouldIgnorePath(path) {
 			continue
 		}
 
-		objType := objectTypeFromStat(path)
-
-		isCreate := meta.Mask&unix.FAN_CREATE != 0 || meta.Mask&unix.FAN_MOVED_TO != 0
-		isDelete := meta.Mask&unix.FAN_DELETE != 0 || meta.Mask&unix.FAN_MOVED_FROM != 0
+		isCreate := mask&unix.FAN_CREATE != 0 || mask&unix.FAN_MOVED_TO != 0
+		isDelete := mask&unix.FAN_DELETE != 0 || mask&unix.FAN_MOVED_FROM != 0
 
 		if !isCreate && !isDelete {
 			continue
+		}
+
+		objType := objectTypeFromStat(path)
+		// objectTypeFromStat returns ItemIsFile when the item is already gone.
+		// Use the FAN_ONDIR flag to correctly identify directory delete events.
+		if isDelete && mask&unix.FAN_ONDIR != 0 {
+			objType = shared.ItemIsDir
 		}
 
 		rec := &shared.EventRecord{
@@ -145,25 +148,80 @@ func parseFanotifyEvents(buf []byte) []*shared.EventRecord {
 	return records
 }
 
-// parseDFIDNamePath attempts to extract a full path from a DFID_NAME info record.
-// With FAN_REPORT_DFID_NAME the kernel appends info records containing the parent
-// directory FID and the child filename. We resolve the directory via a dirfd opened
-// from the file handle, then join with the filename.
-func parseDFIDNamePath(info []byte) string {
-	if len(info) < 4 {
+// parseDFIDNamePath resolves a full path from a DFID_NAME info record.
+// With FAN_REPORT_DFID_NAME the kernel provides a file handle for the parent
+// directory plus the child filename. We look up the correct mountFD from the
+// event's fsid, open the parent dir via open_by_handle_at, read its path from
+// /proc/self/fd, then join with the filename.
+//
+// Info record layout (after fanotify_event_metadata):
+//
+//	header:       4 bytes  (info_type, pad, len)
+//	fsid:         8 bytes  (two int32s)
+//	handle_bytes: 4 bytes
+//	handle_type:  4 bytes  (int32)
+//	f_handle:     handle_bytes bytes
+//	[padding to 8-byte alignment]
+//	filename:     null-terminated string
+func parseDFIDNamePath(info []byte, mountFDMap map[[2]int32]int) string {
+	const headerSize = 4                            // info_type(1) + pad(1) + len(2)
+	const fsidSize = 8                              // __kernel_fsid_t = {int val[2]}
+	const handleHeaderSize = 8                      // handle_bytes(4) + handle_type(4)
+	const headerAndFsidSize = headerSize + fsidSize // = 12
+	if len(info) < headerAndFsidSize+handleHeaderSize+1 {
 		return ""
 	}
-	// We look for a null-terminated name after the FID info structures.
-	// Simple heuristic: find a printable string near the end of the info block.
-	for i := len(info) - 1; i >= 0; i-- {
-		if info[i] == 0 && i+1 < len(info) {
-			name := unix.ByteSliceToString(info[i+1:])
-			if name != "" && !strings.Contains(name, "\x00") {
-				return name
-			}
-		}
+
+	// Read fsid to look up the mountFD for this filesystem.
+	fsid := [2]int32{
+		int32(binary.NativeEndian.Uint32(info[headerSize:])),
+		int32(binary.NativeEndian.Uint32(info[headerSize+4:])),
 	}
-	return ""
+	mountFD, ok := mountFDMap[fsid]
+	if !ok {
+		log.Printf("parseDFIDNamePath: unknown fsid=%v (filesystem not monitored)", fsid)
+		return ""
+	}
+
+	offset := headerAndFsidSize
+	handleBytes := binary.NativeEndian.Uint32(info[offset:])
+	handleType := int32(binary.NativeEndian.Uint32(info[offset+4:]))
+	offset += handleHeaderSize
+
+	if offset+int(handleBytes) > len(info) {
+		return ""
+	}
+	handleData := info[offset : offset+int(handleBytes)]
+
+	// The kernel pads sizeof(file_handle)+handleBytes to 8-byte alignment
+	// before placing the filename.
+	nameOffset := headerAndFsidSize + ((handleHeaderSize + int(handleBytes) + 7) &^ 7)
+	if nameOffset >= len(info) {
+		return ""
+	}
+	name := unix.ByteSliceToString(info[nameOffset:])
+	if name == "" || name == "." {
+		return ""
+	}
+
+	// Open the parent directory from its file handle.
+	dirFD, err := unix.OpenByHandleAt(mountFD, unix.NewFileHandle(handleType, handleData), unix.O_PATH)
+	if err != nil {
+		// ESTALE is expected: the parent directory was deleted between the event
+		// and our resolution attempt (e.g. short-lived temp dirs). Drop silently.
+		if err != unix.ESTALE && verbose {
+			log.Printf("OpenByHandleAt failed (fsid=%v, handle_bytes=%d, name=%q): %v", fsid, handleBytes, name, err)
+		}
+		return ""
+	}
+	defer unix.Close(dirFD)
+
+	dirPath, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", dirFD))
+	if err != nil {
+		return ""
+	}
+
+	return filepath.Join(dirPath, name)
 }
 
 // objectTypeFromStat returns the ObjectType for the given path using lstat.
@@ -189,6 +247,67 @@ func objectTypeFromStat(path string) shared.ObjectType {
 	default:
 		return shared.ItemIsFile
 	}
+}
+
+// skipFsTypes lists virtual and pseudo filesystem types that should not be monitored.
+var skipFsTypes = map[string]bool{
+	"proc": true, "sysfs": true, "devtmpfs": true, "devpts": true,
+	"securityfs": true, "cgroup": true, "cgroup2": true, "pstore": true,
+	"bpf": true, "tracefs": true, "debugfs": true, "hugetlbfs": true,
+	"mqueue": true, "fusectl": true, "nsfs": true, "autofs": true,
+	"efivarfs": true, "squashfs": true, "overlay": true, "tmpfs": true,
+}
+
+// buildMountFDMap reads /proc/mounts and for each real (non-virtual, non-ignored)
+// filesystem: marks it for fanotify monitoring and opens an O_PATH fd on it.
+// Returns a map of fsid -> fd. Caller must close all returned fds.
+func buildMountFDMap(fanotifyFD int, watchMask uint64) map[[2]int32]int {
+	data, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		log.Printf("Warning: could not read /proc/mounts: %v", err)
+		return nil
+	}
+
+	fdMap := make(map[[2]int32]int)
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		mountPath := fields[1]
+		fsType := fields[2]
+
+		if skipFsTypes[fsType] || shouldIgnorePath(mountPath) {
+			continue
+		}
+
+		var stat unix.Statfs_t
+		if err := unix.Statfs(mountPath, &stat); err != nil {
+			continue
+		}
+		fsid := [2]int32{stat.Fsid.Val[0], stat.Fsid.Val[1]}
+
+		if _, exists := fdMap[fsid]; exists {
+			continue // already watching this filesystem
+		}
+
+		mountfd, err := unix.Open(mountPath, unix.O_RDONLY|unix.O_DIRECTORY, 0)
+		if err != nil {
+			log.Printf("Warning: could not open mount point %s: %v", mountPath, err)
+			continue
+		}
+
+		if err := unix.FanotifyMark(fanotifyFD, unix.FAN_MARK_ADD|unix.FAN_MARK_FILESYSTEM, watchMask, unix.AT_FDCWD, mountPath); err != nil {
+			log.Printf("Warning: fanotify_mark failed for %s: %v", mountPath, err)
+			unix.Close(mountfd)
+			continue
+		}
+
+		fdMap[fsid] = mountfd
+		log.Printf("Monitoring filesystem: %s (type=%s)", mountPath, fsType)
+	}
+
+	return fdMap
 }
 
 func gracefulShutdown(db *sql.DB, fanotifyFD int) {
@@ -258,7 +377,7 @@ func main() {
 	// FAN_REPORT_DFID_NAME requires kernel 5.9+. It gives us the parent directory
 	// FID plus the filename in each event, allowing path reconstruction without
 	// keeping a watch table for every directory.
-	fanotifyFlags := uint(unix.FAN_CLASS_NOTIF | unix.FAN_NONBLOCK)
+	fanotifyFlags := uint(unix.FAN_CLASS_NOTIF)
 	// FAN_REPORT_DFID_NAME is kernel 5.9+; try it first, fall back to basic mode.
 	const fanReportDfidName = 0x00000C00 // FAN_REPORT_DFID | FAN_REPORT_NAME
 	fd, err := unix.FanotifyInit(fanotifyFlags|fanReportDfidName, unix.O_RDONLY|unix.O_LARGEFILE)
@@ -271,27 +390,28 @@ func main() {
 	}
 	defer unix.Close(fd)
 
-	// Mark the filesystem containing MonitorPath with FAN_MARK_FILESYSTEM so
-	// we receive events for the entire mount point, similar to FSEvents on macOS.
 	watchMask := uint64(unix.FAN_CREATE | unix.FAN_DELETE | unix.FAN_MOVED_FROM | unix.FAN_MOVED_TO | unix.FAN_ONDIR)
-	if err := unix.FanotifyMark(fd, unix.FAN_MARK_ADD|unix.FAN_MARK_FILESYSTEM, watchMask, unix.AT_FDCWD, config.MonitorPath); err != nil {
-		log.Fatalf("fanotify_mark failed: %v", err)
+	mountFDMap := buildMountFDMap(fd, watchMask)
+	if len(mountFDMap) == 0 {
+		log.Fatalf("no filesystems could be monitored — ensure running as root")
 	}
-	log.Printf("fanotify watching filesystem at: %s", config.MonitorPath)
+	defer func() {
+		for _, mfd := range mountFDMap {
+			unix.Close(mfd)
+		}
+	}()
 
 	setupSignalHandlers(db, fd)
 
-	// Event reader goroutine
+	// Event reader goroutine — uses blocking reads (no FAN_NONBLOCK),
+	// so the goroutine parks with zero CPU until events arrive.
 	go func() {
 		log.Println("Event listener ready.")
-		scanTimer := time.Now()
-
 		buf := make([]byte, 4096*32)
 		for {
 			n, err := unix.Read(fd, buf)
 			if err != nil {
 				if err == unix.EINTR || err == unix.EAGAIN {
-					time.Sleep(10 * time.Millisecond)
 					continue
 				}
 				log.Printf("fanotify read error: %v", err)
@@ -300,19 +420,32 @@ func main() {
 			if n == 0 {
 				continue
 			}
+			if verbose {
+				log.Printf("fanotify read: %d bytes", n)
+			}
 
-			records := parseFanotifyEvents(buf[:n])
-			for _, rec := range records {
-				if verbose {
-					log.Printf("Event: %s", rec.Path)
+			records := parseFanotifyEvents(buf[:n], mountFDMap)
+			if verbose && len(records) <= 5 {
+				for _, rec := range records {
+					action := "created"
+					if !shared.FileExists(rec.Path) {
+						action = "deleted"
+					}
+					log.Printf("Event: %s %s", action, rec.Path)
 				}
+			}
+			for _, rec := range records {
 				dbChannel <- rec
 			}
+		}
+	}()
 
-			if time.Since(scanTimer) > 2*time.Hour {
-				scanHomeDirs()
-				scanTimer = time.Now()
-			}
+	// Periodic re-scan of home directories
+	go func() {
+		ticker := time.NewTicker(2 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			scanHomeDirs()
 		}
 	}()
 
