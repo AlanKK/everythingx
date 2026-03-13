@@ -19,7 +19,7 @@ func setupTest() {
 
 func teardownTest() {
 	fileExists = shared.FileExists
-	fullPathLikeQuery = ffdb.FullPathLikeQuery
+	fullPathLikeQueryEach = ffdb.FullPathLikeQueryEach
 	dbChannel = originalDbChannel
 }
 
@@ -76,10 +76,13 @@ func TestDeleteMissing(t *testing.T) {
 			testChannel := make(chan *shared.EventRecord, len(tc.dbPaths))
 			dbChannel = testChannel
 
-			// Mock FullPathLikeQuery
-			fullPathLikeQuery = func(root string) (*[]string, error) {
+			// Mock FullPathLikeQueryEach
+			fullPathLikeQueryEach = func(root string, fn func(string)) error {
 				assert.Equal(t, tc.root, root, "root path should match")
-				return &tc.dbPaths, nil
+				for _, p := range tc.dbPaths {
+					fn(p)
+				}
+				return nil
 			}
 
 			// Execute function in a goroutine
