@@ -16,7 +16,7 @@ import (
 )
 
 var dbChannel chan *shared.EventRecord
-var fullPathLikeQuery = ffdb.FullPathLikeQuery
+var fullPathLikeQueryEach = ffdb.FullPathLikeQueryEach
 var fileExists = shared.FileExists
 
 var verbose bool
@@ -73,6 +73,9 @@ func setupDatabase(databasePath string) (*sql.DB, bool) {
 		}
 	} else {
 		log.Println("Database does not exist. Creating ", databasePath)
+		if err = os.MkdirAll(filepath.Dir(databasePath), 0755); err != nil {
+			log.Fatal("Error creating database directory: ", err)
+		}
 		db, err = ffdb.CreateDB(databasePath)
 		if err != nil {
 			log.Fatal("Error creating database: ", err)
@@ -120,6 +123,11 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]s
 			log.Println("Error writing to db: ", err)
 		}
 		*eventRecordQueue = (*eventRecordQueue)[:0] // clear the queue
+		// Release the backing array if it grew large, so the GC can
+		// reclaim strings referenced by previously queued records.
+		if cap(*eventRecordQueue) > 10000 {
+			*eventRecordQueue = make([]shared.EventRecord, 0, 1000)
+		}
 		*lastFlushTime = time.Now()
 	}
 }
@@ -129,14 +137,9 @@ func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]s
 func deleteMissing(root string) {
 	startTime := time.Now()
 
-	rows, err := fullPathLikeQuery(root)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	var totalFiles, filesExist, filesMissing int
 
-	for _, fullpath := range *rows {
+	err := fullPathLikeQueryEach(root, func(fullpath string) {
 		if !fileExists(fullpath) {
 			eventRecord := &shared.EventRecord{
 				Filename:   "",
@@ -152,14 +155,15 @@ func deleteMissing(root string) {
 			filesExist++
 		}
 		totalFiles++
+	})
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	log.Printf("DB cleanup complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
 }
 
 func scanDisk(path string) {
-	// TODO: figure out how to use a separate eventRecordQueue for the scan that can be deleted when the scan is done.
-	//       It would save about 150MB ram after a scan
 	startTime := time.Now()
 
 	var fileCount, dirCount, linkCount, pipeCount, socketCount, charDeviceCount, blockDeviceCount int

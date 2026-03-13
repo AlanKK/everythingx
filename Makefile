@@ -23,8 +23,13 @@ $(BIN_DIR)/everythingx: $(APP_DIR)/*.go
 $(BIN_DIR)/ev: $(CLI_DIR)/main.go
 	 go build ${LDFLAGS} -o $@ $<
 
+ifeq ($(OS),linux)
+e2e: build $(E2E_TEST_DIR)/e2etest
+	sudo $(E2E_TEST_DIR)/e2etest
+else
 e2e: build $(E2E_TEST_DIR)/e2etest
 	$(E2E_TEST_DIR)/e2etest
+endif
 
 $(E2E_TEST_DIR)/e2etest: $(E2E_TEST_DIR)/main.go
 	 go build -o $@ $<

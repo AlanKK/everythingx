@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/AlanKK/everythingx/internal/shared"
@@ -21,6 +22,7 @@ var records []struct {
 var prefixSearchStmt *sql.Stmt
 var insertStmt *sql.Stmt
 var deleteStmt *sql.Stmt
+var deleteDirStmt *sql.Stmt
 var fullPathLikeStmt *sql.Stmt
 
 // Creates and opens a new database at the given pathname.
@@ -130,6 +132,12 @@ func prepareStatements(db *sql.DB) {
 		log.Fatal(err)
 	}
 
+	// Deletes a directory entry and all DB entries whose path falls under it.
+	deleteDirStmt, err = db.Prepare("DELETE FROM files WHERE fullpath = ? OR fullpath LIKE ? ESCAPE '\\'")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	fullPathLikeStmt, err = db.Prepare("SELECT fullpath FROM files where fullpath like ?")
 	if err != nil {
 		log.Fatal(err)
@@ -202,6 +210,25 @@ func FullPathLikeQuery(path string) (*[]string, error) {
 	}
 
 	return &results, nil
+}
+
+// FullPathLikeQueryEach streams matching paths one at a time via the callback,
+// avoiding materializing all results into a slice.
+func FullPathLikeQueryEach(path string, fn func(string)) error {
+	rows, err := fullPathLikeStmt.Query(path + "%")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var result string
+		if err := rows.Scan(&result); err != nil {
+			return err
+		}
+		fn(result)
+	}
+	return rows.Err()
 }
 
 // Collects records and commits them to the database when enough records are collected.
@@ -299,7 +326,14 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 			}
 			num_committed++
 		} else {
-			_, err = deleteStmt.Exec(e.Path)
+			if e.ObjectType == shared.ItemIsDir {
+				// Cascade: delete the directory entry and everything recorded under it.
+				// This handles the case where individual file-delete events were dropped
+				// because the parent dir was already removed during path resolution.
+				_, err = deleteDirStmt.Exec(e.Path, escapeLike(e.Path)+"/%")
+			} else {
+				_, err = deleteStmt.Exec(e.Path)
+			}
 			if err != nil {
 				return err
 			}
@@ -335,6 +369,15 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 	)
 
 	return nil
+}
+
+// escapeLike escapes special LIKE pattern characters in s so it can be used
+// as a literal prefix in a LIKE ? ESCAPE '\\' expression.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }
 
 // Checks if the given error is a SQLite constraint violation error.
