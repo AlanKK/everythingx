@@ -8,6 +8,8 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo 'Installing executables'
 cp -f bin/everythingxd /usr/local/bin
 chmod +x /usr/local/bin/everythingxd
@@ -18,10 +20,10 @@ cp -rf EverythingX.app /Applications
 chmod +x /Applications/EverythingX.app
 
 echo 'Creating data directory /var/lib/everythingx'
-mkdir /var/lib/everythingx
+mkdir -p /var/lib/everythingx
 
 echo 'Installing launchd service'
-cp -f /Users/alan/Documents/git/everythingx/cmd/service/com.github.alankk.everythingxd.plist /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
+cp -f "${SCRIPT_DIR}/cmd/service/com.github.alankk.everythingxd.plist" /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
 chmod 644 /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
 chown root:wheel /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
 
