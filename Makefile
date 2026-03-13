@@ -5,7 +5,7 @@ E2E_TEST_DIR := ./e2eTest
 TOOLS_DIR := ./tools
 BIN_DIR := ./bin
 
-OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+NFPM := $(shell go env GOPATH)/bin/nfpm
 
 VERSION := $(shell git describe --tags --always --dirty)
 COMMIT := $(shell git rev-parse --short HEAD)
@@ -88,10 +88,10 @@ app:
 	 ~/go/bin/fyne package --release -os linux -name EverythingX -icon assets/icons/retina/orange-black/folder-orange-black-512@2x.png -appID com.github.alankk.everythingx -executable $(BIN_DIR)/everythingx
 
 deb: build
-	 nfpm pkg --packager deb --target bin/
+	 $(NFPM) pkg --packager deb --target bin/
 
 rpm: build
-	 nfpm pkg --packager rpm --target bin/
+	 $(NFPM) pkg --packager rpm --target bin/
 endif
 
 .PHONY: build test deps lint install clean uninstall zip package app pkg deb rpm
