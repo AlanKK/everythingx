@@ -1,4 +1,7 @@
 main
+/everythingx
+/cli
+/service
 .DS_Store
 **/*.db-shm
 **/*.db-wal
