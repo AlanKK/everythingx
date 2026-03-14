@@ -39,6 +39,10 @@ func shouldIgnorePath(path string) bool {
 	return false
 }
 
+func reportPermissionError(path string) {
+	log.Printf("Permission denied scanning %s", path)
+}
+
 // fanotify event metadata layout from <linux/fanotify.h>
 type fanotifyEventMetadata struct {
 	EventLen    uint32

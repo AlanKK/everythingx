@@ -32,7 +32,7 @@ launchctl bootout   system /Library/LaunchDaemons/com.github.alankk.everythingxd
 launchctl bootstrap system /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
 launchctl start com.github.alankk.everythingx
 
-echo 'Installation complete. See /var/log/everythingx.log for logs'
+echo 'Installation complete. See /var/log/everythingxd.log for logs'
 
 # Unload service
 #launchctl bootout system /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
