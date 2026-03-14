@@ -4,9 +4,12 @@ import SwiftUI
 struct RowData: Identifiable, Sendable {
     let id: UUID = UUID()
     let nameParts: NameParts
+    let filename: String
     let path: String
     let size: String
+    let sizeBytes: Int64
     let modified: String
+    let modifiedDate: Date
     let fullpath: String
     let objectType: ObjectType
 }
@@ -47,6 +50,9 @@ final class SearchViewModel: ObservableObject {
         }
 
         searchTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 120_000_000) // 120 ms debounce
+            guard !Task.isCancelled else { return }
+
             let limit = maxResults
             let results = await db.prefixSearch(term: term, limit: limit)
             guard !Task.isCancelled else { return }
@@ -62,13 +68,20 @@ final class SearchViewModel: ObservableObject {
                     fp = r.fullpath
                 }
                 let dir = (r.fullpath as NSString).deletingLastPathComponent + "/"
-                let (size, modified) = FileInfo.getSizeMod(path: r.fullpath, isDir: r.objectType.isDirectory)
+                let attrs = try? FileManager.default.attributesOfItem(atPath: r.fullpath)
+                let sizeBytes = r.objectType.isDirectory ? Int64(0) : ((attrs?[.size] as? Int64) ?? 0)
+                let modDate = (attrs?[.modificationDate] as? Date) ?? Date.distantPast
+                let size = r.objectType.isDirectory ? "--" : FileInfo.formatSize(sizeBytes)
+                let modified = FileInfo.formatDate(modDate)
                 let (before, match, after) = FileInfo.splitFileName(base, searchTerm: term)
                 return RowData(
                     nameParts: NameParts(before: before, match: match, after: after),
+                    filename: base,
                     path: dir,
                     size: size,
+                    sizeBytes: sizeBytes,
                     modified: modified,
+                    modifiedDate: modDate,
                     fullpath: fp,
                     objectType: r.objectType
                 )

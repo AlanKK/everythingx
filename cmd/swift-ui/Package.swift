@@ -10,6 +10,9 @@ let package = Package(
         .executableTarget(
             name: "EverythingX",
             path: "Sources/EverythingX",
+            resources: [
+                .process("Resources")
+            ],
             linkerSettings: [
                 .linkedLibrary("sqlite3")
             ]

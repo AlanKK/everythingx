@@ -10,6 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // When running as a plain binary (not a .app bundle), macOS won't
         // automatically grant foreground/keyboard focus. Explicitly request it.
         NSApp.setActivationPolicy(.regular)
+        if let url = Bundle.module.url(forResource: "app-icon", withExtension: "png"),
+           let img = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = img
+        }
         setupStatusItem()
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.async {
@@ -25,7 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "EverythingX")
+            if let url = Bundle.module.url(forResource: "menubar-icon", withExtension: "png"),
+               let img = NSImage(contentsOf: url) {
+                img.isTemplate = true  // adapts to light/dark menu bar
+                button.image = img
+            } else {
+                button.image = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "EverythingX")
+            }
         }
 
         let menu = NSMenu()

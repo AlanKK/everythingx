@@ -52,7 +52,7 @@ enum FileInfo {
         return (before, match, after)
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Internal Helpers
 
     static func formatSize(_ bytes: Int64) -> String {
         if bytes >= 1024 * 1024 * 1024 * 1024 {
@@ -72,7 +72,7 @@ enum FileInfo {
         return fmt.string(from: date)
     }
 
-    private static func formatPermissions(_ permissions: Int) -> String {
+    static func formatPermissions(_ permissions: Int) -> String {
         let bits: [(Int, Character)] = [
             (0o400, "r"), (0o200, "w"), (0o100, "x"),
             (0o040, "r"), (0o020, "w"), (0o010, "x"),

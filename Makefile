@@ -17,7 +17,7 @@ $(BIN_DIR)/everythingxd: $(SERVICE_DIR)/main.go
 	 go build ${LDFLAGS} -o $@ $<
 
 $(BIN_DIR)/everythingx: $(APP_DIR)/*.go
-	 CGO_LDFLAGS="-Wl,-w" go build ${LDFLAGS} -o $@ $^
+	 CGO_LDFLAGS="-Wl,-w" go build ${LDFLAGS} -o $@ $(APP_DIR)
 
 $(BIN_DIR)/ev: $(CLI_DIR)/main.go
 	 go build ${LDFLAGS} -o $@ $<

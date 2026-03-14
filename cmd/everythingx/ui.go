@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
@@ -21,9 +23,6 @@ import (
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
-
-// TODO:
-// File icons
 
 var maxSearchResults int = 1000
 
@@ -93,6 +92,10 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 	}
 	t.Refresh()
 
+	rows := make([]RowData, len(*tableData))
+	copy(rows, *tableData)
+	go preloadIcons(rows, t)
+
 	var resultText string
 	if len(results) == maxSearchResults {
 		resultText = fmt.Sprintf("Showing first %d objects", maxSearchResults)
@@ -151,6 +154,58 @@ var t *widget.Table
 var mainWindow fyne.Window
 var lastResultText string
 
+// iconCache stores fyne.Resource (or nil) keyed by file extension / "__dir__".
+var iconCache sync.Map
+
+func iconKey(path string, isDir bool) string {
+	if isDir {
+		return "__dir__"
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == "" {
+		return "__noext__"
+	}
+	return ext
+}
+
+func cachedIcon(path string, isDir bool) fyne.Resource {
+	v, ok := iconCache.Load(iconKey(path, isDir))
+	if !ok {
+		return nil
+	}
+	if v == nil {
+		return nil
+	}
+	return v.(fyne.Resource)
+}
+
+func preloadIcons(rows []RowData, tbl *widget.Table) {
+	seen := make(map[string]bool)
+	changed := false
+	for _, row := range rows {
+		path := row.SearchResult.Fullpath
+		isDir := row.SearchResult.ObjectType == shared.ItemIsDir
+		key := iconKey(path, isDir)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if _, loaded := iconCache.Load(key); loaded {
+			continue
+		}
+		pngData := getFileIconPNG(path, 32)
+		var res fyne.Resource
+		if pngData != nil {
+			res = fyne.NewStaticResource(key+".png", pngData)
+		}
+		iconCache.Store(key, res)
+		changed = true
+	}
+	if changed {
+		fyne.Do(func() { tbl.Refresh() })
+	}
+}
+
 func makeTable() *widget.Table {
 	data := make([]RowData, 0, maxSearchResults)
 	tableData = &data
@@ -160,17 +215,42 @@ func makeTable() *widget.Table {
 		func() (int, int) { return len(*tableData), 4 },
 		// CreateCell()
 		func() fyne.CanvasObject {
-			return newTooltipCell()
+			iconImg := canvas.NewImageFromResource(nil)
+			iconImg.FillMode = canvas.ImageFillContain
+			iconImg.SetMinSize(fyne.NewSize(18, 18))
+			cell := newTooltipCell()
+			// Border layout: icon pinned left, richText expands to fill remaining width.
+			// NewBorder stores objects as [center..., border_items...] so:
+			//   Objects[0] = cell (center), Objects[1] = iconImg (left)
+			return container.NewBorder(nil, nil, iconImg, nil, cell)
 		},
 		// UpdateCell()
-		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			richText := cell.(*tooltipCell)
-			richText.path = (*tableData)[id.Row].SearchResult.Fullpath
+		func(id widget.TableCellID, obj fyne.CanvasObject) {
+			cont := obj.(*fyne.Container)
+			richText := cont.Objects[0].(*tooltipCell) // center
+			iconImg := cont.Objects[1].(*canvas.Image) // left border
+			row := (*tableData)[id.Row]
+			richText.path = row.SearchResult.Fullpath
 			richText.col = id.Col
+
+			if id.Col == 0 {
+				iconImg.Show()
+				isDir := row.SearchResult.ObjectType == shared.ItemIsDir
+				if res := cachedIcon(row.SearchResult.Fullpath, isDir); res != nil {
+					iconImg.Resource = res
+				} else if isDir {
+					iconImg.Resource = theme.FolderIcon()
+				} else {
+					iconImg.Resource = theme.FileIcon()
+				}
+				iconImg.Refresh()
+			} else {
+				iconImg.Hide()
+			}
 
 			switch id.Col {
 			case 0:
-				fileNameParts := (*tableData)[id.Row].Name
+				fileNameParts := row.Name
 				var segments []widget.RichTextSegment
 				if fileNameParts[0] != "" {
 					segments = append(segments, &widget.TextSegment{Text: fileNameParts[0],
@@ -200,30 +280,27 @@ func makeTable() *widget.Table {
 				richText.Segments = segments
 			case 1:
 				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: (*tableData)[id.Row].Path,
+					Text: row.Path,
 					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
 						TextStyle: fyne.TextStyle{Monospace: true},
 					},
-				},
-				}
+				}}
 			case 2:
 				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: (*tableData)[id.Row].Size,
+					Text: row.Size,
 					Style: widget.RichTextStyle{Alignment: fyne.TextAlignTrailing,
 						TextStyle: fyne.TextStyle{Monospace: true},
 					},
-				},
-				}
+				}}
 			case 3:
 				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: (*tableData)[id.Row].Modified,
+					Text: row.Modified,
 					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
 						TextStyle: fyne.TextStyle{Monospace: true},
 					},
-				},
-				}
+				}}
 			}
-			cell.Refresh()
+			richText.Refresh()
 		},
 	)
 	t.OnSelected = func(id widget.TableCellID) {
