@@ -1,0 +1,53 @@
+# nfpm configuration for everythingx Linux packages (.deb and .rpm)
+# https://nfpm.goreleaser.com/configuration/
+name: everythingx
+arch: amd64
+platform: linux
+version: ${VERSION}
+maintainer: Alan Keister <alan@github.com>
+description: |
+  EverythingX is a fast file-name search tool for Linux, inspired by
+  Everything by Voidtools. It indexes the filesystem in real-time and
+  provides instant search via a GUI app and CLI tool.
+homepage: https://github.com/AlanKK/everythingx
+license: MIT
+
+contents:
+  # Binaries
+  - src: bin/everythingxd
+    dst: /usr/local/bin/everythingxd
+    file_info:
+      mode: 0755
+
+  - src: bin/ev
+    dst: /usr/local/bin/ev
+    file_info:
+      mode: 0755
+
+  # systemd service
+  - src: cmd/service/everythingxd.service
+    dst: /etc/systemd/system/everythingxd.service
+    file_info:
+      mode: 0644
+
+  # Desktop entry for GUI launcher integration
+  - src: assets/everythingx.desktop
+    dst: /usr/share/applications/everythingx.desktop
+    file_info:
+      mode: 0644
+
+  # App icon
+  - src: assets/icons/retina/orange-black/folder-orange-black-512@2x.png
+    dst: /usr/share/pixmaps/everythingx.png
+    file_info:
+      mode: 0644
+
+  # Data directory (created empty)
+  - dst: /var/lib/everythingx
+    type: dir
+    file_info:
+      mode: 0755
+
+scripts:
+  postinstall: package/scripts/postinstall-linux.sh
+  preremove: package/scripts/preremove-linux.sh

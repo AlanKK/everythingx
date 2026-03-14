@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -25,6 +27,10 @@ type Params struct {
 }
 
 func main() {
+	if runtime.GOOS == "linux" && os.Getuid() != 0 {
+		log.Fatal("e2eTest must be run as root on Linux (fanotify requires elevated privileges). Run: sudo make e2e")
+	}
+
 	currentDir, _ := os.Getwd()
 	rootDir := filepath.Join(currentDir, "everythingx_test", randomString(10))
 	testDirs := filepath.Join(rootDir, "testdirs")
@@ -74,7 +80,6 @@ func main() {
 		if err := createHierarchy(params); err != nil {
 			log.Fatalf("Error in createHierarchy: %v\n", err)
 		}
-		time.Sleep(15 * time.Second)
 
 		// Stage 2: Validate that all of the files and directories are in the database
 		if err := validateInDB(db, params); err != nil {
@@ -85,7 +90,6 @@ func main() {
 		if err := renameFiles(params); err != nil {
 			log.Fatalf("Error in renameFiles: %v\n", err)
 		}
-		time.Sleep(15 * time.Second)
 
 		// Stage 4: Validate the database contains the newly named files and old ones are not in the db
 		if err := validateRenamedInDB(db, params); err != nil {
@@ -96,11 +100,34 @@ func main() {
 		if err := deleteHierarchy(params); err != nil {
 			log.Fatalf("Error in deleteHierarchy: %v\n", err)
 		}
-		time.Sleep(15 * time.Second)
 
 		// Stage 6: Validate that none of the files and directories are in the database
 		if err := validateNotInDB(db, params); err != nil {
 			log.Fatalf("Error in validateNotInDB: %v\n", err)
+		}
+
+		// Stage 7: Test directory rename (all children paths should update)
+		dirRenameParams := &Params{
+			RootDir:     rootDir,
+			TestDirs:    testDirs,
+			DirPrefix:   filepath.Join(testDirs, fmt.Sprintf("rename_test_%d", i)),
+			Depth:       3,
+			FilesPerDir: 20,
+		}
+		if err := testDirectoryRename(db, dirRenameParams, cmd); err != nil {
+			log.Fatalf("Error in testDirectoryRename: %v\n", err)
+		}
+
+		// Stage 8: Test directory rm -rf (cascade delete)
+		rmrfParams := &Params{
+			RootDir:     rootDir,
+			TestDirs:    testDirs,
+			DirPrefix:   filepath.Join(testDirs, fmt.Sprintf("rmrf_test_%d", i)),
+			Depth:       3,
+			FilesPerDir: 20,
+		}
+		if err := testDirectoryRmRf(db, rmrfParams); err != nil {
+			log.Fatalf("Error in testDirectoryRmRf: %v\n", err)
 		}
 	}
 	log.Println("All tests passed")
@@ -152,7 +179,6 @@ func waitForServiceReady(rootDir string) {
 
 	logFile := filepath.Join(rootDir, "service.log")
 	waitForFileExists(logFile)
-	time.Sleep(5 * time.Second) // some extra time to make sure the service is ready
 
 	file, err := os.Open(logFile)
 	if err != nil {
@@ -161,8 +187,12 @@ func waitForServiceReady(rootDir string) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
+	deadline := time.Now().Add(60 * time.Second)
 
 	for {
+		if time.Now().After(deadline) {
+			log.Fatalf("Timed out waiting for service to start. Check %s for errors.", logFile)
+		}
 		for scanner.Scan() {
 			line := scanner.Text()
 			if strings.Contains(line, "Event listener ready") {
@@ -172,6 +202,7 @@ func waitForServiceReady(rootDir string) {
 		if err := scanner.Err(); err != nil {
 			log.Printf("Error reading stdout: %v\n", err)
 		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
@@ -205,42 +236,82 @@ func createHierarchy(p *Params) error {
 	return nil
 }
 
-func validateNotInDB(db *sql.DB, p *Params) error {
-	found := 0
-	for i := 0; i < p.Depth; i++ {
-		dir := fmt.Sprintf("%s%d", p.DirPrefix, i)
-		for j := 0; j < p.FilesPerDir; j++ {
-			file := filepath.Join(dir, fmt.Sprintf("file%d.renamed", j))
-			if inDB(db, file) {
+// waitForAllInDB polls every 2s until all paths are present in the DB or timeout elapses.
+func waitForAllInDB(db *sql.DB, paths []string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		missing := 0
+		for _, path := range paths {
+			if !inDB(db, path) {
+				missing++
+			}
+		}
+		if missing == 0 {
+			return true
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return false
+}
+
+// waitForNoneInDB polls every 2s until none of the paths are in the DB or timeout elapses.
+func waitForNoneInDB(db *sql.DB, paths []string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		found := 0
+		for _, path := range paths {
+			if inDB(db, path) {
 				found++
 			}
 		}
+		if found == 0 {
+			return true
+		}
+		time.Sleep(2 * time.Second)
 	}
-	if found > 0 {
-		log.Printf("%d files were not deleted from the DB", found)
-	} else {
-		log.Printf("All files were deleted from the DB")
+	return false
+}
+
+func validateNotInDB(db *sql.DB, p *Params) error {
+	var paths []string
+	for i := 0; i < p.Depth; i++ {
+		dir := fmt.Sprintf("%s%d", p.DirPrefix, i)
+		for j := 0; j < p.FilesPerDir; j++ {
+			paths = append(paths, filepath.Join(dir, fmt.Sprintf("file%d.renamed", j)))
+		}
 	}
+	if !waitForNoneInDB(db, paths, 30*time.Second) {
+		found := 0
+		for _, path := range paths {
+			if inDB(db, path) {
+				found++
+			}
+		}
+		log.Fatalf("%d files were not deleted from the DB", found)
+	}
+	log.Println("All files were deleted from the DB")
 	return nil
 }
 
 func validateInDB(db *sql.DB, p *Params) error {
-	missing := 0
+	var paths []string
 	for i := 0; i < p.Depth; i++ {
 		dir := fmt.Sprintf("%s%d", p.DirPrefix, i)
 		for j := 0; j < p.FilesPerDir; j++ {
-			file := filepath.Join(dir, fmt.Sprintf("file%d", j))
-			if !inDB(db, file) {
-				log.Printf("File not found in db: %s\n", file)
+			paths = append(paths, filepath.Join(dir, fmt.Sprintf("file%d", j)))
+		}
+	}
+	if !waitForAllInDB(db, paths, 30*time.Second) {
+		missing := 0
+		for _, path := range paths {
+			if !inDB(db, path) {
+				log.Printf("File not found in db: %s\n", path)
 				missing++
 			}
 		}
-	}
-	if missing > 0 {
 		log.Fatalf("%d files missing from the DB", missing)
-	} else {
-		log.Printf("All files found in the DB")
 	}
+	log.Println("All files found in the DB")
 	return nil
 }
 
@@ -261,29 +332,49 @@ func renameFiles(p *Params) error {
 }
 
 func validateRenamedInDB(db *sql.DB, p *Params) error {
-	old := 0
-	renamed := 0
-
+	var oldPaths, newPaths []string
 	for i := 0; i < p.Depth; i++ {
 		dir := fmt.Sprintf("%s%d", p.DirPrefix, i)
 		for j := 0; j < p.FilesPerDir; j++ {
 			oldFile := filepath.Join(dir, fmt.Sprintf("file%d", j))
-			renamedFile := oldFile + ".renamed"
-			if inDB(db, oldFile) {
-				log.Printf("File found in db that was renamed: %s\n", oldFile)
-				old++
-			}
-			if !inDB(db, renamedFile) {
-				log.Printf("File not found in db: %s\n", renamedFile)
-				renamed++
-			}
+			oldPaths = append(oldPaths, oldFile)
+			newPaths = append(newPaths, oldFile+".renamed")
 		}
 	}
-	if renamed > 0 || old > 0 {
-		log.Printf("Missing from db: %d. In db but shouldn't be: %d\n", renamed, old)
-	} else {
-		log.Printf("All files renamed correctly in the DB")
+
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		old, missing := 0, 0
+		for _, path := range oldPaths {
+			if inDB(db, path) {
+				old++
+			}
+		}
+		for _, path := range newPaths {
+			if !inDB(db, path) {
+				missing++
+			}
+		}
+		if old == 0 && missing == 0 {
+			log.Println("All files renamed correctly in the DB")
+			return nil
+		}
+		time.Sleep(2 * time.Second)
 	}
+	old, missing := 0, 0
+	for _, path := range oldPaths {
+		if inDB(db, path) {
+			log.Printf("File found in db that was renamed: %s\n", path)
+			old++
+		}
+	}
+	for _, path := range newPaths {
+		if !inDB(db, path) {
+			log.Printf("File not found in db: %s\n", path)
+			missing++
+		}
+	}
+	log.Printf("Missing from db: %d. In db but shouldn't be: %d\n", missing, old)
 	return nil
 }
 
@@ -314,4 +405,136 @@ func inDB(db *sql.DB, path string) bool {
 		return false
 	}
 	return count > 0
+}
+
+func testDirectoryRename(db *sql.DB, p *Params, cmd *exec.Cmd) error {
+	log.Println("Testing directory rename (path prefix update)")
+
+	// Create a directory with subdirs and files
+	parentDir := p.DirPrefix + "_parent"
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return fmt.Errorf("failed to create parent dir: %w", err)
+	}
+
+	var allFiles []string
+	for i := 0; i < p.Depth; i++ {
+		subdir := filepath.Join(parentDir, fmt.Sprintf("subdir%d", i))
+		if err := os.MkdirAll(subdir, 0755); err != nil {
+			return fmt.Errorf("failed to create subdir: %w", err)
+		}
+		for j := 0; j < p.FilesPerDir; j++ {
+			file := filepath.Join(subdir, fmt.Sprintf("testfile%d", j))
+			if _, err := os.Create(file); err != nil {
+				return fmt.Errorf("failed to create file: %w", err)
+			}
+			allFiles = append(allFiles, file)
+		}
+	}
+
+	// Poll until all files are indexed
+	if !waitForAllInDB(db, allFiles, 30*time.Second) {
+		return fmt.Errorf("files not indexed before rename (timeout)")
+	}
+	log.Printf("All %d files indexed before rename", len(allFiles))
+
+	// Rename the parent directory
+	renamedParent := p.DirPrefix + "_renamed"
+	if err := os.Rename(parentDir, renamedParent); err != nil {
+		return fmt.Errorf("failed to rename directory: %w", err)
+	}
+
+	// Trigger a rescan via SIGUSR1 so the service picks up the new paths and
+	// removes the stale old paths (eventual consistency path).
+	log.Println("Sending SIGUSR1 to trigger rescan after rename")
+	if err := cmd.Process.Signal(syscall.SIGUSR1); err != nil {
+		return fmt.Errorf("failed to send SIGUSR1: %w", err)
+	}
+
+	// Build the expected new paths
+	var newFiles []string
+	for _, oldFile := range allFiles {
+		newFiles = append(newFiles, strings.Replace(oldFile, parentDir, renamedParent, 1))
+	}
+
+	// Poll until all new paths are in DB
+	if !waitForAllInDB(db, newFiles, 45*time.Second) {
+		missing := 0
+		for _, f := range newFiles {
+			if !inDB(db, f) {
+				log.Printf("File not found under new path: %s\n", f)
+				missing++
+			}
+		}
+		os.RemoveAll(renamedParent)
+		return fmt.Errorf("%d files not found at new path after rename + rescan", missing)
+	}
+
+	// Poll until old paths are gone
+	if !waitForNoneInDB(db, allFiles, 15*time.Second) {
+		oldCount := 0
+		for _, f := range allFiles {
+			if inDB(db, f) {
+				oldCount++
+			}
+		}
+		os.RemoveAll(renamedParent)
+		return fmt.Errorf("%d files still have old paths in DB after rename + rescan", oldCount)
+	}
+
+	os.RemoveAll(renamedParent)
+	log.Printf("Directory rename test passed: all %d files at new path, old paths cleaned up", len(allFiles))
+	return nil
+}
+
+func testDirectoryRmRf(db *sql.DB, p *Params) error {
+	log.Println("Testing directory rm -rf (cascade delete)")
+
+	// Create a directory with subdirs and files
+	parentDir := p.DirPrefix + "_parent"
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return fmt.Errorf("failed to create parent dir: %w", err)
+	}
+
+	var allPaths []string
+	allPaths = append(allPaths, parentDir)
+	for i := 0; i < p.Depth; i++ {
+		subdir := filepath.Join(parentDir, fmt.Sprintf("subdir%d", i))
+		if err := os.MkdirAll(subdir, 0755); err != nil {
+			return fmt.Errorf("failed to create subdir: %w", err)
+		}
+		allPaths = append(allPaths, subdir)
+		for j := 0; j < p.FilesPerDir; j++ {
+			file := filepath.Join(subdir, fmt.Sprintf("testfile%d", j))
+			if _, err := os.Create(file); err != nil {
+				return fmt.Errorf("failed to create file: %w", err)
+			}
+			allPaths = append(allPaths, file)
+		}
+	}
+
+	// Poll until all files and dirs are indexed
+	if !waitForAllInDB(db, allPaths, 30*time.Second) {
+		return fmt.Errorf("files not indexed before rm -rf (timeout)")
+	}
+	log.Printf("All %d paths indexed before rm -rf", len(allPaths))
+
+	// rm -rf the entire directory tree
+	if err := os.RemoveAll(parentDir); err != nil {
+		return fmt.Errorf("failed to rm -rf directory: %w", err)
+	}
+
+	// Poll until all paths are removed from DB
+	if !waitForNoneInDB(db, allPaths, 30*time.Second) {
+		remainingCount := 0
+		for _, path := range allPaths {
+			if inDB(db, path) {
+				log.Printf("Path still in DB after rm -rf: %s\n", path)
+				remainingCount++
+			}
+		}
+		return fmt.Errorf("%d paths still in DB after rm -rf", remainingCount)
+	}
+
+	log.Printf("Directory rm -rf test passed: all %d paths removed from DB", len(allPaths))
+	return nil
 }
