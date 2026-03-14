@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/AlanKK/everythingx/internal/shared"
@@ -133,12 +132,12 @@ func prepareStatements(db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	deleteDirStmt, err = db.Prepare("DELETE FROM files WHERE fullpath = ? OR fullpath LIKE ? ESCAPE '\\'")
+	deleteDirStmt, err = db.Prepare("DELETE FROM files WHERE fullpath = ? OR (fullpath > ? AND fullpath < ?)")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	renameDirStmt, err = db.Prepare("UPDATE files SET fullpath = ? || SUBSTR(fullpath, LENGTH(?) + 1), filename = CASE WHEN fullpath = ? THEN ? ELSE filename END WHERE fullpath = ? OR fullpath LIKE ? ESCAPE '\\'")
+	renameDirStmt, err = db.Prepare("UPDATE files SET fullpath = ? || SUBSTR(fullpath, LENGTH(?) + 1), filename = CASE WHEN fullpath = ? THEN ? ELSE filename END WHERE fullpath = ? OR (fullpath > ? AND fullpath < ?)")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -331,7 +330,7 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 		for j := i + 1; j < len(*eventRecordQueue); j++ {
 			ej := (*eventRecordQueue)[j]
 			if ej.IsRename && ej.ObjectType == shared.ItemIsDir && !handled[j] && shared.FileExists(ej.Path) {
-				_, err = renameDirStmt.Exec(ej.Path, e.Path, e.Path, ej.Filename, e.Path, escapeLike(e.Path)+"/%")
+				_, err = renameDirStmt.Exec(ej.Path, e.Path, e.Path, ej.Filename, e.Path, e.Path+"/", e.Path+"0")
 				if err != nil {
 					return err
 				}
@@ -363,7 +362,7 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 					// Unpaired rename — just remove the dir entry, don't cascade.
 					_, err = deleteStmt.Exec(e.Path)
 				} else {
-					_, err = deleteDirStmt.Exec(e.Path, escapeLike(e.Path)+"/%")
+					_, err = deleteDirStmt.Exec(e.Path, e.Path+"/", e.Path+"0")
 				}
 			} else {
 				_, err = deleteStmt.Exec(e.Path)
@@ -404,15 +403,6 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 	)
 
 	return nil
-}
-
-// escapeLike escapes special LIKE pattern characters in s so it can be used
-// as a literal prefix in a LIKE ? ESCAPE '\\' expression.
-func escapeLike(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `%`, `\%`)
-	s = strings.ReplaceAll(s, `_`, `\_`)
-	return s
 }
 
 // Checks if the given error is a SQLite constraint violation error.
