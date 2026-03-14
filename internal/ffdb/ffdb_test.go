@@ -1,6 +1,7 @@
 package ffdb
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -715,4 +716,170 @@ func TestFullPathLikeQuery(t *testing.T) {
 			t.Fatalf("Expected result %s, got %s", expectedResults[i], result)
 		}
 	}
+}
+
+// TestBulkStoreEvents_DirDeleteCascade tests the rm -rf scenario:
+// A directory and its children are in the DB. The directory is deleted from
+// disk. An event arrives with ObjectType=ItemIsDir and FileExists returns false.
+// The cascade delete should remove the directory AND all children.
+func TestBulkStoreEvents_DirDeleteCascade(t *testing.T) {
+	testDBPath := "test.db"
+	os.Remove(testDBPath)
+
+	db, err := CreateDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+
+	// Seed DB with a directory and children (simulating prior scan)
+	seed := []shared.EventRecord{
+		{Filename: "project", Path: "/tmp/project", ObjectType: shared.ItemIsDir, FoundOnScan: true},
+		{Filename: "main.go", Path: "/tmp/project/main.go", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+		{Filename: "util.go", Path: "/tmp/project/util.go", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+		{Filename: "sub", Path: "/tmp/project/sub", ObjectType: shared.ItemIsDir, FoundOnScan: true},
+		{Filename: "helper.go", Path: "/tmp/project/sub/helper.go", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+	}
+	err = BulkStoreEvents(db, &seed)
+	if err != nil {
+		t.Fatalf("Expected no error seeding DB, got %v", err)
+	}
+
+	assertCount(t, db, 5, "after seeding")
+
+	// Directory has been rm -rf'd — it no longer exists on disk.
+	// The FS watcher fires a delete event for the dir only (children events dropped).
+	deleteEvents := []shared.EventRecord{
+		{Filename: "project", Path: "/tmp/project", ObjectType: shared.ItemIsDir},
+	}
+	err = BulkStoreEvents(db, &deleteEvents)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Cascade should have removed the dir and all 4 children
+	assertCount(t, db, 0, "after cascade dir delete")
+}
+
+// TestBulkStoreEvents_DirRename tests the rename/move scenario:
+// A directory is renamed (mv /tmp/projectA /tmp/projectB). The FS watcher
+// fires a delete event for the old path and a create event for the new path.
+// Only the directory events fire — children don't get individual events.
+func TestBulkStoreEvents_DirRename(t *testing.T) {
+	testDBPath := "test.db"
+	os.Remove(testDBPath)
+
+	db, err := CreateDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+
+	// Seed DB with a directory and children
+	seed := []shared.EventRecord{
+		{Filename: "projectA", Path: "/tmp/projectA", ObjectType: shared.ItemIsDir, FoundOnScan: true},
+		{Filename: "main.go", Path: "/tmp/projectA/main.go", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+		{Filename: "util.go", Path: "/tmp/projectA/util.go", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+		{Filename: "sub", Path: "/tmp/projectA/sub", ObjectType: shared.ItemIsDir, FoundOnScan: true},
+		{Filename: "helper.go", Path: "/tmp/projectA/sub/helper.go", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+	}
+	err = BulkStoreEvents(db, &seed)
+	if err != nil {
+		t.Fatalf("Expected no error seeding DB, got %v", err)
+	}
+
+	assertCount(t, db, 5, "after seeding")
+
+	// Create the new directory on disk so the create event's FileExists check passes
+	os.MkdirAll("/tmp/projectB", 0755)
+	defer os.RemoveAll("/tmp/projectB")
+
+	// Rename events: old path removed (IsRename=true), new path created (IsRename=true).
+	// FSEvents fires ItemRenamed on both old and new paths.
+	renameEvents := []shared.EventRecord{
+		{Filename: "projectA", Path: "/tmp/projectA", ObjectType: shared.ItemIsDir, IsRename: true},
+		{Filename: "projectB", Path: "/tmp/projectB", ObjectType: shared.ItemIsDir, IsRename: true},
+	}
+	err = BulkStoreEvents(db, &renameEvents)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Dir entry should be updated to new path
+	row := db.QueryRow("SELECT COUNT(*) FROM files WHERE fullpath = ?", "/tmp/projectB")
+	var newDirCount int
+	err = row.Scan(&newDirCount)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if newDirCount != 1 {
+		t.Fatalf("Expected dir /tmp/projectB in DB, got count %d", newDirCount)
+	}
+
+	// Dir entry should have updated filename
+	row = db.QueryRow("SELECT filename FROM files WHERE fullpath = ?", "/tmp/projectB")
+	var dirFilename string
+	err = row.Scan(&dirFilename)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if dirFilename != "projectB" {
+		t.Fatalf("Expected dir filename 'projectB', got '%s'", dirFilename)
+	}
+
+	// Children should have paths updated from /tmp/projectA/... to /tmp/projectB/...
+	row = db.QueryRow("SELECT COUNT(*) FROM files WHERE fullpath LIKE ?", "/tmp/projectB/%")
+	var newChildCount int
+	err = row.Scan(&newChildCount)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if newChildCount != 4 {
+		t.Fatalf("Expected 4 children under /tmp/projectB, got %d", newChildCount)
+	}
+
+	// No records should remain under the old path
+	row = db.QueryRow("SELECT COUNT(*) FROM files WHERE fullpath LIKE ?", "/tmp/projectA%")
+	var oldCount int
+	err = row.Scan(&oldCount)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if oldCount != 0 {
+		t.Fatalf("Expected 0 records under old path /tmp/projectA, got %d", oldCount)
+	}
+
+	// Verify specific child paths were rewritten correctly
+	row = db.QueryRow("SELECT COUNT(*) FROM files WHERE fullpath = ?", "/tmp/projectB/sub/helper.go")
+	var helperCount int
+	err = row.Scan(&helperCount)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if helperCount != 1 {
+		t.Fatalf("Expected /tmp/projectB/sub/helper.go in DB, got count %d", helperCount)
+	}
+
+	// Total should still be 5 (dir + 4 children, no data loss)
+	assertCount(t, db, 5, "after rename")
+}
+
+func assertCount(t *testing.T, db *sql.DB, expected int, context string) {
+	t.Helper()
+	count := countAll(t, db)
+	if count != expected {
+		t.Fatalf("Expected %d records %s, got %d", expected, context, count)
+	}
+}
+
+func countAll(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	row := db.QueryRow("SELECT COUNT(*) FROM files")
+	var count int
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("Expected no error counting, got %v", err)
+	}
+	return count
 }
