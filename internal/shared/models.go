@@ -31,6 +31,7 @@ type EventRecord struct {
 	EventID     uint64
 	EventTime   int64
 	FoundOnScan bool
+	IsRename    bool
 }
 
 func (e EventAction) String() string {

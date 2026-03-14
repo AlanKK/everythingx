@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -33,18 +32,6 @@ type RowData struct {
 	Size         string
 	Modified     string
 	SearchResult *shared.SearchResult
-}
-
-func handleOpenFile(pathname string) {
-	if pathname == "" {
-		return
-	}
-
-	cmd := exec.Command("open", "-R", pathname)
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println("Error:", err)
-	}
 }
 
 func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar *widget.Label) {

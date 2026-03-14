@@ -1,0 +1,13 @@
+[Unit]
+Description=EverythingX File Index Daemon
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/everythingxd --monitor_path=/ --db_path=/var/lib/everythingx/files.db
+Restart=always
+StandardOutput=append:/var/log/everythingxd.log
+StandardError=append:/var/log/everythingxd.log
+
+[Install]
+WantedBy=multi-user.target

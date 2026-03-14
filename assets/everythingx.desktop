@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=EverythingX
+Comment=Fast file name search
+Exec=/usr/local/bin/everythingx
+Icon=everythingx
+Terminal=false
+Categories=Utility;FileManager;
+Keywords=search;file;find;index;
+StartupNotify=true
