@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -107,32 +108,54 @@ func scanHomeDirs() {
 
 // Create a delay before writing to the db. FSEvents / fanotify may send
 // create events for files that are quickly deleted or don't exist yet.
-func addEventToQueue(db *sql.DB, lastFlushTime *time.Time, eventRecordQueue *[]shared.EventRecord, event *shared.EventRecord, noCache bool) {
-	maxQueueSize := 100000 // Set a queue size limit to keep memory usage in check
+// A background ticker ensures the queue is flushed even when no new events arrive.
+func databaseWriter(db *sql.DB, noCache bool) {
+	log.Println("databaseWriter thread started.")
+
+	maxQueueSize := 100000
+	delayTime := 10 * time.Second
 	if noCache {
 		maxQueueSize = 1
+		delayTime = 500 * time.Millisecond
 	}
-	var delayTime time.Duration = 10 * time.Second
 
-	*eventRecordQueue = append(*eventRecordQueue, *event)
+	var lastFlushTime time.Time = time.Now()
+	var eventRecordQueue = []shared.EventRecord{}
+	log.Printf("Queue %p", &eventRecordQueue)
 
-	tt := time.Since(*lastFlushTime)
-	if tt >= delayTime || len(*eventRecordQueue) >= maxQueueSize {
-		err := ffdb.BulkStoreEvents(db, eventRecordQueue)
+	flush := func() {
+		err := ffdb.BulkStoreEvents(db, &eventRecordQueue)
 		if err != nil {
 			log.Println("Error writing to db: ", err)
 		}
-		*eventRecordQueue = (*eventRecordQueue)[:0] // clear the queue
-		// Release the backing array if it grew large, so the GC can
-		// reclaim strings referenced by previously queued records.
-		if cap(*eventRecordQueue) > 10000 {
-			*eventRecordQueue = make([]shared.EventRecord, 0, 1000)
+		eventRecordQueue = eventRecordQueue[:0]
+		if cap(eventRecordQueue) > 10000 {
+			eventRecordQueue = make([]shared.EventRecord, 0, 1000)
 		}
-		*lastFlushTime = time.Now()
+		lastFlushTime = time.Now()
+	}
+
+	ticker := time.NewTicker(delayTime)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case event, ok := <-dbChannel:
+			if !ok {
+				return
+			}
+			eventRecordQueue = append(eventRecordQueue, *event)
+			if time.Since(lastFlushTime) >= delayTime || len(eventRecordQueue) >= maxQueueSize {
+				flush()
+			}
+		case <-ticker.C:
+			if len(eventRecordQueue) > 0 {
+				flush()
+			}
+		}
 	}
 }
 
-// Scan the database for file paths and check if they still exist on the filesystem.
 // If a file is missing, create an EventRecord with a delete action.
 func deleteMissing(root string) {
 	startTime := time.Now()
@@ -171,6 +194,12 @@ func scanDisk(path string) {
 
 	filepath.WalkDir(path, func(path string, file fs.DirEntry, err error) error {
 		if err != nil {
+			if errors.Is(err, fs.ErrPermission) {
+				reportPermissionError(path)
+				if file == nil || file.IsDir() {
+					return filepath.SkipDir
+				}
+			}
 			return nil
 		}
 		if shouldIgnorePath(path) {
@@ -222,17 +251,4 @@ func scanDisk(path string) {
 	log.Printf("Scan complete. Files/dirs: %d/%d. Pipes: %d, Sockets: %d, Char Devices: %d, Block Devices: %d. Elapsed time: %s", fileCount, dirCount, pipeCount, socketCount, charDeviceCount, blockDeviceCount, time.Since(startTime).String())
 }
 
-func databaseWriter(db *sql.DB, noCache bool) {
-	log.Println("databaseWriter thread started.")
-
-	var lastFlushTime time.Time = time.Now()
-	var eventRecordQueue = []shared.EventRecord{}
-	log.Printf("Queue %p", &eventRecordQueue)
-
-	for event := range dbChannel {
-		addEventToQueue(db, &lastFlushTime, &eventRecordQueue, event, noCache)
-	}
-}
-
-// shouldIgnorePath is declared in each platform-specific file (main_darwin.go, main_linux.go).
-// It returns true if the given path should be skipped during scanning and event processing.
+// Scan the database for file paths and check if they still exist on the filesystem.

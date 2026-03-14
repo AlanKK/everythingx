@@ -6,9 +6,11 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -46,6 +48,16 @@ var noteDescription = map[fsevents.EventFlags]string{
 
 func shouldIgnorePath(path string) bool {
 	return strings.HasPrefix(path, "/System/Volumes/Data")
+}
+
+var openSettingsOnce sync.Once
+
+func reportPermissionError(path string) {
+	log.Printf("Permission denied scanning %s. Grant Full Disk Access to everythingxd: System Settings → Privacy & Security → Full Disk Access", path)
+	openSettingsOnce.Do(func() {
+		log.Println("Opening System Settings → Privacy & Security → Full Disk Access")
+		exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles").Start()
+	})
 }
 
 func gracefulShutdown(db *sql.DB, es *fsevents.EventStream) {
@@ -111,12 +123,15 @@ func buildEventRecord(fsevent *fsevents.Event) *shared.EventRecord {
 		log.Printf("Event: %s created=%d removed=%d renamed=%d note=%s", fsevent.Path, fsevent.Flags&fsevents.ItemCreated, fsevent.Flags&fsevents.ItemRemoved, fsevent.Flags&fsevents.ItemRenamed, note)
 	}
 
+	isRenamed := fsevent.Flags&fsevents.ItemRenamed == fsevents.ItemRenamed
+
 	return &shared.EventRecord{
 		Filename:   filepath.Base(fsevent.Path),
 		Path:       fsevent.Path,
 		ObjectType: objType,
 		EventID:    fsevent.ID,
 		EventTime:  time.Now().UnixNano(),
+		IsRename:   isRenamed,
 	}
 }
 

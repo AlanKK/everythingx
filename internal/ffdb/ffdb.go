@@ -23,6 +23,7 @@ var prefixSearchStmt *sql.Stmt
 var insertStmt *sql.Stmt
 var deleteStmt *sql.Stmt
 var deleteDirStmt *sql.Stmt
+var renameDirStmt *sql.Stmt
 var fullPathLikeStmt *sql.Stmt
 
 // Creates and opens a new database at the given pathname.
@@ -132,8 +133,12 @@ func prepareStatements(db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	// Deletes a directory entry and all DB entries whose path falls under it.
 	deleteDirStmt, err = db.Prepare("DELETE FROM files WHERE fullpath = ? OR fullpath LIKE ? ESCAPE '\\'")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	renameDirStmt, err = db.Prepare("UPDATE files SET fullpath = ? || SUBSTR(fullpath, LENGTH(?) + 1), filename = CASE WHEN fullpath = ? THEN ? ELSE filename END WHERE fullpath = ? OR fullpath LIKE ? ESCAPE '\\'")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -312,9 +317,36 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 		return err
 	}
 
-	var num_committed, num_missing, num_duplicate, num_deleted int
+	var num_committed, num_missing, num_duplicate, num_deleted, num_renamed int
 
-	for _, e := range *eventRecordQueue {
+	// Pre-process: detect directory rename pairs.
+	// FSEvents/fanotify fire two events for a rename: one for the old path
+	// (no longer exists) and one for the new path (now exists).
+	handled := make(map[int]bool)
+	for i, e := range *eventRecordQueue {
+		if !e.IsRename || e.ObjectType != shared.ItemIsDir || e.FoundOnScan || shared.FileExists(e.Path) {
+			continue
+		}
+		// Old path of a dir rename. Find the new-path partner.
+		for j := i + 1; j < len(*eventRecordQueue); j++ {
+			ej := (*eventRecordQueue)[j]
+			if ej.IsRename && ej.ObjectType == shared.ItemIsDir && !handled[j] && shared.FileExists(ej.Path) {
+				_, err = renameDirStmt.Exec(ej.Path, e.Path, e.Path, ej.Filename, e.Path, escapeLike(e.Path)+"/%")
+				if err != nil {
+					return err
+				}
+				handled[i] = true
+				handled[j] = true
+				num_renamed++
+				break
+			}
+		}
+	}
+
+	for i, e := range *eventRecordQueue {
+		if handled[i] {
+			continue
+		}
 		if e.FoundOnScan || shared.FileExists(e.Path) {
 			_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
 			if err != nil {
@@ -327,10 +359,12 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 			num_committed++
 		} else {
 			if e.ObjectType == shared.ItemIsDir {
-				// Cascade: delete the directory entry and everything recorded under it.
-				// This handles the case where individual file-delete events were dropped
-				// because the parent dir was already removed during path resolution.
-				_, err = deleteDirStmt.Exec(e.Path, escapeLike(e.Path)+"/%")
+				if e.IsRename {
+					// Unpaired rename — just remove the dir entry, don't cascade.
+					_, err = deleteStmt.Exec(e.Path)
+				} else {
+					_, err = deleteDirStmt.Exec(e.Path, escapeLike(e.Path)+"/%")
+				}
 			} else {
 				_, err = deleteStmt.Exec(e.Path)
 			}
@@ -354,10 +388,11 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	log.Printf(
-		"Events: %-6d Del: %-6d New: %-6d Missing: %-6d Dups: %-6d Time fn/commit: %-9s / %-8s Queue: %p Capacity: %-7d Mem: %.1f heap %.1f MB",
+		"Events: %-6d Del: %-6d New: %-6d Ren: %-6d Missing: %-6d Dups: %-6d Time fn/commit: %-9s / %-8s Queue: %p Capacity: %-7d Mem: %.1f heap %.1f MB",
 		len(*eventRecordQueue),
 		num_deleted,
 		num_committed-num_duplicate,
+		num_renamed,
 		num_missing,
 		num_duplicate,
 		bulkTimeEnd,
