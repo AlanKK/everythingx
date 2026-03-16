@@ -7,7 +7,7 @@ EverythingX attempts to replicate the very excellent Windows utility called [Eve
 
 A background service maintains real-time updates as files and directories change. An app and a command-line tool do fast searches as you type.
 
-## How is EverythingX different from other search tools such as Spotlight and find?
+## How is EverythingX different from other search tools such as Spotlight, locate, and find?
 - Minimal resource usage
 - Quick file indexing
 - Real-time updating
