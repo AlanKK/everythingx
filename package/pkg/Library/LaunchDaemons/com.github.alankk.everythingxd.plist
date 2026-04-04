@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.github.alankk.everythingx</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/everythingxd</string>
+        <string>--monitor_path=/</string>
+        <string>--db_path=/var/lib/everythingx/files.db</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardErrorPath</key>
+    <string>/var/log/everythingxd.log</string>
+    <key>StandardOutPath</key>
+    <string>/var/log/everythingxd.log</string>
+</dict>
+</plist>

@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Create data directory
+echo 'Creating data directory /var/lib/everythingx'
+mkdir -p /var/lib/everythingx
+
+# Install launchd service
+echo 'Installing launchd service'
+chmod 644 /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
+chown root:wheel /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
+
+# Register and start service with launchd
+echo 'Registering and starting service with launchd'
+launchctl bootout system /Library/LaunchDaemons/com.github.alankk.everythingxd.plist > /dev/null 2>&1
+launchctl bootstrap system /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
+launchctl kickstart -k system/com.github.alankk.everythingxd
+
+echo 'EverythingX installation complete. See /var/log/everythingx.log for logs'
+
+exit 0
