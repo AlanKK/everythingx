@@ -19,4 +19,5 @@ everythingx_test/*
 e2eTest/e2etest
 tools/benchmark-db/crash2.out
 EverythingX.app/*
-package/*
+package/*EverythingX.pkg
+cmd/swift-ui/.build/

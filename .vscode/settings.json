@@ -1,5 +1,10 @@
 {
     "chat.tools.terminal.autoApprove": {
-        "swift": true
+        "git checkout": true,
+        "mkdir": true,
+        "/^python3 /tmp/compare_logs\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
     }
 }
