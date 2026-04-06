@@ -23,7 +23,7 @@ TARGET_OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
 APP_NAME := EverythingX
 APP_ID := com.github.alankk.everythingx
 APP_ICON := assets/icons/retina/orange-black/folder-orange-black-512@2x.png
-PKG_VERSION := alpha-1
+PKG_VERSION := beta-1
 PKG_IDENTIFIER := com.github.alankk.pkg.EverythingX
 PKG_OUTPUT := EverythingX.pkg
 
