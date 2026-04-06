@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/AlanKK/everythingx/internal/shared"
@@ -190,7 +191,10 @@ func PrefixSearch(prefix string, limit int) ([]*shared.SearchResult, error) {
 	var err error
 
 	if len(prefix) >= 3 && trigramSearchStmt != nil {
-		rows, err = trigramSearchStmt.Query(prefix, limit)
+		// Wrap in double quotes so FTS5 treats the term as a literal phrase,
+		// preventing characters like "." from causing syntax errors.
+		quoted := `"` + strings.ReplaceAll(prefix, `"`, `""`) + `"`
+		rows, err = trigramSearchStmt.Query(quoted, limit)
 	} else {
 		rows, err = prefixSearchStmt.Query(prefix+"%", limit)
 	}
