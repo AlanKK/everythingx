@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/AlanKK/everythingx/internal/shared"
@@ -19,6 +20,7 @@ var records []struct {
 }
 
 var prefixSearchStmt *sql.Stmt
+var trigramSearchStmt *sql.Stmt
 var insertStmt *sql.Stmt
 var deleteStmt *sql.Stmt
 var deleteDirStmt *sql.Stmt
@@ -85,7 +87,33 @@ func createTablesAndIndexes(db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.Exec("CREATE INDEX idx_filename ON files(filename COLLATE BINARY)")
+	_, err = db.Exec("CREATE INDEX idx_filename ON files(filename COLLATE BINARY, fullpath, object_type)")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = db.Exec("CREATE VIRTUAL TABLE files_fts USING fts5(filename, content='files', content_rowid='rowid', tokenize='trigram')")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Triggers to keep the FTS index in sync with the files table.
+	_, err = db.Exec(`CREATE TRIGGER files_ai AFTER INSERT ON files BEGIN
+		INSERT INTO files_fts(rowid, filename) VALUES (new.rowid, new.filename);
+	END`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TRIGGER files_ad AFTER DELETE ON files BEGIN
+		INSERT INTO files_fts(files_fts, rowid, filename) VALUES('delete', old.rowid, old.filename);
+	END`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TRIGGER files_au AFTER UPDATE ON files BEGIN
+		INSERT INTO files_fts(files_fts, rowid, filename) VALUES('delete', old.rowid, old.filename);
+		INSERT INTO files_fts(rowid, filename) VALUES (new.rowid, new.filename);
+	END`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -122,6 +150,13 @@ func prepareStatements(db *sql.DB) {
 		log.Fatal(err)
 	}
 
+	trigramSearchStmt, err = db.Prepare("SELECT f.fullpath, f.object_type FROM files_fts fts JOIN files f ON f.rowid = fts.rowid WHERE files_fts MATCH ? ORDER BY f.filename ASC LIMIT ?")
+	if err != nil {
+		// FTS table may not exist in older databases opened read-only
+		log.Printf("Warning: could not prepare trigram search statement: %v", err)
+		trigramSearchStmt = nil
+	}
+
 	insertStmt, err = db.Prepare("INSERT INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)")
 	if err != nil {
 		log.Fatal(err)
@@ -148,23 +183,30 @@ func prepareStatements(db *sql.DB) {
 	}
 }
 
-// Performs a search for filenames starting with the given prefix and returns a limited number of results.
+// Performs a substring search for filenames containing the given term.
+// For terms >= 3 characters, uses FTS5 trigram index for fast lookup.
+// For shorter terms, uses prefix search with the B-tree index.
 func PrefixSearch(prefix string, limit int) ([]*shared.SearchResult, error) {
-	var results []*shared.SearchResult
+	var rows *sql.Rows
+	var err error
 
-	rows, err := prefixSearchStmt.Query("%"+prefix+"%", limit)
+	if len(prefix) >= 3 && trigramSearchStmt != nil {
+		// Wrap in double quotes so FTS5 treats the term as a literal phrase,
+		// preventing characters like "." from causing syntax errors.
+		quoted := `"` + strings.ReplaceAll(prefix, `"`, `""`) + `"`
+		rows, err = trigramSearchStmt.Query(quoted, limit)
+	} else {
+		rows, err = prefixSearchStmt.Query(prefix+"%", limit)
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	var results []*shared.SearchResult
 	for rows.Next() {
-		result := &shared.SearchResult{
-			Fullpath:   "",
-			ObjectType: 0,
-		}
-		err := rows.Scan(&result.Fullpath, &result.ObjectType)
-		if err != nil {
+		result := &shared.SearchResult{}
+		if err := rows.Scan(&result.Fullpath, &result.ObjectType); err != nil {
 			return nil, err
 		}
 		results = append(results, result)

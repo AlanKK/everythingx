@@ -24,14 +24,17 @@ const (
 )
 
 var (
-	searchPrefixes = []string{"a", "al", "ala", "alan"}
+	searchPrefixes = []string{"a", "al", "ala", "alan", "alank", "alanke", "alankeister"}
 	numSearches    int
 	noDB           bool
+	baseline       bool
+	baselineStmt   *sql.Stmt
 )
 
 func main() {
 	flag.IntVar(&numSearches, "n", 100, "number of searches to perform")
 	flag.BoolVar(&noDB, "no-db", false, "skip database setup")
+	flag.BoolVar(&baseline, "baseline", false, "use old LIKE %%term%% query instead of FTS5")
 	flag.Parse()
 
 	var sourceDB, targetDB *sql.DB
@@ -72,6 +75,18 @@ func main() {
 		}
 	}
 	defer targetDB.Close()
+
+	if baseline {
+		var err error
+		baselineStmt, err = targetDB.Prepare("SELECT fullpath, object_type FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
+		if err != nil {
+			log.Fatalf("Failed to prepare baseline statement: %v", err)
+		}
+		defer baselineStmt.Close()
+		fmt.Println("Mode: BASELINE (LIKE '%term%')")
+	} else {
+		fmt.Println("Mode: FTS5 trigram (>= 3 chars) + prefix LIKE (< 3 chars)")
+	}
 
 	benchmarkPrefixSearch()
 }
@@ -153,11 +168,18 @@ func copyData(sourceDB, targetDB *sql.DB) {
 	}
 
 	fmt.Println("Data copied successfully.")
+
+	// Rebuild FTS5 index from the bulk-loaded data
+	fmt.Println("Rebuilding FTS5 trigram index...")
+	_, err = targetDB.Exec("INSERT INTO files_fts(files_fts) VALUES('rebuild')")
+	if err != nil {
+		log.Fatalf("Failed to rebuild FTS index: %v", err)
+	}
+	fmt.Println("FTS5 index rebuilt.")
 }
 
 func benchmarkPrefixSearch() {
 	totalStart := time.Now()
-	totalSearches := 0
 
 	logFile, err := os.OpenFile("benchmark_results.csv", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -167,7 +189,11 @@ func benchmarkPrefixSearch() {
 
 	logger := log.New(logFile, "", log.LstdFlags)
 
-	var allTimes []time.Duration
+	// Collect times per prefix
+	perPrefix := make(map[string][]time.Duration)
+	for _, p := range searchPrefixes {
+		perPrefix[p] = make([]time.Duration, 0, numSearches)
+	}
 
 	for i := 0; i < numSearches; i++ {
 		if i%10 == 0 {
@@ -175,55 +201,90 @@ func benchmarkPrefixSearch() {
 		}
 		for _, prefix := range searchPrefixes {
 			searchStart := time.Now()
-			results, err := ffdb.PrefixSearch(prefix, maxSearchResults)
-			if err != nil {
-				log.Fatalf("Prefix search failed for prefix '%s': %v", prefix, err)
+			var results []*shared.SearchResult
+			var err error
+			if baseline {
+				results, err = baselineLikeSearch(prefix, maxSearchResults)
+			} else {
+				results, err = ffdb.PrefixSearch(prefix, maxSearchResults)
 			}
-			if len(results) == 0 {
-				log.Printf("No results found for prefix '%s'", prefix)
-				continue
+			if err != nil {
+				log.Fatalf("Search failed for prefix '%s': %v", prefix, err)
 			}
 			duration := time.Since(searchStart)
-			allTimes = append(allTimes, duration)
+			perPrefix[prefix] = append(perPrefix[prefix], duration)
+			_ = results
 		}
-		totalSearches += len(searchPrefixes)
 	}
 	fmt.Println()
 
-	// Calculate overall statistics
-	var total, min, max, average, stdDev time.Duration
-	min = time.Duration(math.MaxInt64)
-	max = time.Duration(math.MinInt64)
+	// Print per-prefix statistics
+	fmt.Printf("\n%-15s %8s %8s %8s %8s %8s %8s\n", "Prefix", "Results", "Min", "Median", "Avg", "Max", "StdDev")
+	fmt.Println("----------------------------------------------------------------------")
 
-	for _, t := range allTimes {
-		total += t
-		if t < min {
-			min = t
+	for _, prefix := range searchPrefixes {
+		times := perPrefix[prefix]
+		if len(times) == 0 {
+			continue
 		}
-		if t > max {
-			max = t
+
+		// Get result count for this prefix
+		var results []*shared.SearchResult
+		if baseline {
+			results, _ = baselineLikeSearch(prefix, maxSearchResults)
+		} else {
+			results, _ = ffdb.PrefixSearch(prefix, maxSearchResults)
 		}
-	}
-	average = total / time.Duration(totalSearches)
-	var sumSquares time.Duration
-	for _, t := range allTimes {
-		diff := t - average
-		sumSquares += diff * diff
-	}
-	stdDev = time.Duration(math.Sqrt(float64(sumSquares) / float64(totalSearches)))
 
-	// Calculate overall median
-	sort.Slice(allTimes, func(i, j int) bool { return allTimes[i] < allTimes[j] })
-	median := allTimes[totalSearches/2]
-	if totalSearches%2 == 0 {
-		median = (allTimes[totalSearches/2-1] + allTimes[totalSearches/2]) / 2
-	}
+		sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
 
-	// Log overall results in CSV format
-	// Log overall results in CSV format: min, max, average, median, standard deviation, total searches
-	logger.Printf(",Overall,%d,%d,%d,%d,%d,%d iterations\n", min.Milliseconds(), max.Milliseconds(), average.Milliseconds(), median.Milliseconds(), stdDev.Milliseconds(), totalSearches)
+		min := times[0]
+		max := times[len(times)-1]
+		median := times[len(times)/2]
+
+		var total time.Duration
+		for _, t := range times {
+			total += t
+		}
+		avg := total / time.Duration(len(times))
+
+		var sumSq float64
+		for _, t := range times {
+			diff := float64(t - avg)
+			sumSq += diff * diff
+		}
+		stdDev := time.Duration(math.Sqrt(sumSq / float64(len(times))))
+
+		fmt.Printf("%-15s %8d %7.1fms %7.1fms %7.1fms %7.1fms %7.1fms\n",
+			"\""+prefix+"\"", len(results),
+			float64(min.Microseconds())/1000,
+			float64(median.Microseconds())/1000,
+			float64(avg.Microseconds())/1000,
+			float64(max.Microseconds())/1000,
+			float64(stdDev.Microseconds())/1000)
+
+		logger.Printf(",%s,%d,%d,%d,%d,%d,%d iterations\n", prefix, min.Microseconds(), max.Microseconds(), avg.Microseconds(), median.Microseconds(), stdDev.Microseconds(), numSearches)
+	}
 
 	totalElapsed := time.Since(totalStart)
-	//fmt.Printf("Completed %d total searches in %fs\n", totalSearches, totalElapsed.Seconds())
-	fmt.Printf("Median: %dms, Standard deviation: %dms, Average: %dms\n", median.Milliseconds(), stdDev.Milliseconds(), totalElapsed.Milliseconds()/int64(totalSearches))
+	fmt.Printf("\nTotal time: %.1fs (%d searches x %d prefixes = %d queries)\n",
+		totalElapsed.Seconds(), numSearches, len(searchPrefixes), numSearches*len(searchPrefixes))
+}
+
+func baselineLikeSearch(prefix string, limit int) ([]*shared.SearchResult, error) {
+	rows, err := baselineStmt.Query("%"+prefix+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []*shared.SearchResult
+	for rows.Next() {
+		result := &shared.SearchResult{}
+		if err := rows.Scan(&result.Fullpath, &result.ObjectType); err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, nil
 }

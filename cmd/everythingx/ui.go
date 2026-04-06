@@ -263,7 +263,7 @@ func showAbout() {
 
 **Version:** ` + version.ShortInfo() + `
 
-**Author:** Alan KK
+**Author:** AlanKK
 
 **License:** MIT 
 

@@ -4,7 +4,7 @@ name: everythingx
 arch: amd64
 platform: linux
 version: ${VERSION}
-maintainer: Alan KK <alan@github.com>
+maintainer: AlanKK <AlanKK@users.noreply.github.com>
 description: |
   EverythingX is a fast file-name search tool for Linux, inspired by
   Everything by Voidtools. It indexes the filesystem in real-time and

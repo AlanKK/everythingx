@@ -1,5 +1,6 @@
 main
 /everythingx
+.vscode/
 /cli
 /service
 .DS_Store

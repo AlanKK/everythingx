@@ -32,21 +32,22 @@ VERSION := $(shell git describe --tags --always --dirty)
 COMMIT := $(shell git rev-parse --short HEAD)
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-X github.com/AlanKK/everythingx/internal/version.Version=$(VERSION) -X github.com/AlanKK/everythingx/internal/version.Commit=$(COMMIT) -X github.com/AlanKK/everythingx/internal/version.BuildDate=$(BUILD_DATE)"
+TAGS := -tags fts5
 
 # Build targets
 build: $(SERVICE_BIN) $(APP_BIN) $(CLI_BIN)
 
 $(SERVICE_BIN): $(SERVICE_DIR)/*.go
-	$(GO) build $(LDFLAGS) -o $@ ./$(SERVICE_DIR)
+	$(GO) build $(TAGS) $(LDFLAGS) -o $@ ./$(SERVICE_DIR)
 
 $(APP_BIN): $(APP_DIR)/*.go
-	CGO_LDFLAGS="-Wl,-w" $(GO) build $(LDFLAGS) -o $@ ./$(APP_DIR)
+	CGO_LDFLAGS="-Wl,-w" $(GO) build $(TAGS) $(LDFLAGS) -o $@ ./$(APP_DIR)
 
 $(CLI_BIN): $(CLI_DIR)/main.go
-	$(GO) build $(LDFLAGS) -o $@ $<
+	$(GO) build $(TAGS) $(LDFLAGS) -o $@ $<
 
 $(E2E_BIN): $(E2E_TEST_DIR)/main.go
-	$(GO) build -o $@ $<
+	$(GO) build $(TAGS) -o $@ $<
 
 # Test targets
 ifeq ($(TARGET_OS),linux)
@@ -58,7 +59,7 @@ e2e: build $(E2E_BIN)
 endif
 
 test:
-	$(GO) test ./... | grep -v "\[no test files\]"
+	$(GO) test $(TAGS) ./... | grep -v "\[no test files\]"
 
 # Install targets
 ifeq ($(TARGET_OS),darwin)
