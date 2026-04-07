@@ -28,7 +28,7 @@ PKG_IDENTIFIER := com.github.alankk.pkg.EverythingX
 PKG_OUTPUT := EverythingX.pkg
 
 # Build metadata
-VERSION := $(shell git describe --tags --always --dirty)
+VERSION ?= $(shell git describe --tags --always --dirty)
 COMMIT := $(shell git rev-parse --short HEAD)
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-X github.com/AlanKK/everythingx/internal/version.Version=$(VERSION) -X github.com/AlanKK/everythingx/internal/version.Commit=$(COMMIT) -X github.com/AlanKK/everythingx/internal/version.BuildDate=$(BUILD_DATE)"
