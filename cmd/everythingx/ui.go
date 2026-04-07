@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
@@ -34,32 +35,39 @@ type RowData struct {
 	SearchResult *shared.SearchResult
 }
 
-func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar *widget.Label) {
-	start := time.Now()
+var searchCounter atomic.Int64
 
-	if len(e.Text) == 0 {
+// handleAutoCompleteEntryChanged runs the search off the UI thread so that
+// scrolling and other interactions remain responsive while the DB query and
+// per-file stat calls execute.
+func handleAutoCompleteEntryChanged(searchText string, t *widget.Table, statusBar *widget.Label) {
+	if len(searchText) == 0 {
 		return
 	}
 
-	searchStart := time.Now()
-	results, err := ffdb.PrefixSearch(e.Text, maxSearchResults)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return
-	}
+	myID := searchCounter.Add(1)
 
-	searchElapsed := time.Since(searchStart)
+	go func() {
+		start := time.Now()
 
-	// Preallocate the TableData slice
-	*tableData = make([]RowData, 0, len(results))
-	var fullpath, base, dir, size, modified string
+		searchStart := time.Now()
+		results, err := ffdb.PrefixSearch(searchText, maxSearchResults)
+		if err != nil {
+			fmt.Println("Error:", err)
+			return
+		}
+		searchElapsed := time.Since(searchStart)
 
-	if len(results) > 0 {
+		if searchCounter.Load() != myID {
+			return
+		}
+
+		newData := make([]RowData, 0, len(results))
 		for _, r := range results {
-			fullpath = r.Fullpath
-			base = filepath.Base(r.Fullpath)
-			dir = filepath.Dir(fullpath) + "/"
-			size, modified = shared.GetFileSizeMod(fullpath)
+			fullpath := r.Fullpath
+			base := filepath.Base(r.Fullpath)
+			dir := filepath.Dir(fullpath) + "/"
+			size, modified := shared.GetFileSizeMod(fullpath)
 
 			if r.ObjectType == shared.ItemIsDir {
 				base += "/"
@@ -67,9 +75,9 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 				size = "--"
 			}
 
-			beforeTerm, searchTerm, afterTerm := shared.SplitFileName(base, e.Text)
+			beforeTerm, searchTerm, afterTerm := shared.SplitFileName(base, searchText)
 
-			*tableData = append(*tableData, RowData{
+			newData = append(newData, RowData{
 				Name:         []string{beforeTerm, searchTerm, afterTerm},
 				Path:         dir,
 				Size:         size,
@@ -77,28 +85,36 @@ func handleAutoCompleteEntryChanged(e *widget.Entry, t *widget.Table, statusBar 
 				SearchResult: r,
 			})
 		}
-	}
-	t.Refresh()
 
-	var resultText string
-	if len(results) == maxSearchResults {
-		resultText = fmt.Sprintf("Showing first %d objects", maxSearchResults)
-	} else {
-		resultText = fmt.Sprintf("%d objects", len(results))
-	}
-	lastResultText = resultText
-	statusBar.SetText(resultText)
+		if searchCounter.Load() != myID {
+			return
+		}
 
-	shared.PrintMemUsage()
+		var resultText string
+		if len(results) == maxSearchResults {
+			resultText = fmt.Sprintf("Showing first %d objects", maxSearchResults)
+		} else {
+			resultText = fmt.Sprintf("%d objects", len(results))
+		}
 
-	elapsed := time.Since(start)
-	fmt.Printf(
-		"\tSearch: %s, Results: %d, prefixSearch: %s, handleEntryChanged %s.\n",
-		e.Text,
-		len(results),
-		searchElapsed,
-		elapsed,
-	)
+		fyne.Do(func() {
+			tableData = newData
+			lastResultText = resultText
+			t.Refresh()
+			statusBar.SetText(resultText)
+		})
+
+		shared.PrintMemUsage()
+
+		elapsed := time.Since(start)
+		fmt.Printf(
+			"\tSearch: %s, Results: %d, prefixSearch: %s, handleEntryChanged %s.\n",
+			searchText,
+			len(results),
+			searchElapsed,
+			elapsed,
+		)
+	}()
 }
 
 // tooltipCell is a RichText cell that lazily fetches file info on hover.
@@ -110,6 +126,7 @@ type tooltipCell struct {
 
 func newTooltipCell() *tooltipCell {
 	c := &tooltipCell{}
+	c.Scroll = container.ScrollNone
 	c.Truncation = fyne.TextTruncateEllipsis
 	c.RichText.ExtendBaseWidget(c)
 	return c
@@ -133,31 +150,35 @@ func (c *tooltipCell) Tapped(_ *fyne.PointEvent) {
 }
 
 // available for the table widget.
-var tableData *[]RowData
+var tableData []RowData
 var t *widget.Table
 var mainWindow fyne.Window
 var lastResultText string
 
 func makeTable() *widget.Table {
-	data := make([]RowData, 0, maxSearchResults)
-	tableData = &data
+	tableData = make([]RowData, 0, maxSearchResults)
 
 	t = widget.NewTableWithHeaders(
 		// Length()
-		func() (int, int) { return len(*tableData), 4 },
+		func() (int, int) { return len(tableData), 4 },
 		// CreateCell()
 		func() fyne.CanvasObject {
 			return newTooltipCell()
 		},
 		// UpdateCell()
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
+			data := tableData
+			if id.Row < 0 || id.Row >= len(data) {
+				return
+			}
+			row := data[id.Row]
 			richText := cell.(*tooltipCell)
-			richText.path = (*tableData)[id.Row].SearchResult.Fullpath
+			richText.path = row.SearchResult.Fullpath
 			richText.col = id.Col
 
 			switch id.Col {
 			case 0:
-				fileNameParts := (*tableData)[id.Row].Name
+				fileNameParts := row.Name
 				var segments []widget.RichTextSegment
 				if fileNameParts[0] != "" {
 					segments = append(segments, &widget.TextSegment{Text: fileNameParts[0],
@@ -187,7 +208,7 @@ func makeTable() *widget.Table {
 				richText.Segments = segments
 			case 1:
 				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: (*tableData)[id.Row].Path,
+					Text: row.Path,
 					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
 						TextStyle: fyne.TextStyle{Monospace: true},
 					},
@@ -195,7 +216,7 @@ func makeTable() *widget.Table {
 				}
 			case 2:
 				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: (*tableData)[id.Row].Size,
+					Text: row.Size,
 					Style: widget.RichTextStyle{Alignment: fyne.TextAlignTrailing,
 						TextStyle: fyne.TextStyle{Monospace: true},
 					},
@@ -203,19 +224,16 @@ func makeTable() *widget.Table {
 				}
 			case 3:
 				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: (*tableData)[id.Row].Modified,
+					Text: row.Modified,
 					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
 						TextStyle: fyne.TextStyle{Monospace: true},
 					},
 				},
 				}
 			}
-			cell.Refresh()
+			richText.Refresh()
 		},
 	)
-	t.OnSelected = func(id widget.TableCellID) {
-		t.UnselectAll()
-	}
 
 	t.SetColumnWidth(0, 400) // Name
 	t.SetColumnWidth(1, 600) // Path
@@ -265,9 +283,9 @@ func showAbout() {
 
 **Author:** AlanKK
 
-**License:** MIT 
-
 More info on [Github](` + GithubURL + `)
+
+Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 `)
 
 	var img *canvas.Image
@@ -302,8 +320,6 @@ func showSettings() {
 var statusBar *widget.Label
 
 func loadUI() {
-	// printMemUsage()
-
 	a := app.New()
 	a.Settings().SetTheme(&everythingxTheme{})
 	w := a.NewWindow("EverythingX")
@@ -314,33 +330,27 @@ func loadUI() {
 			fyne.NewMenuItem("Show EverythingX", func() {
 				w.Show()
 			}),
-			fyne.NewMenuItem("Settings", func() {
-				showSettings()
-			}),
 			fyne.NewMenuItem("About...", func() {
 				showAbout()
 			}))
 		desk.SetSystemTrayMenu(m)
 	}
 
-	w.SetContent(widget.NewLabel("EverythingX"))
 	w.SetCloseIntercept(func() {
 		w.Hide()
 	})
 
 	table := makeTable()
 
-	// Autocomplete entry box
 	entry := widget.NewEntry()
 	entry.SetPlaceHolder("Enter filename...")
-	entry.OnChanged = func(s string) {
-		handleAutoCompleteEntryChanged(entry, table, statusBar)
-	}
-	w.SetContent(container.NewVBox(entry))
-	w.Canvas().Focus(entry)
 
 	statusBar = widget.NewLabel("0 objects")
 	statusBar.TextStyle = fyne.TextStyle{Bold: true}
+
+	entry.OnChanged = func(s string) {
+		handleAutoCompleteEntryChanged(s, table, statusBar)
+	}
 
 	content := container.NewBorder(
 		entry,
@@ -350,13 +360,10 @@ func loadUI() {
 		table,
 	)
 
-	w.SetContent(content)
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(content, w.Canvas()))
-
+	w.Canvas().Focus(entry)
 	w.Resize(fyne.NewSize(1300, 800))
 
 	shared.PrintMemUsage()
 	w.ShowAndRun()
-
-	// anything below will not be executed until app is closed
 }
