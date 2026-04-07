@@ -83,8 +83,15 @@ jobs:
         run: sudo rm -rf /Applications/EverythingX.app || true
 
   test-linux-deb:
-    name: Test Linux .deb
-    runs-on: ubuntu-latest
+    name: Test Linux .deb (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
     env:
       TAG: ${{ inputs.tag }}
     steps:
@@ -98,7 +105,7 @@ jobs:
       - name: Download release asset
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download "$TAG" --pattern "*.deb"
+        run: gh release download "$TAG" --pattern "*${{ matrix.arch }}.deb"
 
       - name: Install .deb package
         run: sudo dpkg -i *.deb
@@ -124,8 +131,15 @@ jobs:
         run: sudo dpkg -r everythingx || true
 
   test-linux-rpm:
-    name: Test Linux .rpm
-    runs-on: ubuntu-latest
+    name: Test Linux .rpm (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
     env:
       TAG: ${{ inputs.tag }}
     steps:
@@ -142,7 +156,7 @@ jobs:
       - name: Download release asset
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download "$TAG" --pattern "*.rpm"
+        run: gh release download "$TAG" --pattern "*${{ matrix.arch }}.rpm"
 
       - name: Extract and verify RPM contents
         run: |

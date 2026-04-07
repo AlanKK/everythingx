@@ -1,7 +1,7 @@
 # nfpm configuration for everythingx Linux packages (.deb and .rpm)
 # https://nfpm.goreleaser.com/configuration/
 name: everythingx
-arch: amd64
+arch: ${GOARCH}
 platform: linux
 version: ${VERSION}
 maintainer: AlanKK <AlanKK@users.noreply.github.com>
