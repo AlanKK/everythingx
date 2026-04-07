@@ -148,7 +148,7 @@ jobs:
         run: |
           rpm -qlp *.rpm
           mkdir rpm-extract && cd rpm-extract
-          rpm2cpio ../*.rpm | cpio -idmv
+          rpm2cpio ../*.rpm | cpio -idmv --no-absolute-filenames
           test -f usr/local/bin/everythingxd
           test -f usr/local/bin/ev
           test -f etc/systemd/system/everythingxd.service

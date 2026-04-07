@@ -55,7 +55,13 @@ jobs:
       id: pkg
       run: |
         if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-          echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          # Strip leading 'v' from tag (e.g. v1.2.3 -> 1.2.3)
+          ver="${GITHUB_REF_NAME#v}"
+          # deb/rpm require versions starting with a digit; prefix if needed
+          if [[ ! "$ver" =~ ^[0-9] ]]; then
+            ver="0.0.0+$(echo "$ver" | sed 's/^[^a-zA-Z0-9]*//')"
+          fi
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
         else
           echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
         fi
@@ -257,7 +263,7 @@ jobs:
           rpm -qlp *.rpm
           mkdir rpm-extract
           cd rpm-extract
-          rpm2cpio ../*.rpm | cpio -idmv
+          rpm2cpio ../*.rpm | cpio -idmv --no-absolute-filenames
           sudo cp usr/local/bin/everythingxd /usr/local/bin/
           sudo cp usr/local/bin/ev /usr/local/bin/
           sudo chmod +x /usr/local/bin/everythingxd /usr/local/bin/ev
