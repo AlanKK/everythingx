@@ -147,13 +147,15 @@ jobs:
       - name: Extract and verify RPM contents
         run: |
           rpm -qlp *.rpm
-          rpm2cpio *.rpm | cpio -idmv
+          mkdir rpm-extract && cd rpm-extract
+          rpm2cpio ../*.rpm | cpio -idmv
           test -f usr/local/bin/everythingxd
           test -f usr/local/bin/ev
           test -f etc/systemd/system/everythingxd.service
 
       - name: Install and run e2e test
         run: |
+          cd rpm-extract
           sudo cp usr/local/bin/everythingxd /usr/local/bin/
           sudo cp usr/local/bin/ev /usr/local/bin/
           sudo chmod +x /usr/local/bin/everythingxd /usr/local/bin/ev

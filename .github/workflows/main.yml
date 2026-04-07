@@ -255,7 +255,8 @@ jobs:
       - name: Extract and install RPM contents
         run: |
           rpm -qlp *.rpm
-          rpm2cpio *.rpm | cpio -idmv
+          mkdir rpm-extract && cd rpm-extract
+          rpm2cpio ../*.rpm | cpio -idmv
           sudo cp usr/local/bin/everythingxd /usr/local/bin/
           sudo cp usr/local/bin/ev /usr/local/bin/
           sudo chmod +x /usr/local/bin/everythingxd /usr/local/bin/ev
