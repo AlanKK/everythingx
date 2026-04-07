@@ -83,7 +83,7 @@ func main() {
 			log.Fatalf("Failed to prepare baseline statement: %v", err)
 		}
 		defer baselineStmt.Close()
-		fmt.Println("Mode: BASELINE (LIKE '%term%')")
+		fmt.Printf("Mode: BASELINE (LIKE '%%term%%')\n")
 	} else {
 		fmt.Println("Mode: FTS5 trigram (>= 3 chars) + prefix LIKE (< 3 chars)")
 	}
