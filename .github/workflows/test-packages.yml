@@ -1,0 +1,172 @@
+name: Test Release Packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to test (e.g., v1.0.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-macos-zip:
+    name: Test macOS zip (${{ matrix.os_name }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            os_name: macos-apple-arm64
+          - runner: macos-15-intel
+            os_name: macos-intel-amd64
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --pattern "everythingx_${{ matrix.os_name }}.zip"
+
+      - name: Extract and verify binaries
+        run: |
+          mkdir -p bin
+          unzip "everythingx_${{ matrix.os_name }}.zip" -d extracted/
+          cp extracted/everythingxd extracted/ev bin/
+          chmod +x bin/everythingxd bin/ev
+          bin/ev --version
+          bin/everythingxd --version
+
+      - name: Run e2e test
+        run: |
+          go build -tags fts5 -o e2eTest/e2etest e2eTest/main.go
+          e2eTest/e2etest
+
+  test-macos-pkg:
+    name: Test macOS pkg (${{ matrix.os_name }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            os_name: macos-apple-arm64
+          - runner: macos-15-intel
+            os_name: macos-intel-amd64
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --pattern "EverythingX_${{ matrix.os_name }}.pkg"
+
+      - name: Install pkg
+        run: sudo installer -pkg "EverythingX_${{ matrix.os_name }}.pkg" -target /
+
+      - name: Verify installation
+        run: |
+          test -d /Applications/EverythingX.app
+          test -f /Applications/EverythingX.app/Contents/MacOS/everythingx
+
+      - name: Cleanup
+        if: always()
+        run: sudo rm -rf /Applications/EverythingX.app || true
+
+  test-linux-deb:
+    name: Test Linux .deb
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --pattern "*.deb"
+
+      - name: Install .deb package
+        run: sudo dpkg -i *.deb
+
+      - name: Verify installation
+        run: |
+          test -x /usr/local/bin/everythingxd
+          test -x /usr/local/bin/ev
+          ev --version
+          everythingxd --version
+          systemctl is-active everythingxd
+
+      - name: Stop daemon and run e2e test
+        run: |
+          sudo systemctl stop everythingxd
+          mkdir -p bin
+          ln -s /usr/local/bin/everythingxd bin/everythingxd
+          go build -tags fts5 -o e2eTest/e2etest e2eTest/main.go
+          sudo e2eTest/e2etest
+
+      - name: Cleanup
+        if: always()
+        run: sudo dpkg -r everythingx || true
+
+  test-linux-rpm:
+    name: Test Linux .rpm
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Install rpm tools
+        run: sudo apt-get update -qq && sudo apt-get install -y rpm
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --pattern "*.rpm"
+
+      - name: Extract and verify RPM contents
+        run: |
+          rpm -qlp *.rpm
+          rpm2cpio *.rpm | cpio -idmv
+          test -f usr/local/bin/everythingxd
+          test -f usr/local/bin/ev
+          test -f etc/systemd/system/everythingxd.service
+
+      - name: Install and run e2e test
+        run: |
+          sudo cp usr/local/bin/everythingxd /usr/local/bin/
+          sudo cp usr/local/bin/ev /usr/local/bin/
+          sudo chmod +x /usr/local/bin/everythingxd /usr/local/bin/ev
+          ev --version
+          everythingxd --version
+          mkdir -p bin
+          ln -s /usr/local/bin/everythingxd bin/everythingxd
+          go build -tags fts5 -o e2eTest/e2etest e2eTest/main.go
+          sudo e2eTest/e2etest
+
+      - name: Cleanup
+        if: always()
+        run: |
+          sudo rm -f /usr/local/bin/everythingxd /usr/local/bin/ev || true
