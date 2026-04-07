@@ -2,7 +2,7 @@ name: Build, Test and Release
 
 on:
   push:
-    branches: [ "main", "linux-support" ]
+    branches: [ "main", "linux-support", "linux-arm64" ]
     tags:
       - 'v*'
   pull_request:
@@ -27,6 +27,10 @@ jobs:
           - runner: ubuntu-latest
             arch: amd64
             os_name: linux-amd64
+            platform: linux
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            os_name: linux-arm64
             platform: linux
 
     steps:
@@ -151,7 +155,7 @@ jobs:
       if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       uses: actions/upload-artifact@v4
       with:
-        name: everythingx_deb
+        name: everythingx_deb_${{ matrix.arch }}
         path: bin/*.deb
         if-no-files-found: error
 
@@ -159,7 +163,7 @@ jobs:
       if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       uses: actions/upload-artifact@v4
       with:
-        name: everythingx_rpm
+        name: everythingx_rpm_${{ matrix.arch }}
         path: bin/*.rpm
         if-no-files-found: error
 
@@ -195,10 +199,17 @@ jobs:
         run: sudo rm -rf /Applications/EverythingX.app
 
   test-linux-deb:
-    name: Test Linux .deb
+    name: Test Linux .deb (${{ matrix.arch }})
     needs: build
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -213,7 +224,7 @@ jobs:
       - name: Download deb artifact
         uses: actions/download-artifact@v4
         with:
-          name: everythingx_deb
+          name: everythingx_deb_${{ matrix.arch }}
 
       - name: Install .deb package
         run: sudo dpkg -i *.deb
@@ -238,10 +249,17 @@ jobs:
         run: sudo dpkg -r everythingx || true
 
   test-linux-rpm:
-    name: Test Linux .rpm
+    name: Test Linux .rpm (${{ matrix.arch }})
     needs: build
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -256,7 +274,7 @@ jobs:
       - name: Download rpm artifact
         uses: actions/download-artifact@v4
         with:
-          name: everythingx_rpm
+          name: everythingx_rpm_${{ matrix.arch }}
 
       - name: Extract and install RPM contents
         run: |
@@ -308,8 +326,8 @@ jobs:
 
     - name: Collect packages
       run: |
-        cp artifacts/everythingx_deb/*.deb .
-        cp artifacts/everythingx_rpm/*.rpm .
+        cp artifacts/everythingx_deb_*/*.deb .
+        cp artifacts/everythingx_rpm_*/*.rpm .
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2

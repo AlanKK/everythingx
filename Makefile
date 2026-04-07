@@ -18,6 +18,7 @@ FYNE := $(shell go env GOPATH)/bin/fyne
 NFPM := $(shell go env GOPATH)/bin/nfpm
 
 TARGET_OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+GOARCH := $(shell go env GOARCH)
 
 # App/package metadata
 APP_NAME := EverythingX
@@ -105,14 +106,14 @@ pkg: app
 		$(PKG_OUTPUT)
 else
 zip: build
-	tar czf everythingx-linux-amd64.tar.gz -C $(BIN_DIR) everythingxd ev && \
-	zip -j everythingx-linux-amd64.tar.gz install-linux.sh uninstall-linux.sh cmd/service/everythingxd.service
+	tar czf everythingx-linux-$(GOARCH).tar.gz -C $(BIN_DIR) everythingxd ev && \
+	zip -j everythingx-linux-$(GOARCH).tar.gz install-linux.sh uninstall-linux.sh cmd/service/everythingxd.service
 
 deb: build
-	$(NFPM) pkg --packager deb --target $(BIN_DIR)/
+	GOARCH=$(GOARCH) $(NFPM) pkg --packager deb --target $(BIN_DIR)/
 
 rpm: build
-	$(NFPM) pkg --packager rpm --target $(BIN_DIR)/
+	GOARCH=$(GOARCH) $(NFPM) pkg --packager rpm --target $(BIN_DIR)/
 endif
 
 .PHONY: build test deps lint install clean uninstall zip package app pkg deb rpm

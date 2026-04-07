@@ -55,30 +55,30 @@ The `everythingxd` daemon continuously indexes your files to ensure fast and acc
 
 ## Installation
 
-### macOS
-```bash
-make build
-sudo make install   # installs via launchd
-```
-Full Disk Access must be granted to `everythingxd` in System Preferences for complete indexing.
+Download the latest package for your platform from the [Releases](https://github.com/AlanKK/everythingx/releases/latest) page:
+
+| Platform | Package |
+|---|---|
+| macOS (Apple Silicon) | `EverythingX_macos-apple-arm64.pkg` |
+| macOS (Intel) | `EverythingX_macos-intel-amd64.pkg` |
+| Linux x86_64 (Debian/Ubuntu) | `.deb` (amd64) |
+| Linux x86_64 (Fedora/RHEL) | `.rpm` (amd64) |
+| Linux ARM64 (Debian/Ubuntu) | `.deb` (arm64) |
+| Linux ARM64 (Fedora/RHEL) | `.rpm` (arm64) |
+
+### MacOS
+Double-click the `.pkg` file to install. Grant Full Disk Access to `everythingxd` in `System Preferences -> Privacy & Security -> Full Disk Access` for complete indexing.
 
 ### Linux
 ```bash
-# Install build dependencies (first time only)
-sudo apt-get install libgl1-mesa-dev xorg-dev gcc
+# Debian/Ubuntu
+sudo dpkg -i everythingx_*.deb
 
-make build
-sudo make install   # installs via systemd
+# Fedora/RHEL
+sudo rpm -i everythingx_*.rpm
 ```
 
-The daemon requires root to use fanotify. The data directory `/var/lib/everythingx/` is created automatically on first run.
-
-### Linux packages (.deb / .rpm)
-Pre-built packages are available on the [Releases](https://github.com/AlanKK/everythingx/releases) page, or build them yourself:
-```bash
-make deb   # requires nfpm
-make rpm   # requires nfpm
-```
+The daemon requires root for fanotify (kernel 5.9+). The data directory `/var/lib/everythingx/` is created automatically.
 
 ## Running Locally (without installing)
 ```bash
