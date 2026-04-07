@@ -72,26 +72,26 @@ jobs:
 
     # macOS: build .pkg
     - name: Install fyne
-      if: matrix.platform == 'darwin' && github.event_name != 'pull_request'
+      if: matrix.platform == 'darwin' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
     - name: Build macOS .pkg
-      if: matrix.platform == 'darwin' && github.event_name != 'pull_request'
+      if: matrix.platform == 'darwin' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       run: |
         PKG_VERSION=${{ steps.pkg.outputs.version }} make pkg
         mv EverythingX.pkg EverythingX_${{ matrix.os_name }}.pkg
 
     # Linux: build .deb and .rpm
     - name: Install nfpm
-      if: matrix.platform == 'linux' && github.event_name != 'pull_request'
+      if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
     - name: Build .deb package
-      if: matrix.platform == 'linux' && github.event_name != 'pull_request'
+      if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       run: VERSION=${{ steps.pkg.outputs.version }} make deb
 
     - name: Build .rpm package
-      if: matrix.platform == 'linux' && github.event_name != 'pull_request'
+      if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       run: VERSION=${{ steps.pkg.outputs.version }} make rpm
 
     # Upload artifacts
@@ -121,7 +121,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload artifact (macOS pkg)
-      if: matrix.platform == 'darwin' && github.event_name != 'pull_request'
+      if: matrix.platform == 'darwin' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       uses: actions/upload-artifact@v4
       with:
         name: everythingx_pkg_${{ matrix.os_name }}
@@ -142,7 +142,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload artifact (Linux deb)
-      if: matrix.platform == 'linux' && github.event_name != 'pull_request'
+      if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       uses: actions/upload-artifact@v4
       with:
         name: everythingx_deb
@@ -150,18 +150,18 @@ jobs:
         if-no-files-found: error
 
     - name: Upload artifact (Linux rpm)
-      if: matrix.platform == 'linux' && github.event_name != 'pull_request'
+      if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
       uses: actions/upload-artifact@v4
       with:
         name: everythingx_rpm
         path: bin/*.rpm
         if-no-files-found: error
 
-  # Package installation tests — run on pushes to main and tags, not on PRs
+  # Package installation tests — run on tags and manual dispatch only
   test-macos-pkg:
     name: Test macOS pkg (${{ matrix.os_name }})
     needs: build
-    if: github.event_name != 'pull_request'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -191,7 +191,7 @@ jobs:
   test-linux-deb:
     name: Test Linux .deb
     needs: build
-    if: github.event_name != 'pull_request'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -234,7 +234,7 @@ jobs:
   test-linux-rpm:
     name: Test Linux .rpm
     needs: build
-    if: github.event_name != 'pull_request'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -255,7 +255,8 @@ jobs:
       - name: Extract and install RPM contents
         run: |
           rpm -qlp *.rpm
-          mkdir rpm-extract && cd rpm-extract
+          mkdir rpm-extract
+          cd rpm-extract
           rpm2cpio ../*.rpm | cpio -idmv
           sudo cp usr/local/bin/everythingxd /usr/local/bin/
           sudo cp usr/local/bin/ev /usr/local/bin/
