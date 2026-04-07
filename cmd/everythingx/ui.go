@@ -126,6 +126,7 @@ type tooltipCell struct {
 
 func newTooltipCell() *tooltipCell {
 	c := &tooltipCell{}
+	c.Scroll = container.ScrollNone
 	c.Truncation = fyne.TextTruncateEllipsis
 	c.RichText.ExtendBaseWidget(c)
 	return c
@@ -282,9 +283,9 @@ func showAbout() {
 
 **Author:** AlanKK
 
-**License:** MIT 
-
 More info on [Github](` + GithubURL + `)
+
+Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 `)
 
 	var img *canvas.Image
@@ -328,9 +329,6 @@ func loadUI() {
 		m := fyne.NewMenu("EverythingX",
 			fyne.NewMenuItem("Show EverythingX", func() {
 				w.Show()
-			}),
-			fyne.NewMenuItem("Settings", func() {
-				showSettings()
 			}),
 			fyne.NewMenuItem("About...", func() {
 				showAbout()

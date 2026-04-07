@@ -19,6 +19,11 @@ contents:
     file_info:
       mode: 0755
 
+  - src: bin/everythingx
+    dst: /usr/local/bin/everythingx
+    file_info:
+      mode: 0755
+
   - src: bin/ev
     dst: /usr/local/bin/ev
     file_info:
