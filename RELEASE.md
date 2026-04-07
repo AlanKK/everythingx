@@ -18,7 +18,7 @@ Package install tests (`.pkg`, `.deb`, `.rpm`) only run on manual dispatch and t
    ```bash
    gh workflow run main.yml
    ```
-   Wait for all jobs to pass: build × 3 + package tests × 3 (macOS pkg × 2, Linux deb, Linux rpm).
+   Wait for all jobs to pass: build × 4 + package tests × 4 (macOS pkg × 2, Linux deb × 2, Linux rpm × 2).
 
 3. Tag the release:
    ```bash
