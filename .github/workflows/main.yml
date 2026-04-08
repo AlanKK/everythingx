@@ -2,7 +2,7 @@ name: Build, Test and Release
 
 on:
   push:
-    branches: [ "main", "linux-support", "linux-arm64" ]
+    branches: [ "**" ]
     tags:
       - 'v*'
   pull_request:
@@ -77,31 +77,31 @@ jobs:
       run: make build
 
     - name: End-to-end test
-      if: matrix.platform == 'darwin'
+      if: matrix.platform == 'darwin' && startsWith(github.ref, 'refs/tags/v')
       run: make e2e
 
     # macOS: build .pkg
     - name: Install fyne
-      if: matrix.platform == 'darwin' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+      if: matrix.platform == 'darwin'
       run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
     - name: Build macOS .pkg
-      if: matrix.platform == 'darwin' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+      if: matrix.platform == 'darwin'
       run: |
         PKG_VERSION=${{ steps.pkg.outputs.version }} make pkg
         mv EverythingX.pkg EverythingX_${{ matrix.os_name }}.pkg
 
     # Linux: build .deb and .rpm
     - name: Install nfpm
-      if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+      if: matrix.platform == 'linux'
       run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
     - name: Build .deb package
-      if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+      if: matrix.platform == 'linux'
       run: VERSION=${{ steps.pkg.outputs.version }} make deb
 
     - name: Build .rpm package
-      if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+      if: matrix.platform == 'linux'
       run: VERSION=${{ steps.pkg.outputs.version }} make rpm
 
     # Upload artifacts
@@ -131,7 +131,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload artifact (macOS pkg)
-      if: matrix.platform == 'darwin' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+      if: matrix.platform == 'darwin'
       uses: actions/upload-artifact@v4
       with:
         name: everythingx_pkg_${{ matrix.os_name }}
@@ -152,7 +152,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload artifact (Linux deb)
-      if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+      if: matrix.platform == 'linux'
       uses: actions/upload-artifact@v4
       with:
         name: everythingx_deb_${{ matrix.arch }}
@@ -160,18 +160,18 @@ jobs:
         if-no-files-found: error
 
     - name: Upload artifact (Linux rpm)
-      if: matrix.platform == 'linux' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+      if: matrix.platform == 'linux'
       uses: actions/upload-artifact@v4
       with:
         name: everythingx_rpm_${{ matrix.arch }}
         path: bin/*.rpm
         if-no-files-found: error
 
-  # Package installation tests — run on tags and manual dispatch only
+  # Package installation tests — run on tags only
   test-macos-pkg:
     name: Test macOS pkg (${{ matrix.os_name }})
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -201,7 +201,7 @@ jobs:
   test-linux-deb:
     name: Test Linux .deb (${{ matrix.arch }})
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -251,7 +251,7 @@ jobs:
   test-linux-rpm:
     name: Test Linux .rpm (${{ matrix.arch }})
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
