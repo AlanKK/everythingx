@@ -1,4 +1,4 @@
-# ![EverythingX icon](assets/icons/simple/black/simple-black-48.png) EverythingX
+# ![EverythingX icon](assets/icons/retina/white-orange/folder-white-orange-32@2x.png) EverythingX
 
 ## Overview
 EverythingX is a _blazing_ fast file name search tool for macOS and Linux.
