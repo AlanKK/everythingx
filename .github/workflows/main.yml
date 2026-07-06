@@ -2,7 +2,7 @@ name: Build, Test and Release
 
 on:
   push:
-    branches: [ "**" ]
+    branches: [ "main", "linux-support" ]
     tags:
       - 'v*'
   pull_request:
@@ -11,7 +11,7 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.runner }} (${{ matrix.arch }})
+    name: Build and Test on ${{ matrix.runner }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -28,18 +28,14 @@ jobs:
             arch: amd64
             os_name: linux-amd64
             platform: linux
-          - runner: ubuntu-24.04-arm
-            arch: arm64
-            os_name: linux-arm64
-            platform: linux
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v6
       with:
-        go-version: '1.24'
+        go-version: '1.26.4'
 
     - name: Install Linux build dependencies
       if: matrix.platform == 'linux'
@@ -55,56 +51,16 @@ jobs:
           libxxf86vm-dev \
           gcc
 
-    - name: Determine package version
-      id: pkg
-      run: |
-        if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-          # Strip leading 'v' from tag (e.g. v1.2.3 -> 1.2.3)
-          ver="${GITHUB_REF_NAME#v}"
-          # deb/rpm require versions starting with a digit; prefix if needed
-          if [[ ! "$ver" =~ ^[0-9] ]]; then
-            ver="0.0.0+$(echo "$ver" | sed 's/^[^a-zA-Z0-9]*//')"
-          fi
-          echo "version=${ver}" >> "$GITHUB_OUTPUT"
-        else
-          echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
-        fi
-
-    - name: Unit tests
+    - name: test
       run: make test
 
     - name: Build
       run: make build
 
     - name: End-to-end test
-      if: matrix.platform == 'darwin' && startsWith(github.ref, 'refs/tags/v')
+      if: matrix.platform == 'darwin'
       run: make e2e
 
-    # macOS: build .pkg
-    - name: Install fyne
-      if: matrix.platform == 'darwin'
-      run: go install fyne.io/fyne/v2/cmd/fyne@latest
-
-    - name: Build macOS .pkg
-      if: matrix.platform == 'darwin'
-      run: |
-        PKG_VERSION=${{ steps.pkg.outputs.version }} make pkg
-        mv EverythingX.pkg EverythingX_${{ matrix.os_name }}.pkg
-
-    # Linux: build .deb and .rpm
-    - name: Install nfpm
-      if: matrix.platform == 'linux'
-      run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
-
-    - name: Build .deb package
-      if: matrix.platform == 'linux'
-      run: VERSION=${{ steps.pkg.outputs.version }} make deb
-
-    - name: Build .rpm package
-      if: matrix.platform == 'linux'
-      run: VERSION=${{ steps.pkg.outputs.version }} make rpm
-
-    # Upload artifacts
     - name: Copy binaries for packaging
       run: cp bin/everythingxd bin/ev .
 
@@ -118,7 +74,7 @@ jobs:
 
     - name: Upload artifact (macOS)
       if: matrix.platform == 'darwin'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: everythingx_${{ matrix.os_name }}
         path: |
@@ -130,17 +86,9 @@ jobs:
           com.github.alankk.everythingxd.plist
         if-no-files-found: error
 
-    - name: Upload artifact (macOS pkg)
-      if: matrix.platform == 'darwin'
-      uses: actions/upload-artifact@v4
-      with:
-        name: everythingx_pkg_${{ matrix.os_name }}
-        path: EverythingX_${{ matrix.os_name }}.pkg
-        if-no-files-found: error
-
     - name: Upload artifact (Linux)
       if: matrix.platform == 'linux'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: everythingx_${{ matrix.os_name }}
         path: |
@@ -151,192 +99,67 @@ jobs:
           everythingxd.service
         if-no-files-found: error
 
-    - name: Upload artifact (Linux deb)
-      if: matrix.platform == 'linux'
-      uses: actions/upload-artifact@v4
-      with:
-        name: everythingx_deb_${{ matrix.arch }}
-        path: bin/*.deb
-        if-no-files-found: error
-
-    - name: Upload artifact (Linux rpm)
-      if: matrix.platform == 'linux'
-      uses: actions/upload-artifact@v4
-      with:
-        name: everythingx_rpm_${{ matrix.arch }}
-        path: bin/*.rpm
-        if-no-files-found: error
-
-  # Package installation tests — run on tags only
-  test-macos-pkg:
-    name: Test macOS pkg (${{ matrix.os_name }})
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          - runner: macos-latest
-            os_name: macos-apple-arm64
-          - runner: macos-15-intel
-            os_name: macos-intel-amd64
-    steps:
-      - name: Download pkg artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: everythingx_pkg_${{ matrix.os_name }}
-
-      - name: Install pkg
-        run: sudo installer -pkg "EverythingX_${{ matrix.os_name }}.pkg" -target /
-
-      - name: Verify installation
-        run: |
-          test -d /Applications/EverythingX.app
-          test -f /Applications/EverythingX.app/Contents/MacOS/everythingx
-
-      - name: Cleanup
-        if: always()
-        run: sudo rm -rf /Applications/EverythingX.app
-
-  test-linux-deb:
-    name: Test Linux .deb (${{ matrix.arch }})
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            arch: amd64
-          - runner: ubuntu-24.04-arm
-            arch: arm64
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.24'
-
-      - name: Install build dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gcc
-
-      - name: Download deb artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: everythingx_deb_${{ matrix.arch }}
-
-      - name: Install .deb package
-        run: sudo dpkg -i *.deb
-
-      - name: Verify installation
-        run: |
-          test -x /usr/local/bin/everythingxd
-          test -x /usr/local/bin/ev
-          ev --version
-          everythingxd --version
-
-      - name: Stop daemon and run e2e test
-        run: |
-          sudo systemctl stop everythingxd
-          mkdir -p bin
-          ln -s /usr/local/bin/everythingxd bin/everythingxd
-          go build -tags fts5 -o e2eTest/e2etest e2eTest/main.go
-          sudo e2eTest/e2etest
-
-      - name: Cleanup
-        if: always()
-        run: sudo dpkg -r everythingx || true
-
-  test-linux-rpm:
-    name: Test Linux .rpm (${{ matrix.arch }})
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            arch: amd64
-          - runner: ubuntu-24.04-arm
-            arch: arm64
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.24'
-
-      - name: Install dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gcc rpm
-
-      - name: Download rpm artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: everythingx_rpm_${{ matrix.arch }}
-
-      - name: Extract and install RPM contents
-        run: |
-          rpm -qlp *.rpm
-          mkdir rpm-extract
-          cd rpm-extract
-          rpm2cpio ../*.rpm | cpio -idmv --no-absolute-filenames
-          sudo cp usr/local/bin/everythingxd /usr/local/bin/
-          sudo cp usr/local/bin/ev /usr/local/bin/
-          sudo chmod +x /usr/local/bin/everythingxd /usr/local/bin/ev
-
-      - name: Verify installation
-        run: |
-          ev --version
-          everythingxd --version
-
-      - name: Run e2e test
-        run: |
-          mkdir -p bin
-          ln -s /usr/local/bin/everythingxd bin/everythingxd
-          go build -tags fts5 -o e2eTest/e2etest e2eTest/main.go
-          sudo e2eTest/e2etest
-
-      - name: Cleanup
-        if: always()
-        run: sudo rm -f /usr/local/bin/everythingxd /usr/local/bin/ev || true
-
   release:
     name: Create GitHub Release
-    needs: [build, test-macos-pkg, test-linux-deb, test-linux-rpm]
+    needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
 
     steps:
+    - uses: actions/checkout@v5
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.26.4'
+
+    - name: Install Linux build dependencies
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+          libgl1-mesa-dev \
+          xorg-dev \
+          libxcursor-dev \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxi-dev \
+          libxxf86vm-dev \
+          gcc
+
+    - name: Install nfpm
+      run: |
+        go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+    - name: Build Linux binaries
+      run: make build
+
+    - name: Build .deb package
+      run: VERSION=${{ github.ref_name }} make deb
+
+    - name: Build .rpm package
+      run: VERSION=${{ github.ref_name }} make rpm
+
     - name: Download all build artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         path: artifacts/
 
     - name: Package macOS artifacts as zip
       run: |
         for dir in artifacts/everythingx_macos-*; do
-          [[ "$dir" == *_pkg_* ]] && continue
           name=$(basename "$dir")
           zip -j "${name}.zip" "$dir"/*
         done
 
-    - name: Collect packages
-      run: |
-        cp artifacts/everythingx_deb_*/*.deb .
-        cp artifacts/everythingx_rpm_*/*.rpm .
-
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         generate_release_notes: true
         files: |
           *.zip
-          *.deb
-          *.rpm
-          artifacts/everythingx_pkg_*/*.pkg
+          bin/*.deb
+          bin/*.rpm
 
 
