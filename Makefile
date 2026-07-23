@@ -79,8 +79,8 @@ clean:
 	rm -f $(TOOLS_DIR)/benchmark-db/benchmark-db $(TOOLS_DIR)/benchmark-db/benchmark.db
 	rm -rf ./everythingx_test/*
 	rm -f ./everythingx.zip ./everythingx-linux-*.tar.gz
-	rm -f ./EverythingX.pkg
-	rm -rf ./EverythingX.app
+	rm -f ./EverythingX.pkg ./EverythingX_*.pkg
+	rm -rf ./EverythingX.app ./pkgroot ./pkgscripts
 
 ifeq ($(TARGET_OS),darwin)
 uninstall:
@@ -98,12 +98,30 @@ ifeq ($(TARGET_OS),darwin)
 zip: build app
 	zip -r everythingx.zip $(BIN_DIR)/* install.sh uninstall.sh EverythingX.app
 
+# Full installer: GUI app + CLI + daemon + launchd service, laid out under a
+# staging root so pkgbuild reproduces the same layout install.sh would create.
+PKG_ROOT := pkgroot
+PKG_SCRIPTS := pkgscripts
 pkg: app
+	rm -rf $(PKG_ROOT) $(PKG_SCRIPTS)
+	mkdir -p $(PKG_ROOT)/Applications \
+	         $(PKG_ROOT)/usr/local/bin \
+	         $(PKG_ROOT)/Library/LaunchDaemons
+	cp -R EverythingX.app $(PKG_ROOT)/Applications/
+	cp $(SERVICE_BIN) $(PKG_ROOT)/usr/local/bin/everythingxd
+	cp $(CLI_BIN)     $(PKG_ROOT)/usr/local/bin/ev
+	chmod +x $(PKG_ROOT)/usr/local/bin/everythingxd $(PKG_ROOT)/usr/local/bin/ev
+	cp $(SERVICE_DIR)/com.github.alankk.everythingxd.plist \
+	   $(PKG_ROOT)/Library/LaunchDaemons/
+	mkdir -p $(PKG_SCRIPTS)
+	cp package/scripts/postinstall-macos.sh $(PKG_SCRIPTS)/postinstall
+	chmod +x $(PKG_SCRIPTS)/postinstall
 	pkgbuild \
-		--component EverythingX.app \
+		--root $(PKG_ROOT) \
+		--scripts $(PKG_SCRIPTS) \
 		--identifier $(PKG_IDENTIFIER) \
 		--version $(PKG_VERSION) \
-		--install-location /Applications \
+		--install-location / \
 		$(PKG_OUTPUT)
 else
 zip: build

@@ -44,7 +44,7 @@ CI runs on the tag and publishes the release. Tag-created events use `GITHUB_TOK
 
 | Artifact | Platform | Contents |
 |---|---|---|
-| `EverythingX_macos-apple-arm64.pkg` | macOS Apple Silicon | Installer package (installs `EverythingX.app` to `/Applications`) |
+| `EverythingX_macos-apple-arm64.pkg` | macOS Apple Silicon | Installer package: `EverythingX.app` → `/Applications`, `ev`/`everythingxd` → `/usr/local/bin`, launchd plist → `/Library/LaunchDaemons`; postinstall starts the daemon |
 | `EverythingX_macos-intel-amd64.pkg` | macOS Intel | Same as above |
 | `everythingx_<version>_amd64.deb` | Linux (Debian/Ubuntu) | `everythingxd`, `ev`, systemd service, desktop entry |
 | `everythingx-<version>-1.x86_64.rpm` | Linux (Fedora/RHEL) | Same as above |
