@@ -109,6 +109,9 @@ jobs:
           libxinerama-dev \
           libxi-dev \
           libxxf86vm-dev \
+          libwayland-dev \
+          libxkbcommon-dev \
+          wayland-protocols \
           gcc
 
     - name: test
@@ -186,6 +189,9 @@ jobs:
           libxinerama-dev \
           libxi-dev \
           libxxf86vm-dev \
+          libwayland-dev \
+          libxkbcommon-dev \
+          wayland-protocols \
           gcc
 
     - name: Install nfpm
