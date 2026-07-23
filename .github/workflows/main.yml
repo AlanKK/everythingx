@@ -135,33 +135,12 @@ jobs:
         PKG_OUTPUT=EverythingX_${{ matrix.os_name }}.pkg \
         make pkg
 
-    - name: Copy binaries for packaging (Linux)
-      if: matrix.platform == 'linux'
-      run: cp bin/everythingxd bin/ev .
-
-    - name: Copy Linux service file for packaging
-      if: matrix.platform == 'linux'
-      run: cp cmd/service/everythingxd.service .
-
     - name: Upload artifact (macOS .pkg)
       if: matrix.platform == 'darwin'
       uses: actions/upload-artifact@v7
       with:
         name: everythingx_pkg_${{ matrix.os_name }}
         path: EverythingX_${{ matrix.os_name }}.pkg
-        if-no-files-found: error
-
-    - name: Upload artifact (Linux)
-      if: matrix.platform == 'linux'
-      uses: actions/upload-artifact@v7
-      with:
-        name: everythingx_${{ matrix.os_name }}
-        path: |
-          ev
-          everythingxd
-          install-linux.sh
-          uninstall-linux.sh
-          everythingxd.service
         if-no-files-found: error
 
   release:
