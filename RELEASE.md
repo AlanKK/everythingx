@@ -4,36 +4,40 @@
 
 | Trigger | What runs |
 |---|---|
-| Push to `main` | Build + unit tests + macOS e2e tests. No package builds. |
-| Manual dispatch | Full pipeline: build, package builds, install tests on all platforms. |
-| Tag `v*` | Same as manual dispatch, then creates a GitHub Release if all tests pass. |
+| Push/merge to `main` | **Auto-release.** Build + tests on all platforms, then auto-increments the build counter and publishes a "Latest" GitHub Release with the macOS zips + Linux `.deb`/`.rpm`. |
+| Tag `v*` | Build + tests, then a GitHub Release using the tag's version. |
+| PR / other branch / manual dispatch | Build + unit tests only (`0.0.0-dev`). No release. |
 
-Package install tests (`.pkg`, `.deb`, `.rpm`) only run on manual dispatch and tags — not on every push to `main`.
+Runs are serialized per-ref (`concurrency`), so two merges to `main` in quick succession queue rather than race — each gets its own incremented version.
 
-## Creating a Release
+## Releasing
 
-1. Push your changes to `main` and wait for CI to go green.
+**You don't have to do anything.** Every merge to `main` automatically:
 
-2. Run the full pipeline manually to verify packages install correctly on all platforms:
-   ```bash
-   gh workflow run main.yml
-   ```
-   Wait for all jobs to pass: build × 4 + package tests × 4 (macOS pkg × 2, Linux deb × 2, Linux rpm × 2).
+1. Reads the highest existing `v0.0.N` tag and computes the next one (`v0.0.N+1`).
+2. Builds and tests on every platform.
+3. If everything passes, creates that tag at the merge commit and publishes it as the **Latest** GitHub Release with auto-generated notes and all packages attached.
 
-3. Tag the release:
-   ```bash
-   git tag v1.0-beta-1
-   git push origin v1.0-beta-1
-   ```
+If any build or test fails, no tag or release is created — fix and merge again.
 
-4. CI runs the full pipeline on the tag. If all jobs pass, a GitHub Release is created automatically with release notes and all packages.
+### Manual (semver) releases
+
+To cut a versioned release outside the build counter (e.g. a real `v1.0.0`), tag it yourself:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+CI runs on the tag and publishes the release. Tag-created events use `GITHUB_TOKEN`, so the auto-tag from a `main` build never re-triggers the workflow.
 
 ## Version Scheme
 
-- Tags must start with `v` followed by a digit (e.g., `v1.0.0`, `v1.0-beta-1`, `v2.1.0-rc.1`)
-- The `v` prefix is stripped for package versions (e.g., `v1.0-beta-1` → `1.0-beta-1`)
-- Non-tag builds use `0.0.0-dev` as the package version
-- Version, commit, and build date are embedded in all binaries via `-ldflags`
+- **Auto builds** (merge to `main`) use a monotonic build counter: `v0.0.1`, `v0.0.2`, … derived from the latest `v0.0.N` tag.
+- **Manual tags** must start with `v` followed by a digit (e.g., `v1.0.0`, `v1.0-beta-1`, `v2.1.0-rc.1`). Bump major/minor by tagging manually; the counter resumes from the next `v0.0.N`.
+- The `v` prefix is stripped for package versions (e.g., `v0.0.42` → `0.0.42`). deb/rpm require a version starting with a digit.
+- PR / feature-branch / manual-dispatch builds use `0.0.0-dev`.
+- Version, commit, and build date are embedded in all binaries via `-ldflags`.
 - Check with: `ev --version` or `everythingxd --version`
 
 ## Artifacts Produced
