@@ -25,7 +25,11 @@ import (
 // TODO:
 // File icons
 
-var maxSearchResults int = 1000
+const maxSearchResults int = 1000
+
+// searchDebounce is how long to wait after the last keystroke before running a
+// search, so fast typing doesn't spawn a search (and DB query) per character.
+const searchDebounce = 120 * time.Millisecond
 
 type RowData struct {
 	Name         []string
@@ -35,13 +39,33 @@ type RowData struct {
 	SearchResult *shared.SearchResult
 }
 
+// searchCounter is bumped on every search request. Each search goroutine
+// captures its own id and bails out (including inside the final fyne.Do
+// closure) once a newer search has started, so a slow/older search can never
+// overwrite the results of a newer one.
 var searchCounter atomic.Int64
+
+// searchDebounceTimer coalesces rapid keystrokes into a single search. It is
+// only ever touched from the UI thread (in entry.OnChanged).
+var searchDebounceTimer *time.Timer
+
+// clearResults empties the table and resets the status bar. Must run on the UI
+// thread.
+func clearResults(t *widget.Table, statusBar *widget.Label) {
+	searchCounter.Add(1) // invalidate any in-flight search
+	tableData = nil
+	lastResultText = "0 objects"
+	t.Refresh()
+	t.ScrollToTop()
+	statusBar.SetText(lastResultText)
+}
 
 // handleAutoCompleteEntryChanged runs the search off the UI thread so that
 // scrolling and other interactions remain responsive while the DB query and
 // per-file stat calls execute.
 func handleAutoCompleteEntryChanged(searchText string, t *widget.Table, statusBar *widget.Label) {
 	if len(searchText) == 0 {
+		fyne.Do(func() { clearResults(t, statusBar) })
 		return
 	}
 
@@ -98,9 +122,16 @@ func handleAutoCompleteEntryChanged(searchText string, t *widget.Table, statusBa
 		}
 
 		fyne.Do(func() {
+			// Re-check on the UI thread: a newer search may have started
+			// between the check above and this closure running. Without this,
+			// an older/slower search could overwrite fresher results.
+			if searchCounter.Load() != myID {
+				return
+			}
 			tableData = newData
 			lastResultText = resultText
 			t.Refresh()
+			t.ScrollToTop() // reset scroll so new results start at the top
 			statusBar.SetText(resultText)
 		})
 
@@ -133,7 +164,19 @@ func newTooltipCell() *tooltipCell {
 }
 
 func (c *tooltipCell) MouseIn(e *desktop.MouseEvent) {
-	c.SetToolTip(getToolTipForFile(c.path))
+	// getToolTipForFile does blocking file I/O (os.Stat + user/group lookups).
+	// Run it off the UI thread so hovering over rows never stalls the UI, then
+	// apply the result on the UI thread — but only if the pointer is still over
+	// the same file (the cell may have been recycled to another row meanwhile).
+	path := c.path
+	go func() {
+		tip := getToolTipForFile(path)
+		fyne.Do(func() {
+			if c.path == path {
+				c.SetToolTip(tip)
+			}
+		})
+	}()
 	c.RichText.MouseIn(e)
 }
 
@@ -309,14 +352,6 @@ Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 	w.Show()
 }
 
-func showSettings() {
-	// Implement your settings window here
-	w := fyne.CurrentApp().NewWindow("Settings")
-	w.SetContent(widget.NewLabel("Settings content goes here"))
-	w.Resize(fyne.NewSize(400, 300))
-	w.Show()
-}
-
 var statusBar *widget.Label
 
 func loadUI() {
@@ -348,8 +383,20 @@ func loadUI() {
 	statusBar = widget.NewLabel("0 objects")
 	statusBar.TextStyle = fyne.TextStyle{Bold: true}
 
+	// Debounce keystrokes: only search once typing pauses, so fast typing
+	// doesn't fire a DB query per character. Runs on the UI thread.
 	entry.OnChanged = func(s string) {
-		handleAutoCompleteEntryChanged(s, table, statusBar)
+		if searchDebounceTimer != nil {
+			searchDebounceTimer.Stop()
+		}
+		if len(s) == 0 {
+			// Clear immediately; no need to wait for the debounce.
+			clearResults(table, statusBar)
+			return
+		}
+		searchDebounceTimer = time.AfterFunc(searchDebounce, func() {
+			handleAutoCompleteEntryChanged(s, table, statusBar)
+		})
 	}
 
 	content := container.NewBorder(

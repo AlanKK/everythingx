@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   # Compute the version once per run and decide whether to release:
-  #  - push to main -> auto-increment build counter (v0.0.N), publish "Latest" release
+  #  - push to main -> auto-increment build counter (v1.0.N), publish "Latest" release
   #  - tag v*       -> use the tag version, publish release
   #  - anything else -> 0.0.0-dev, no release
   version:
@@ -52,12 +52,12 @@ jobs:
           elif [[ "$EVENT" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
             # Auto build-counter release on every merge to main.
             git fetch --tags --force
-            latest=$(git tag -l 'v0.0.*' \
-              | sed -n 's/^v0\.0\.\([0-9][0-9]*\)$/\1/p' \
+            latest=$(git tag -l 'v1.0.*' \
+              | sed -n 's/^v1\.0\.\([0-9][0-9]*\)$/\1/p' \
               | sort -n | tail -1)
             next=$(( ${latest:-0} + 1 ))
-            ver="0.0.${next}"
-            tag="v0.0.${next}"
+            ver="1.0.${next}"
+            tag="v1.0.${next}"
             release=true
           else
             # Feature-branch push / PR / manual dispatch: build and test only.
@@ -109,6 +109,9 @@ jobs:
           libxinerama-dev \
           libxi-dev \
           libxxf86vm-dev \
+          libwayland-dev \
+          libxkbcommon-dev \
+          wayland-protocols \
           gcc
 
     - name: test
@@ -186,6 +189,9 @@ jobs:
           libxinerama-dev \
           libxi-dev \
           libxxf86vm-dev \
+          libwayland-dev \
+          libxkbcommon-dev \
+          wayland-protocols \
           gcc
 
     - name: Install nfpm
