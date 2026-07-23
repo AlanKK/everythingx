@@ -11,45 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  test-macos-zip:
-    name: Test macOS zip (${{ matrix.os_name }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          - runner: macos-latest
-            os_name: macos-apple-arm64
-          - runner: macos-15-intel
-            os_name: macos-intel-amd64
-    env:
-      TAG: ${{ inputs.tag }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.24'
-
-      - name: Download release asset
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release download "$TAG" --pattern "everythingx_${{ matrix.os_name }}.zip"
-
-      - name: Extract and verify binaries
-        run: |
-          mkdir -p bin
-          unzip "everythingx_${{ matrix.os_name }}.zip" -d extracted/
-          cp extracted/everythingxd extracted/ev bin/
-          chmod +x bin/everythingxd bin/ev
-          bin/ev --version
-          bin/everythingxd --version
-
-      - name: Run e2e test
-        run: |
-          go build -tags fts5 -o e2eTest/e2etest e2eTest/main.go
-          e2eTest/e2etest
-
   test-macos-pkg:
     name: Test macOS pkg (${{ matrix.os_name }})
     runs-on: ${{ matrix.runner }}

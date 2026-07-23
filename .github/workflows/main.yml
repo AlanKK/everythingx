@@ -50,14 +50,14 @@ jobs:
             fi
             release=true
           elif [[ "$EVENT" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            # Auto build-counter release on every merge to main.
+            # Auto build-counter release on every merge to main: v0.2.N-beta.
             git fetch --tags --force
-            latest=$(git tag -l 'v1.0.*' \
-              | sed -n 's/^v1\.0\.\([0-9][0-9]*\)$/\1/p' \
+            latest=$(git tag -l 'v0.2.*-beta' \
+              | sed -n 's/^v0\.2\.\([0-9][0-9]*\)-beta$/\1/p' \
               | sort -n | tail -1)
             next=$(( ${latest:-0} + 1 ))
-            ver="1.0.${next}"
-            tag="v1.0.${next}"
+            ver="0.2.${next}-beta"
+            tag="v0.2.${next}-beta"
             release=true
           else
             # Feature-branch push / PR / manual dispatch: build and test only.
@@ -124,42 +124,23 @@ jobs:
       if: matrix.platform == 'darwin'
       run: make e2e
 
-    - name: Copy binaries for packaging
-      run: cp bin/everythingxd bin/ev .
-
-    - name: Copy macOS plist for packaging
+    - name: Install fyne CLI (macOS)
       if: matrix.platform == 'darwin'
-      run: cp cmd/service/com.github.alankk.everythingxd.plist .
+      run: go install fyne.io/tools/cmd/fyne@latest
 
-    - name: Copy Linux service file for packaging
-      if: matrix.platform == 'linux'
-      run: cp cmd/service/everythingxd.service .
+    - name: Build macOS .app bundle and .pkg installer
+      if: matrix.platform == 'darwin'
+      run: |
+        VERSION=${{ needs.version.outputs.version }} \
+        PKG_OUTPUT=EverythingX_${{ matrix.os_name }}.pkg \
+        make pkg
 
-    - name: Upload artifact (macOS)
+    - name: Upload artifact (macOS .pkg)
       if: matrix.platform == 'darwin'
       uses: actions/upload-artifact@v7
       with:
-        name: everythingx_${{ matrix.os_name }}
-        path: |
-          everythingx
-          ev
-          everythingxd
-          install.sh
-          uninstall.sh
-          com.github.alankk.everythingxd.plist
-        if-no-files-found: error
-
-    - name: Upload artifact (Linux)
-      if: matrix.platform == 'linux'
-      uses: actions/upload-artifact@v7
-      with:
-        name: everythingx_${{ matrix.os_name }}
-        path: |
-          ev
-          everythingxd
-          install-linux.sh
-          uninstall-linux.sh
-          everythingxd.service
+        name: everythingx_pkg_${{ matrix.os_name }}
+        path: EverythingX_${{ matrix.os_name }}.pkg
         if-no-files-found: error
 
   release:
@@ -212,13 +193,6 @@ jobs:
       with:
         path: artifacts/
 
-    - name: Package macOS artifacts as zip
-      run: |
-        for dir in artifacts/everythingx_macos-*; do
-          name=$(basename "$dir")
-          zip -j "${name}.zip" "$dir"/*
-        done
-
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v3
       with:
@@ -230,7 +204,7 @@ jobs:
         generate_release_notes: true
         make_latest: "true"
         files: |
-          *.zip
+          artifacts/everythingx_pkg_macos-*/*.pkg
           bin/*.deb
           bin/*.rpm
 

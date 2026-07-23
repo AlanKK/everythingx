@@ -5,7 +5,7 @@ EverythingX is a _blazing_ fast file name search tool for macOS and Linux.
 
 EverythingX attempts to replicate the very excellent Windows utility called [Everything by Voidtools](https://www.voidtools.com/support/everything/).
 
-A background service maintains real-time updates as files and directories change. An app and a command-line tool do fast searches as you type.
+A background service captures real-time updates as files and directories change without scanning your disk. An app and a command-line tool do fast searches as you type.
 
 ## How is EverythingX different from other search tools such as Spotlight, locate, and find?
 - Minimal resource usage
@@ -20,12 +20,12 @@ A background service maintains real-time updates as files and directories change
 
 | Binary | Purpose |
 |--------|---------|
-| `everythingxd` | Background daemon — indexes the filesystem in real time |
+| `everythingxd` | Background daemon — subscribes to filesystem updates in real time |
 | `everythingx` | GUI application — instant search as you type |
 | `ev` | CLI tool — fast command-line search |
 
 ## Command Line Interface (CLI)
-The EverythingX CLI, called `ev`, allows you to search the database for files and directories from the command-line. It is far faster than using `find` but has fewer options. Pipe the output to grep or other tools to filter results.
+The EverythingX CLI, called `ev`, allows you to search for files and directories from the command-line. It is far faster than using `find`. Pipe the output to grep or other tools to filter results.
 
 ### Usage
 ```
@@ -45,7 +45,7 @@ ev -b bashrc
 `everythingx` is a GUI application that provides an intuitive way to search and manage files on your system. Instant search results as you type to find full file paths and details.
 
 ## Background Service
-The `everythingxd` daemon continuously indexes your files to ensure fast and accurate search results.
+The `everythingxd` daemon subscribes to filesystem updates from the kernel. It will occasionally index of your files to ensure fast and accurate search results.
 
 ### Features
 - **Automatic indexing**: Keeps your file index up-to-date in real time.
