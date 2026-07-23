@@ -66,10 +66,10 @@ test:
 # Install targets
 ifeq ($(TARGET_OS),darwin)
 install: build app
-	sudo ./install.sh
+	sudo ./install-local-macos.sh
 else
 install: build
-	sudo ./install-linux.sh
+	sudo ./install-local-linux.sh
 endif
 
 clean:
@@ -96,7 +96,7 @@ app: build
 
 ifeq ($(TARGET_OS),darwin)
 zip: build app
-	zip -r everythingx.zip $(BIN_DIR)/* install.sh uninstall.sh EverythingX.app
+	zip -r everythingx.zip $(BIN_DIR)/* install-local-macos.sh uninstall.sh EverythingX.app
 
 # Full installer: GUI app + CLI + daemon + launchd service, laid out under a
 # staging root so pkgbuild reproduces the same layout install.sh would create.
@@ -126,7 +126,7 @@ pkg: app
 else
 zip: build
 	tar czf everythingx-linux-$(GOARCH).tar.gz -C $(BIN_DIR) everythingxd ev && \
-	zip -j everythingx-linux-$(GOARCH).tar.gz install-linux.sh uninstall-linux.sh cmd/service/everythingxd.service
+	zip -j everythingx-linux-$(GOARCH).tar.gz install-local-linux.sh uninstall-linux.sh cmd/service/everythingxd.service
 
 deb: build
 	GOARCH=$(GOARCH) $(NFPM) pkg --packager deb --target $(BIN_DIR)/

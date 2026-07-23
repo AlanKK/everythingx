@@ -46,8 +46,15 @@ CI runs on the tag and publishes the release. Tag-created events use `GITHUB_TOK
 |---|---|---|
 | `EverythingX_macos-apple-arm64.pkg` | macOS Apple Silicon | Installer package: `EverythingX.app` → `/Applications`, `ev`/`everythingxd` → `/usr/local/bin`, launchd plist → `/Library/LaunchDaemons`; postinstall starts the daemon |
 | `EverythingX_macos-intel-amd64.pkg` | macOS Intel | Same as above |
-| `everythingx_<version>_amd64.deb` | Linux (Debian/Ubuntu) | `everythingxd`, `ev`, systemd service, desktop entry |
-| `everythingx-<version>-1.x86_64.rpm` | Linux (Fedora/RHEL) | Same as above |
+| `everythingx_linux_amd64.deb` | Linux x86_64 (Debian/Ubuntu) | `everythingxd`, `ev`, systemd service, desktop entry |
+| `everythingx_linux_arm64.deb` | Linux arm64 (Debian/Ubuntu) | Same as above |
+| `everythingx_linux_amd64.rpm` | Linux x86_64 (Fedora/RHEL) | Same as above |
+| `everythingx_linux_arm64.rpm` | Linux arm64 (Fedora/RHEL) | Same as above |
+
+Asset names are stable (no embedded version) so `install.sh` can fetch them from
+`releases/latest/download/`. Each Linux runner builds its own arch natively (amd64 on
+`ubuntu-latest`, arm64 on `ubuntu-24.04-arm`) and the `release` job just collects
+every artifact — it no longer rebuilds packages itself.
 
 ## Manual Smoke Test
 
