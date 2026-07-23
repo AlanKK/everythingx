@@ -38,10 +38,20 @@ jobs:
         run: |
           test -d /Applications/EverythingX.app
           test -f /Applications/EverythingX.app/Contents/MacOS/everythingx
+          test -x /usr/local/bin/ev
+          test -x /usr/local/bin/everythingxd
+          test -f /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
+          ev --version
+          everythingxd --version
+          sudo launchctl print system/com.github.alankk.everythingx >/dev/null
 
       - name: Cleanup
         if: always()
-        run: sudo rm -rf /Applications/EverythingX.app || true
+        run: |
+          sudo launchctl bootout system /Library/LaunchDaemons/com.github.alankk.everythingxd.plist || true
+          sudo rm -rf /Applications/EverythingX.app || true
+          sudo rm -f /usr/local/bin/ev /usr/local/bin/everythingxd || true
+          sudo rm -f /Library/LaunchDaemons/com.github.alankk.everythingxd.plist || true
 
   test-linux-deb:
     name: Test Linux .deb (${{ matrix.arch }})
