@@ -124,8 +124,19 @@ jobs:
       if: matrix.platform == 'darwin'
       run: make e2e
 
+    - name: Install fyne CLI (macOS)
+      if: matrix.platform == 'darwin'
+      run: go install fyne.io/tools/cmd/fyne@latest
+
+    - name: Build macOS .app bundle and .pkg installer
+      if: matrix.platform == 'darwin'
+      run: |
+        VERSION=${{ needs.version.outputs.version }} \
+        PKG_OUTPUT=EverythingX_${{ matrix.os_name }}.pkg \
+        make pkg
+
     - name: Copy binaries for packaging
-      run: cp bin/everythingxd bin/ev .
+      run: cp bin/everythingxd bin/ev bin/everythingx .
 
     - name: Copy macOS plist for packaging
       if: matrix.platform == 'darwin'
@@ -147,6 +158,14 @@ jobs:
           install.sh
           uninstall.sh
           com.github.alankk.everythingxd.plist
+        if-no-files-found: error
+
+    - name: Upload artifact (macOS .pkg)
+      if: matrix.platform == 'darwin'
+      uses: actions/upload-artifact@v7
+      with:
+        name: everythingx_pkg_${{ matrix.os_name }}
+        path: EverythingX_${{ matrix.os_name }}.pkg
         if-no-files-found: error
 
     - name: Upload artifact (Linux)
@@ -231,6 +250,7 @@ jobs:
         make_latest: "true"
         files: |
           *.zip
+          artifacts/everythingx_pkg_macos-*/*.pkg
           bin/*.deb
           bin/*.rpm
 

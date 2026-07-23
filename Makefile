@@ -24,9 +24,10 @@ GOARCH := $(shell go env GOARCH)
 APP_NAME := EverythingX
 APP_ID := com.github.alankk.everythingx
 APP_ICON := assets/icons/retina/orange-black/folder-orange-black-512@2x.png
-PKG_VERSION := beta-1
+# Default the installer version to the build VERSION; override for one-offs.
+PKG_VERSION ?= $(VERSION)
 PKG_IDENTIFIER := com.github.alankk.pkg.EverythingX
-PKG_OUTPUT := EverythingX.pkg
+PKG_OUTPUT ?= EverythingX.pkg
 
 # Build metadata
 VERSION ?= $(shell git describe --tags --always --dirty)
