@@ -4,7 +4,7 @@
 
 | Trigger | What runs |
 |---|---|
-| Push/merge to `main` | **Auto-release.** Build + tests on all platforms, then auto-increments the build counter and publishes a "Latest" GitHub Release with the macOS zips + Linux `.deb`/`.rpm`. |
+| Push/merge to `main` | **Auto-release.** Build + tests on all platforms, then auto-increments the build counter and publishes a "Latest" GitHub Release with the macOS `.pkg` installers + Linux `.deb`/`.rpm`. |
 | Tag `v*` | Build + tests, then a GitHub Release using the tag's version. |
 | PR / other branch / manual dispatch | Build + unit tests only (`0.0.0-dev`). No release. |
 
@@ -44,8 +44,6 @@ CI runs on the tag and publishes the release. Tag-created events use `GITHUB_TOK
 
 | Artifact | Platform | Contents |
 |---|---|---|
-| `everythingx_macos-apple-arm64.zip` | macOS Apple Silicon | `everythingxd`, `ev`, install/uninstall scripts, launchd plist (the GUI `EverythingX.app` ships in the `.pkg`) |
-| `everythingx_macos-intel-amd64.zip` | macOS Intel | Same as above |
 | `EverythingX_macos-apple-arm64.pkg` | macOS Apple Silicon | Installer package (installs `EverythingX.app` to `/Applications`) |
 | `EverythingX_macos-intel-amd64.pkg` | macOS Intel | Same as above |
 | `everythingx_<version>_amd64.deb` | Linux (Debian/Ubuntu) | `everythingxd`, `ev`, systemd service, desktop entry |

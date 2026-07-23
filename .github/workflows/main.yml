@@ -135,30 +135,13 @@ jobs:
         PKG_OUTPUT=EverythingX_${{ matrix.os_name }}.pkg \
         make pkg
 
-    - name: Copy binaries for packaging
-      run: cp bin/everythingxd bin/ev bin/everythingx .
-
-    - name: Copy macOS plist for packaging
-      if: matrix.platform == 'darwin'
-      run: cp cmd/service/com.github.alankk.everythingxd.plist .
+    - name: Copy binaries for packaging (Linux)
+      if: matrix.platform == 'linux'
+      run: cp bin/everythingxd bin/ev .
 
     - name: Copy Linux service file for packaging
       if: matrix.platform == 'linux'
       run: cp cmd/service/everythingxd.service .
-
-    - name: Upload artifact (macOS)
-      if: matrix.platform == 'darwin'
-      uses: actions/upload-artifact@v7
-      with:
-        name: everythingx_${{ matrix.os_name }}
-        path: |
-          everythingx
-          ev
-          everythingxd
-          install.sh
-          uninstall.sh
-          com.github.alankk.everythingxd.plist
-        if-no-files-found: error
 
     - name: Upload artifact (macOS .pkg)
       if: matrix.platform == 'darwin'
@@ -231,13 +214,6 @@ jobs:
       with:
         path: artifacts/
 
-    - name: Package macOS artifacts as zip
-      run: |
-        for dir in artifacts/everythingx_macos-*; do
-          name=$(basename "$dir")
-          zip -j "${name}.zip" "$dir"/*
-        done
-
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v3
       with:
@@ -249,7 +225,6 @@ jobs:
         generate_release_notes: true
         make_latest: "true"
         files: |
-          *.zip
           artifacts/everythingx_pkg_macos-*/*.pkg
           bin/*.deb
           bin/*.rpm
