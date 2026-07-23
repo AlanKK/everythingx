@@ -55,30 +55,55 @@ The `everythingxd` daemon subscribes to filesystem updates from the kernel. It w
 
 ## Installation
 
-Download the latest package for your platform from the [Releases](https://github.com/AlanKK/everythingx/releases/latest) page:
+### Quick install (recommended)
+
+One command for both macOS and Linux — it detects your OS and CPU, downloads the
+matching native package from the latest [release](https://github.com/AlanKK/everythingx/releases/latest),
+and installs it (prompting for `sudo`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sh
+```
+
+Pin a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | EVERYTHINGX_VERSION=v0.2.2-beta sh
+```
+
+**Supported platforms:** macOS (Apple Silicon and Intel) and mainstream glibc
+Linux with `systemd`, on `x86_64` and `arm64` — Debian/Ubuntu and derivatives via
+`.deb`, Fedora/RHEL/openSUSE and derivatives via `.rpm`. Alpine/musl is not
+supported.
+
+### Manual download
+
+Prefer to install by hand? Grab the package for your platform from the
+[Releases](https://github.com/AlanKK/everythingx/releases/latest) page:
 
 | Platform | Package |
 |---|---|
 | macOS (Apple Silicon) | `EverythingX_macos-apple-arm64.pkg` |
 | macOS (Intel) | `EverythingX_macos-intel-amd64.pkg` |
-| Linux x86_64 (Debian/Ubuntu) | `.deb` (amd64) |
-| Linux x86_64 (Fedora/RHEL) | `.rpm` (amd64) |
-| Linux ARM64 (Debian/Ubuntu) | `.deb` (arm64) |
-| Linux ARM64 (Fedora/RHEL) | `.rpm` (arm64) |
+| Linux x86_64 (Debian/Ubuntu) | `everythingx_linux_amd64.deb` |
+| Linux x86_64 (Fedora/RHEL) | `everythingx_linux_amd64.rpm` |
+| Linux arm64 (Debian/Ubuntu) | `everythingx_linux_arm64.deb` |
+| Linux arm64 (Fedora/RHEL) | `everythingx_linux_arm64.rpm` |
 
-### MacOS
-Double-click the `.pkg` file to install. Grant Full Disk Access to `everythingxd` in `System Preferences -> Privacy & Security -> Full Disk Access` for complete indexing.
+**macOS:** double-click the `.pkg` file to install. Grant Full Disk Access to
+`everythingxd` in `System Settings -> Privacy & Security -> Full Disk Access` for
+complete indexing.
 
-### Linux
+**Linux:**
 ```bash
 # Debian/Ubuntu
-sudo dpkg -i everythingx_*.deb
+sudo dpkg -i everythingx_linux_*.deb
 
 # Fedora/RHEL
-sudo rpm -i everythingx_*.rpm
+sudo dnf install ./everythingx_linux_*.rpm
 ```
 
-The daemon requires root for fanotify (kernel 5.9+). The data directory `/var/lib/everythingx/` is created automatically.
+The daemon requires root for fanotify (kernel 5.9+). The data directory `/var/lib/everythingx/` is created automatically. The GUI needs libGL/X libraries at runtime; on a minimal/headless server the `everythingxd` daemon and `ev` CLI still work without them.
 
 ## Running Locally (without installing)
 ```bash

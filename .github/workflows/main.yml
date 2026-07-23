@@ -88,6 +88,10 @@ jobs:
             arch: amd64
             os_name: linux-amd64
             platform: linux
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            os_name: linux-arm64
+            platform: linux
 
     steps:
     - uses: actions/checkout@v7
@@ -143,6 +147,34 @@ jobs:
         path: EverythingX_${{ matrix.os_name }}.pkg
         if-no-files-found: error
 
+    - name: Install nfpm (Linux)
+      if: matrix.platform == 'linux'
+      run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+    - name: Build Linux packages (.deb / .rpm)
+      if: matrix.platform == 'linux'
+      run: |
+        VERSION=${{ needs.version.outputs.version }} make deb
+        VERSION=${{ needs.version.outputs.version }} make rpm
+
+    - name: Rename Linux packages to stable asset names
+      if: matrix.platform == 'linux'
+      run: |
+        # nfpm stamps the version + rpm arch into the filename; the installer
+        # downloads by a fixed name, so normalize to everythingx_linux_<arch>.<ext>.
+        mv bin/*.deb "everythingx_linux_${{ matrix.arch }}.deb"
+        mv bin/*.rpm "everythingx_linux_${{ matrix.arch }}.rpm"
+
+    - name: Upload artifact (Linux packages)
+      if: matrix.platform == 'linux'
+      uses: actions/upload-artifact@v7
+      with:
+        name: everythingx_linux_${{ matrix.arch }}
+        path: |
+          everythingx_linux_${{ matrix.arch }}.deb
+          everythingx_linux_${{ matrix.arch }}.rpm
+        if-no-files-found: error
+
   release:
     name: Create GitHub Release
     needs: [version, build]
@@ -152,42 +184,6 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v7
-
-    - name: Set up Go
-      uses: actions/setup-go@v7
-      with:
-        go-version: '1.26.4'
-
-    - name: Install Linux build dependencies
-      run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends \
-          libgl1-mesa-dev \
-          xorg-dev \
-          libxcursor-dev \
-          libxrandr-dev \
-          libxinerama-dev \
-          libxi-dev \
-          libxxf86vm-dev \
-          libwayland-dev \
-          libxkbcommon-dev \
-          wayland-protocols \
-          gcc
-
-    - name: Install nfpm
-      run: |
-        go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
-
-    - name: Build Linux binaries
-      run: VERSION=${{ needs.version.outputs.version }} make build
-
-    - name: Build .deb package
-      run: VERSION=${{ needs.version.outputs.version }} make deb
-
-    - name: Build .rpm package
-      run: VERSION=${{ needs.version.outputs.version }} make rpm
-
     - name: Download all build artifacts
       uses: actions/download-artifact@v8
       with:
@@ -204,8 +200,8 @@ jobs:
         generate_release_notes: true
         make_latest: "true"
         files: |
-          artifacts/everythingx_pkg_macos-*/*.pkg
-          bin/*.deb
-          bin/*.rpm
+          artifacts/**/*.pkg
+          artifacts/**/*.deb
+          artifacts/**/*.rpm
 
 
