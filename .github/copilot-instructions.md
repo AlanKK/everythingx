@@ -43,8 +43,9 @@ assets/           # App icons, screenshots, everythingx.desktop (Linux)
 package/          # macOS .pkg installer assets + Linux nfpm scripts
 bin/              # Compiled binaries (git-ignored)
 nfpm.yaml         # .deb/.rpm packaging config (Linux)
-install.sh        # macOS install script (launchd)
-install-linux.sh  # Linux install script (systemd)
+install.sh        # Universal curl|sh installer (downloads latest release)
+install-local-macos.sh # macOS install from unpacked files (launchd)
+install-local-linux.sh # Linux install from unpacked files (systemd)
 uninstall.sh      # macOS uninstall script
 uninstall-linux.sh # Linux uninstall script
 ```
