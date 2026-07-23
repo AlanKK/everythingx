@@ -50,14 +50,14 @@ jobs:
             fi
             release=true
           elif [[ "$EVENT" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            # Auto build-counter release on every merge to main.
+            # Auto build-counter release on every merge to main: v0.2.N-beta.
             git fetch --tags --force
-            latest=$(git tag -l 'v1.0.*' \
-              | sed -n 's/^v1\.0\.\([0-9][0-9]*\)$/\1/p' \
+            latest=$(git tag -l 'v0.2.*-beta' \
+              | sed -n 's/^v0\.2\.\([0-9][0-9]*\)-beta$/\1/p' \
               | sort -n | tail -1)
             next=$(( ${latest:-0} + 1 ))
-            ver="1.0.${next}"
-            tag="v1.0.${next}"
+            ver="0.2.${next}-beta"
+            tag="v0.2.${next}-beta"
             release=true
           else
             # Feature-branch push / PR / manual dispatch: build and test only.

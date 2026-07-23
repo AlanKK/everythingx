@@ -14,7 +14,7 @@ Runs are serialized per-ref (`concurrency`), so two merges to `main` in quick su
 
 **You don't have to do anything.** Every merge to `main` automatically:
 
-1. Reads the highest existing `v0.0.N` tag and computes the next one (`v0.0.N+1`).
+1. Reads the highest existing `v0.2.N-beta` tag and computes the next one (`v0.2.N+1-beta`).
 2. Builds and tests on every platform.
 3. If everything passes, creates that tag at the merge commit and publishes it as the **Latest** GitHub Release with auto-generated notes and all packages attached.
 
@@ -33,9 +33,9 @@ CI runs on the tag and publishes the release. Tag-created events use `GITHUB_TOK
 
 ## Version Scheme
 
-- **Auto builds** (merge to `main`) use a monotonic build counter: `v0.0.1`, `v0.0.2`, … derived from the latest `v0.0.N` tag.
-- **Manual tags** must start with `v` followed by a digit (e.g., `v1.0.0`, `v1.0-beta-1`, `v2.1.0-rc.1`). Bump major/minor by tagging manually; the counter resumes from the next `v0.0.N`.
-- The `v` prefix is stripped for package versions (e.g., `v0.0.42` → `0.0.42`). deb/rpm require a version starting with a digit.
+- **Auto builds** (merge to `main`) use a monotonic build counter: `v0.2.1-beta`, `v0.2.2-beta`, … derived from the latest `v0.2.N-beta` tag.
+- **Manual tags** must start with `v` followed by a digit (e.g., `v1.0.0`, `v1.0-beta-1`, `v2.1.0-rc.1`). Bump major/minor by tagging manually; the counter resumes from the next `v0.2.N-beta`.
+- The `v` prefix is stripped for package versions (e.g., `v0.2.1-beta` → `0.2.1-beta`). deb/rpm require a version starting with a digit; nfpm renders the `-beta` prerelease as `~beta` (e.g. `everythingx_0.2.1~beta_amd64.deb`).
 - PR / feature-branch / manual-dispatch builds use `0.0.0-dev`.
 - Version, commit, and build date are embedded in all binaries via `-ldflags`.
 - Check with: `ev --version` or `everythingxd --version`
