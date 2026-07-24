@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -169,8 +170,9 @@ func (c *tooltipCell) MouseIn(e *desktop.MouseEvent) {
 	// apply the result on the UI thread — but only if the pointer is still over
 	// the same file (the cell may have been recycled to another row meanwhile).
 	path := c.path
+	maxChars := tooltipMaxChars() // read window width on the UI thread
 	go func() {
-		tip := getToolTipForFile(path)
+		tip := getToolTipForFile(path, maxChars)
 		fyne.Do(func() {
 			if c.path == path {
 				c.SetToolTip(tip)
@@ -198,6 +200,41 @@ var t *widget.Table
 var mainWindow fyne.Window
 var lastResultText string
 
+// nameColWidth is the initial width of the Name column in pixels.
+const nameColWidth = 400
+
+// nameHighlightMaxChars is roughly how many monospace characters fit in the
+// Name column. When the matched term sits beyond this, the Name cell renders as
+// a single truncating segment instead of highlighted inline segments, so it
+// never overflows into the Path column. Recomputed in makeTable.
+var nameHighlightMaxChars = 47
+
+// plainNameSegment builds a non-inline monospace segment. RichText truncates a
+// trailing segment like this with an ellipsis when it is too wide to fit.
+func plainNameSegment(text string) *widget.TextSegment {
+	return &widget.TextSegment{
+		Text: text,
+		Style: widget.RichTextStyle{
+			Alignment: fyne.TextAlignLeading,
+			TextStyle: fyne.TextStyle{Monospace: true},
+		},
+	}
+}
+
+// inlineNameSegment builds an inline segment for the highlighted-name path.
+// Highlighted segments are bold and use the warning (accent) color.
+func inlineNameSegment(text string, highlight bool) *widget.TextSegment {
+	style := widget.RichTextStyle{
+		Inline:    true,
+		TextStyle: fyne.TextStyle{Monospace: true},
+	}
+	if highlight {
+		style.TextStyle.Bold = true
+		style.ColorName = theme.ColorNameWarning
+	}
+	return &widget.TextSegment{Text: text, Style: style}
+}
+
 func makeTable() *widget.Table {
 	tableData = make([]RowData, 0, maxSearchResults)
 
@@ -221,32 +258,24 @@ func makeTable() *widget.Table {
 
 			switch id.Col {
 			case 0:
-				fileNameParts := row.Name
+				before, term, after := row.Name[0], row.Name[1], row.Name[2]
 				var segments []widget.RichTextSegment
-				if fileNameParts[0] != "" {
-					segments = append(segments, &widget.TextSegment{Text: fileNameParts[0],
-						Style: widget.RichTextStyle{
-							Inline:    true,
-							TextStyle: fyne.TextStyle{Monospace: true},
-						},
-					})
-				}
-				if fileNameParts[1] != "" {
-					segments = append(segments, &widget.TextSegment{Text: fileNameParts[1],
-						Style: widget.RichTextStyle{
-							Inline:    true,
-							TextStyle: fyne.TextStyle{Bold: true},
-							ColorName: theme.ColorNameWarning,
-						},
-					})
-				}
-				if fileNameParts[2] != "" {
-					segments = append(segments, &widget.TextSegment{Text: fileNameParts[2],
-						Style: widget.RichTextStyle{
-							Inline:    true,
-							TextStyle: fyne.TextStyle{Monospace: true},
-						},
-					})
+				if term == "" || len(before)+len(term) > nameHighlightMaxChars {
+					// No match, or the highlighted term sits too far right to
+					// fit before the column edge. Render the whole name as a
+					// single trailing segment so RichText truncates it with an
+					// ellipsis — its ellipsis only applies to the last segment,
+					// so a long leading segment would otherwise overflow into
+					// the Path column.
+					segments = []widget.RichTextSegment{plainNameSegment(before + term + after)}
+				} else {
+					if before != "" {
+						segments = append(segments, inlineNameSegment(before, false))
+					}
+					segments = append(segments, inlineNameSegment(term, true))
+					if after != "" {
+						segments = append(segments, inlineNameSegment(after, false))
+					}
 				}
 				richText.Segments = segments
 			case 1:
@@ -278,10 +307,17 @@ func makeTable() *widget.Table {
 		},
 	)
 
-	t.SetColumnWidth(0, 400) // Name
-	t.SetColumnWidth(1, 600) // Path
-	t.SetColumnWidth(2, 70)  // Size
-	t.SetColumnWidth(3, 190) // Last modified
+	t.SetColumnWidth(0, nameColWidth) // Name
+	t.SetColumnWidth(1, 600)          // Path
+	t.SetColumnWidth(2, 70)           // Size
+	t.SetColumnWidth(3, 190)          // Last modified
+
+	// Derive how many monospace characters fit in the Name column so the
+	// highlighted-name path can fall back to plain truncation when the match
+	// is too far right (see UpdateCell, case 0).
+	if charW := fyne.MeasureText("M", theme.TextSize(), fyne.TextStyle{Monospace: true}).Width; charW > 0 {
+		nameHighlightMaxChars = int(nameColWidth / charW)
+	}
 
 	// Define custom headers
 	t.CreateHeader = func() fyne.CanvasObject {
@@ -307,13 +343,64 @@ func makeTable() *widget.Table {
 	return t
 }
 
-func getToolTipForFile(path string) string {
-	lsFormat, err := shared.GetFileInfo(path)
+func getToolTipForFile(path string, maxChars int) string {
+	info, err := shared.GetFileInfo(path)
 	if err != nil {
 		return "No access"
 	}
 
-	return fmt.Sprintf("%s\n\n%s\n", path, lsFormat)
+	return fmt.Sprintf("%s\n\n%s", wrapPath(path, maxChars), info)
+}
+
+// tooltipMaxWidth mirrors the cap fyne-tooltip's internal layer uses when
+// sizing the tooltip popup.
+const tooltipMaxWidth = 600
+
+// tooltipMaxChars returns how many monospace characters fit across the tooltip
+// at the current window width, so long paths can be wrapped to fit rather than
+// stretching the popup. Must be called on the UI thread (it reads window size).
+func tooltipMaxChars() int {
+	width := float32(tooltipMaxWidth)
+	if mainWindow != nil {
+		if cw := mainWindow.Canvas().Size().Width; cw > 0 && cw < width {
+			width = cw
+		}
+	}
+	width -= theme.InnerPadding() * 2
+
+	charW := fyne.MeasureText("M", theme.CaptionTextSize(), fyne.TextStyle{Monospace: true}).Width
+	if charW <= 0 {
+		return 64
+	}
+	n := int(width / charW)
+	if n < 16 {
+		n = 16
+	}
+	return n
+}
+
+// wrapPath breaks a long path across multiple lines so it fits within maxChars
+// columns, preferring to break just after a path separator for readability and
+// falling back to a hard break for very long unbroken segments.
+func wrapPath(path string, maxChars int) string {
+	if maxChars < 8 {
+		maxChars = 8
+	}
+
+	var b strings.Builder
+	for len(path) > maxChars {
+		cut := strings.LastIndex(path[:maxChars], "/")
+		if cut <= 0 {
+			cut = maxChars // no separator to break on; hard-break
+		} else {
+			cut++ // keep the separator at the end of the current line
+		}
+		b.WriteString(path[:cut])
+		b.WriteByte('\n')
+		path = path[cut:]
+	}
+	b.WriteString(path)
+	return b.String()
 }
 
 func showAbout() {
