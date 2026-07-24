@@ -355,9 +355,25 @@ Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 var statusBar *widget.Label
 
 func loadUI() {
-	a := app.New()
+	// Declare the app identity and the fyne.Do migration in code rather than in
+	// a FyneApp.toml: `make app` runs `fyne package -executable`, which wraps the
+	// already-built binary, so TOML metadata is never compiled in and is not
+	// readable from inside the .app bundle. Without an ID, Fyne invents a new
+	// throwaway one on every launch (breaking the Preferences/Storage APIs).
+	//
+	// Migrations["fyneDo"] tells Fyne that every UI mutation from a goroutine
+	// already goes through fyne.Do — keep it that way when adding UI code, as
+	// this also switches off Fyne's wrong-thread runtime warnings.
+	app.SetMetadata(fyne.AppMetadata{
+		ID:         AppID,
+		Name:       AppName,
+		Version:    version.ShortInfo(),
+		Migrations: map[string]bool{"fyneDo": true},
+	})
+
+	a := app.NewWithID(AppID)
 	a.Settings().SetTheme(&everythingxTheme{})
-	w := a.NewWindow("EverythingX")
+	w := a.NewWindow(AppName)
 	mainWindow = w
 
 	if desk, ok := a.(desktop.App); ok {

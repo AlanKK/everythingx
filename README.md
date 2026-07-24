@@ -35,7 +35,7 @@ ev search_term [-b]
 ```
 
 ```
-ev -b bashrc
+ev bashrc
 /private/etc/bashrc
 /private/etc/bashrc_Apple_Terminal
 /home/alan/.bashrc

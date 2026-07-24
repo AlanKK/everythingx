@@ -1,4 +1,4 @@
-# EverythingX — Copilot Instructions
+# EverythingX — Agent Instructions
 
 ## Project Overview
 
@@ -121,6 +121,8 @@ Prepared statements (`prefixSearchStmt`, `insertStmt`, `deleteStmt`) are package
 - Double-click or Enter on a result opens the file's containing directory: `open -R` on macOS (`open_darwin.go`), `xdg-open` on Linux (`open_linux.go`).
 - Theme switching supported via `theme.go`.
 - Max results capped at `maxSearchResults = 1000`.
+- **Threading**: `loadUI` calls `app.SetMetadata` with `Migrations{"fyneDo": true}`, which declares the app migrated to Fyne's `fyne.Do` threading model *and* switches off Fyne's wrong-thread runtime warnings. Every UI mutation from a goroutine, `time.AfterFunc` callback, or any non-main thread **must** be wrapped in `fyne.Do` — violations will no longer be reported, they will just race. To re-enable the checks while debugging, temporarily drop the `Migrations` entry.
+- App identity (`AppID`, `AppName` in `assets.go`) is set in code, not in a `FyneApp.toml`: `make app` runs `fyne package -executable`, which wraps the prebuilt binary and never compiles TOML metadata in. `AppID` must stay in sync with `APP_ID` in the Makefile.
 
 ### `cmd/service` (daemon)
 
@@ -162,7 +164,7 @@ make clean       # Remove build artifacts
 sudo bin/everythingxd
 
 # Search from CLI
-bin/ev -b copilot-instructions.md
+bin/ev -b AGENTS.md
 
 # Launch GUI
 bin/everythingx

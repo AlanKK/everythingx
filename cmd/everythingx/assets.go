@@ -8,6 +8,15 @@ import (
 
 const (
 	GithubURL = "https://github.com/AlanKK/everythingx"
+
+	// AppID is the Fyne unique application ID. It must stay in sync with APP_ID
+	// in the Makefile, which passes it to `fyne package -appID` as the macOS
+	// bundle identifier.
+	AppID = "com.github.alankk.everythingx"
+
+	// AppName is the human friendly application name, matching APP_NAME in the
+	// Makefile.
+	AppName = "EverythingX"
 )
 
 // Use Finder icon
