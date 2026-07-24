@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -169,8 +170,9 @@ func (c *tooltipCell) MouseIn(e *desktop.MouseEvent) {
 	// apply the result on the UI thread — but only if the pointer is still over
 	// the same file (the cell may have been recycled to another row meanwhile).
 	path := c.path
+	maxChars := tooltipMaxChars() // read window width on the UI thread
 	go func() {
-		tip := getToolTipForFile(path)
+		tip := getToolTipForFile(path, maxChars)
 		fyne.Do(func() {
 			if c.path == path {
 				c.SetToolTip(tip)
@@ -307,13 +309,64 @@ func makeTable() *widget.Table {
 	return t
 }
 
-func getToolTipForFile(path string) string {
-	lsFormat, err := shared.GetFileInfo(path)
+func getToolTipForFile(path string, maxChars int) string {
+	info, err := shared.GetFileInfo(path)
 	if err != nil {
 		return "No access"
 	}
 
-	return fmt.Sprintf("%s\n\n%s\n", path, lsFormat)
+	return fmt.Sprintf("%s\n\n%s", wrapPath(path, maxChars), info)
+}
+
+// tooltipMaxWidth mirrors the cap fyne-tooltip's internal layer uses when
+// sizing the tooltip popup.
+const tooltipMaxWidth = 600
+
+// tooltipMaxChars returns how many monospace characters fit across the tooltip
+// at the current window width, so long paths can be wrapped to fit rather than
+// stretching the popup. Must be called on the UI thread (it reads window size).
+func tooltipMaxChars() int {
+	width := float32(tooltipMaxWidth)
+	if mainWindow != nil {
+		if cw := mainWindow.Canvas().Size().Width; cw > 0 && cw < width {
+			width = cw
+		}
+	}
+	width -= theme.InnerPadding() * 2
+
+	charW := fyne.MeasureText("M", theme.CaptionTextSize(), fyne.TextStyle{Monospace: true}).Width
+	if charW <= 0 {
+		return 64
+	}
+	n := int(width / charW)
+	if n < 16 {
+		n = 16
+	}
+	return n
+}
+
+// wrapPath breaks a long path across multiple lines so it fits within maxChars
+// columns, preferring to break just after a path separator for readability and
+// falling back to a hard break for very long unbroken segments.
+func wrapPath(path string, maxChars int) string {
+	if maxChars < 8 {
+		maxChars = 8
+	}
+
+	var b strings.Builder
+	for len(path) > maxChars {
+		cut := strings.LastIndex(path[:maxChars], "/")
+		if cut <= 0 {
+			cut = maxChars // no separator to break on; hard-break
+		} else {
+			cut++ // keep the separator at the end of the current line
+		}
+		b.WriteString(path[:cut])
+		b.WriteByte('\n')
+		path = path[cut:]
+	}
+	b.WriteString(path)
+	return b.String()
 }
 
 func showAbout() {
