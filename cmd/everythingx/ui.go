@@ -200,6 +200,41 @@ var t *widget.Table
 var mainWindow fyne.Window
 var lastResultText string
 
+// nameColWidth is the initial width of the Name column in pixels.
+const nameColWidth = 400
+
+// nameHighlightMaxChars is roughly how many monospace characters fit in the
+// Name column. When the matched term sits beyond this, the Name cell renders as
+// a single truncating segment instead of highlighted inline segments, so it
+// never overflows into the Path column. Recomputed in makeTable.
+var nameHighlightMaxChars = 47
+
+// plainNameSegment builds a non-inline monospace segment. RichText truncates a
+// trailing segment like this with an ellipsis when it is too wide to fit.
+func plainNameSegment(text string) *widget.TextSegment {
+	return &widget.TextSegment{
+		Text: text,
+		Style: widget.RichTextStyle{
+			Alignment: fyne.TextAlignLeading,
+			TextStyle: fyne.TextStyle{Monospace: true},
+		},
+	}
+}
+
+// inlineNameSegment builds an inline segment for the highlighted-name path.
+// Highlighted segments are bold and use the warning (accent) color.
+func inlineNameSegment(text string, highlight bool) *widget.TextSegment {
+	style := widget.RichTextStyle{
+		Inline:    true,
+		TextStyle: fyne.TextStyle{Monospace: true},
+	}
+	if highlight {
+		style.TextStyle.Bold = true
+		style.ColorName = theme.ColorNameWarning
+	}
+	return &widget.TextSegment{Text: text, Style: style}
+}
+
 func makeTable() *widget.Table {
 	tableData = make([]RowData, 0, maxSearchResults)
 
@@ -223,32 +258,24 @@ func makeTable() *widget.Table {
 
 			switch id.Col {
 			case 0:
-				fileNameParts := row.Name
+				before, term, after := row.Name[0], row.Name[1], row.Name[2]
 				var segments []widget.RichTextSegment
-				if fileNameParts[0] != "" {
-					segments = append(segments, &widget.TextSegment{Text: fileNameParts[0],
-						Style: widget.RichTextStyle{
-							Inline:    true,
-							TextStyle: fyne.TextStyle{Monospace: true},
-						},
-					})
-				}
-				if fileNameParts[1] != "" {
-					segments = append(segments, &widget.TextSegment{Text: fileNameParts[1],
-						Style: widget.RichTextStyle{
-							Inline:    true,
-							TextStyle: fyne.TextStyle{Bold: true},
-							ColorName: theme.ColorNameWarning,
-						},
-					})
-				}
-				if fileNameParts[2] != "" {
-					segments = append(segments, &widget.TextSegment{Text: fileNameParts[2],
-						Style: widget.RichTextStyle{
-							Inline:    true,
-							TextStyle: fyne.TextStyle{Monospace: true},
-						},
-					})
+				if term == "" || len(before)+len(term) > nameHighlightMaxChars {
+					// No match, or the highlighted term sits too far right to
+					// fit before the column edge. Render the whole name as a
+					// single trailing segment so RichText truncates it with an
+					// ellipsis — its ellipsis only applies to the last segment,
+					// so a long leading segment would otherwise overflow into
+					// the Path column.
+					segments = []widget.RichTextSegment{plainNameSegment(before + term + after)}
+				} else {
+					if before != "" {
+						segments = append(segments, inlineNameSegment(before, false))
+					}
+					segments = append(segments, inlineNameSegment(term, true))
+					if after != "" {
+						segments = append(segments, inlineNameSegment(after, false))
+					}
 				}
 				richText.Segments = segments
 			case 1:
@@ -280,10 +307,17 @@ func makeTable() *widget.Table {
 		},
 	)
 
-	t.SetColumnWidth(0, 400) // Name
-	t.SetColumnWidth(1, 600) // Path
-	t.SetColumnWidth(2, 70)  // Size
-	t.SetColumnWidth(3, 190) // Last modified
+	t.SetColumnWidth(0, nameColWidth) // Name
+	t.SetColumnWidth(1, 600)          // Path
+	t.SetColumnWidth(2, 70)           // Size
+	t.SetColumnWidth(3, 190)          // Last modified
+
+	// Derive how many monospace characters fit in the Name column so the
+	// highlighted-name path can fall back to plain truncation when the match
+	// is too far right (see UpdateCell, case 0).
+	if charW := fyne.MeasureText("M", theme.TextSize(), fyne.TextStyle{Monospace: true}).Width; charW > 0 {
+		nameHighlightMaxChars = int(nameColWidth / charW)
+	}
 
 	// Define custom headers
 	t.CreateHeader = func() fyne.CanvasObject {
