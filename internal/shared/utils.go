@@ -30,39 +30,76 @@ func FileExists(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
+// GetFileInfo returns a compact, aligned key/value summary of a file's
+// metadata, suitable for display in a tooltip. Labels are left-aligned in a
+// fixed column so values line up under a monospace font.
 func GetFileInfo(path string) (string, error) {
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
 
-	size := fileInfo.Size()
-	lastModified := fileInfo.ModTime()
+	owner, group := fileOwnerGroup(fileInfo)
 
-	// Get file mode and format it like "ls -alH"
-	mode := fileInfo.Mode().String()
-	stat := fileInfo.Sys().(*syscall.Stat_t)
-	owner := fmt.Sprintf("%d", stat.Uid)
-	group := fmt.Sprintf("%d", stat.Gid)
-	if user, err := user.LookupId(fmt.Sprintf("%d", stat.Uid)); err == nil {
-		owner = user.Username
-	}
-	if grp, err := user.LookupGroupId(fmt.Sprintf("%d", stat.Gid)); err == nil {
-		group = grp.Name
+	rows := [][2]string{
+		{"Size", HumanizeSize(fileInfo.Size())},
+		{"Last Modified", fileInfo.ModTime().Format("Jan 2 2006 15:04")},
+		{"Mode", fileInfo.Mode().String()},
+		{"Owner", owner},
+		{"Group", group},
 	}
 
-	formattedSize := fmt.Sprintf("%.1fK", float64(size)/1024)
-	if size >= 1024*1024 {
-		formattedSize = fmt.Sprintf("%.1fM", float64(size)/(1024*1024))
+	var b strings.Builder
+	for i, r := range rows {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		// Pad the label to line the values up; "Last Modified" (13) is the
+		// widest, so a 15-wide column leaves a two-space gutter.
+		fmt.Fprintf(&b, "%-15s%s", r[0], r[1])
 	}
-	if size >= 1024*1024*1024 {
-		formattedSize = fmt.Sprintf("%.1fG", float64(size)/(1024*1024*1024))
-	}
-	headers := fmt.Sprintf("%-13s | %-12s | %-12s | %-12s | %-20s\n", "Mode", "Owner", "Group", "Size", "Last Modified")
-	horizontalLine := "--------------|--------------|--------------|--------------|--------------------\n"
-	lsFormat := headers + horizontalLine + fmt.Sprintf("%-13s | %-12s | %-12s | %-12s | %-20s", mode, owner, group, formattedSize, lastModified.Format("Jan 2 2006 15:04"))
 
-	return lsFormat, nil
+	return b.String(), nil
+}
+
+// fileOwnerGroup resolves the owner and group names for a file, falling back to
+// numeric ids when a name lookup fails.
+func fileOwnerGroup(fileInfo os.FileInfo) (owner, group string) {
+	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return "", ""
+	}
+	owner = fmt.Sprintf("%d", stat.Uid)
+	group = fmt.Sprintf("%d", stat.Gid)
+	if u, err := user.LookupId(fmt.Sprintf("%d", stat.Uid)); err == nil {
+		owner = u.Username
+	}
+	if g, err := user.LookupGroupId(fmt.Sprintf("%d", stat.Gid)); err == nil {
+		group = g.Name
+	}
+	return owner, group
+}
+
+// HumanizeSize formats a byte count as a short human-readable string.
+func HumanizeSize(size int64) string {
+	const (
+		kb = 1024
+		mb = kb * 1024
+		gb = mb * 1024
+		tb = gb * 1024
+	)
+	switch {
+	case size >= tb:
+		return fmt.Sprintf("%.1fT", float64(size)/tb)
+	case size >= gb:
+		return fmt.Sprintf("%.1fG", float64(size)/gb)
+	case size >= mb:
+		return fmt.Sprintf("%.1fM", float64(size)/mb)
+	case size >= kb:
+		return fmt.Sprintf("%.1fK", float64(size)/kb)
+	default:
+		return fmt.Sprintf("%dB", size)
+	}
 }
 
 func GetFileSizeMod(path string) (string, string) {
