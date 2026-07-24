@@ -48,11 +48,16 @@ func (*everythingxTheme) Size(n fyne.ThemeSizeName) float32 {
 	// case theme.SizeNameHeadingText: // does nothing
 	// return 24
 	case theme.SizeNameSeparatorThickness:
-		return 0
+		// Thin visible column/row dividers. Also makes the drag-to-resize
+		// affordance discoverable in the table header.
+		return 1
 	case theme.SizeNameLineSpacing:
 		return 4
 	case theme.SizeNamePadding:
-		return 0
+		// The table derives its column-divider grab zone from padding
+		// (widget.Table.columnAt). A zero here makes columns impossible to
+		// resize by dragging, so keep a small non-zero value.
+		return 4
 
 	default:
 		return theme.DefaultTheme().Size(n)
