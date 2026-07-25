@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 )
 
 func GetHomeDirPath() string {
@@ -65,10 +66,13 @@ func GetFileInfo(path string) (string, error) {
 	return lsFormat, nil
 }
 
-func GetFileSizeMod(path string) (string, string) {
+// GetFileSizeMod returns the size and modification time of a file both
+// formatted for display and raw, so callers can sort on them without a second
+// stat.
+func GetFileSizeMod(path string) (string, string, int64, time.Time) {
 	fileInfo, err := os.Stat(path)
 	if err != nil {
-		return "", ""
+		return "", "", 0, time.Time{}
 	}
 
 	size := fileInfo.Size()
@@ -85,7 +89,7 @@ func GetFileSizeMod(path string) (string, string) {
 		formattedSize = fmt.Sprintf("%.1fT", float64(size)/(1024*1024*1024*1024))
 	}
 
-	return formattedSize, lastModified.Format("Jan 2 2006 15:04")
+	return formattedSize, lastModified.Format("Jan 2 2006 15:04"), size, lastModified
 }
 
 func PrintMemUsage() {
