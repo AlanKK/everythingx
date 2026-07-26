@@ -36,8 +36,11 @@ func (*everythingxTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color
 	return theme.DefaultTheme().Color(n, v)
 }
 
+// Icon delegates to the default theme so the file-type icons in the results
+// table resolve to their own artwork. The app/about artwork references the
+// bundled logo resources directly, not through the theme.
 func (*everythingxTheme) Icon(n fyne.ThemeIconName) fyne.Resource {
-	return resourceFolderWhiteOrange5122xPng
+	return theme.DefaultTheme().Icon(n)
 }
 
 func (*everythingxTheme) Size(n fyne.ThemeSizeName) float32 {
@@ -56,7 +59,8 @@ func (*everythingxTheme) Size(n fyne.ThemeSizeName) float32 {
 	case theme.SizeNamePadding:
 		// The table derives its column-divider grab zone from padding
 		// (widget.Table.columnAt). A zero here makes columns impossible to
-		// resize by dragging, so keep a small non-zero value.
+		// resize by dragging, so keep a small non-zero value. Lowering it
+		// fits more rows on screen at the cost of a narrower drag target.
 		return 4
 
 	default:
