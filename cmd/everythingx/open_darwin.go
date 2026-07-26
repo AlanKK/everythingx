@@ -7,6 +7,9 @@ import (
 	"os/exec"
 )
 
+// revealLabel is the context-menu wording for handleOpenFile on this platform.
+const revealLabel = "Reveal in Finder"
+
 // handleOpenFile reveals the given path in Finder using "open -R".
 func handleOpenFile(pathname string) {
 	if pathname == "" {
