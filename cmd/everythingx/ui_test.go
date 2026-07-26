@@ -15,7 +15,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	test.NewApp() // icon and colour lookups need an app with a theme
+	// Icon and colour lookups need an app with a theme, and cells measure text
+	// in styles (bold monospace) that the test theme has no font for.
+	test.NewApp().Settings().SetTheme(&everythingxTheme{})
 	m.Run()
 }
 
@@ -191,7 +193,7 @@ func TestUpdateCellRendersIconAndSelection(t *testing.T) {
 
 // Headers carry the sort indicator and the resize rule, and UpdateHeader
 // reaches into a nested container by index to reach both.
-func TestUpdateHeaderShowsSortAndGrip(t *testing.T) {
+func TestUpdateHeaderShowsSortDirection(t *testing.T) {
 	table := makeTable()
 	defer func() { sortCol, sortAsc = -1, true }()
 
@@ -199,15 +201,10 @@ func TestUpdateHeaderShowsSortAndGrip(t *testing.T) {
 	header := table.CreateHeader()
 	table.UpdateHeader(widget.TableCellID{Row: -1, Col: 2}, header)
 
-	box := header.(*fyne.Container)
-	label := box.Objects[0].(*sortHeader)
-	grip := box.Objects[1].(*canvas.Rectangle)
+	label := header.(*sortHeader)
 
 	if label.Text != "Size ▲" {
 		t.Errorf("header text = %q, want \"Size ▲\"", label.Text)
-	}
-	if !grip.Visible() {
-		t.Error("resize rule hidden on a data column")
 	}
 
 	sortAsc = false
@@ -220,12 +217,6 @@ func TestUpdateHeaderShowsSortAndGrip(t *testing.T) {
 	table.UpdateHeader(widget.TableCellID{Row: -1, Col: 0}, header)
 	if label.Text != "Name" {
 		t.Errorf("unsorted header = %q, want \"Name\"", label.Text)
-	}
-
-	// The blank row-header column has no width to resize.
-	table.UpdateHeader(widget.TableCellID{Row: -1, Col: -1}, header)
-	if grip.Visible() {
-		t.Error("resize rule shown on the row header")
 	}
 }
 

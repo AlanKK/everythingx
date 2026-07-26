@@ -51,15 +51,17 @@ func (*everythingxTheme) Size(n fyne.ThemeSizeName) float32 {
 	// case theme.SizeNameHeadingText: // does nothing
 	// return 24
 	case theme.SizeNameSeparatorThickness:
-		return 0
+		// Thin visible column/row dividers. Also makes the drag-to-resize
+		// affordance discoverable in the table header.
+		return 1
 	case theme.SizeNameLineSpacing:
 		return 4
 	case theme.SizeNamePadding:
-		// Table column dividers are exactly this wide, and Fyne only starts a
-		// column resize drag when the pointer is inside one. At 0 the gap does
-		// not exist, so columns cannot be resized and no dividers are drawn.
-		// Raise this if the drag target feels too narrow to hit.
-		return 2
+		// The table derives its column-divider grab zone from padding
+		// (widget.Table.columnAt). A zero here makes columns impossible to
+		// resize by dragging, so keep a small non-zero value. Lowering it
+		// fits more rows on screen at the cost of a narrower drag target.
+		return 4
 
 	default:
 		return theme.DefaultTheme().Size(n)
