@@ -9,6 +9,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # Serialize release-producing runs on the same ref so the build-counter
 # version job never reads a stale tag. Merges to main queue (never cancel)
 # so every merge gets its own incremented version. Feature branches stay parallel.
