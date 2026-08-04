@@ -30,7 +30,7 @@ chown root:wheel /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
 echo 'Registering and starting service with launchd'
 launchctl bootout   system /Library/LaunchDaemons/com.github.alankk.everythingxd.plist > /dev/null 2>&1
 launchctl bootstrap system /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
-launchctl start com.github.alankk.everythingx
+launchctl start com.github.alankk.everythingxd
 
 echo 'Installation complete. See /var/log/everythingxd.log for logs'
 
