@@ -99,7 +99,7 @@ func scanHomeDirs() {
 	homeDir := shared.GetHomeDirPath()
 	log.Printf("Scanning %s", homeDir)
 
-	scanDisk(homeDir)
+	scanDisk(homeDir, "")
 	deleteMissing(homeDir)
 
 	elapsedTime := time.Since(startTime)
@@ -186,7 +186,7 @@ func deleteMissing(root string) {
 	log.Printf("DB cleanup complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
 }
 
-func scanDisk(path string) {
+func scanDisk(path string, skipPath string) {
 	startTime := time.Now()
 
 	var fileCount, dirCount, linkCount, pipeCount, socketCount, charDeviceCount, blockDeviceCount int
@@ -199,6 +199,12 @@ func scanDisk(path string) {
 				if file == nil || file.IsDir() {
 					return filepath.SkipDir
 				}
+			}
+			return nil
+		}
+		if skipPath != "" && path == skipPath {
+			if file.IsDir() {
+				return filepath.SkipDir
 			}
 			return nil
 		}

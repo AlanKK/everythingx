@@ -90,7 +90,8 @@ func setupSignalHandlers(db *sql.DB, es *fsevents.EventStream) {
 				gracefulShutdown(db, es)
 			case <-usr1Chan:
 				log.Println("Received SIGUSR1. Starting scan...")
-				scanDisk(config.MonitorPath)
+				scanDisk(shared.GetHomeDirPath(), "")
+				scanDisk(config.MonitorPath, shared.GetHomeDirPath())
 				deleteMissing(config.MonitorPath)
 			}
 		}
@@ -153,7 +154,8 @@ func main() {
 
 	if dbIsNew {
 		log.Println("Database is new. Scanning disk.")
-		scanDisk(config.MonitorPath)
+		scanDisk(shared.GetHomeDirPath(), "")
+		scanDisk(config.MonitorPath, shared.GetHomeDirPath())
 	}
 
 	if !shared.FileExists(config.MonitorPath) {
