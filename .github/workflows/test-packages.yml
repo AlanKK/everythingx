@@ -43,7 +43,7 @@ jobs:
           test -f /Library/LaunchDaemons/com.github.alankk.everythingxd.plist
           ev --version
           everythingxd --version
-          sudo launchctl print system/com.github.alankk.everythingx >/dev/null
+          sudo launchctl print system/com.github.alankk.everythingxd >/dev/null
 
       - name: Cleanup
         if: always()
