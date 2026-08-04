@@ -194,6 +194,7 @@ bin/everythingx
 - The data directory `/var/lib/everythingx/` is created automatically on first run if it doesn't exist.
 - VS Code on Linux will show false-positive errors in `main_darwin.go` for `fsevents.*` symbols — these are a cross-compilation analysis artifact, not real build errors.
 - Ignored paths: `/proc`, `/sys`, `/run`, `/dev`, `/snap`.
+- Since Fyne 2.8 the GUI selects Wayland at runtime instead of always going via XWayland. In a Wayland session Fyne still falls back to X11 when the compositor forces client-side decorations. Override the choice with `FYNE_PLATFORM=x11` or `FYNE_PLATFORM=wayland` if window decorations or placement misbehave.
 
 # everythingx Project Guide
 

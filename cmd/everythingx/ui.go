@@ -94,6 +94,7 @@ func clearResults(t *widget.Table, statusBar *widget.Label) {
 	tableData = nil
 	lastResultText = "0 objects"
 	selectedRow = -1
+	hoveredRow = -1
 	t.Refresh()
 	t.ScrollToTop()
 	statusBar.SetText(lastResultText)
@@ -175,6 +176,7 @@ func handleAutoCompleteEntryChanged(searchText string, t *widget.Table, statusBa
 			sortRows(tableData) // keep the chosen column ordering as results stream in
 			lastResultText = resultText
 			selectedRow = -1
+			hoveredRow = -1
 			t.Refresh()
 			t.ScrollToTop() // reset scroll so new results start at the top
 			statusBar.SetText(resultText)
@@ -217,6 +219,7 @@ func (c *tooltipCell) MouseIn(e *desktop.MouseEvent) {
 	// the timer first would show whatever the previously hovered row left behind,
 	// since cells are recycled.
 	c.hovered = true
+	setHoveredRow(c.row)
 	path := c.path
 	maxChars := tooltipMaxChars() // read window width on the UI thread
 	go func() {
@@ -231,7 +234,19 @@ func (c *tooltipCell) MouseIn(e *desktop.MouseEvent) {
 	}()
 }
 
+// MouseOut fires when the pointer leaves this cell, including on the way out of
+// the table entirely, so it is where the row highlight is dropped. Moving to
+// another cell clears and re-sets the highlight before the next paint, so a
+// sweep across a row does not flicker.
 func (c *tooltipCell) MouseOut() {
+	setHoveredRow(-1)
+	c.cancelToolTip()
+}
+
+// cancelToolTip drops an armed tool tip without touching the row highlight. The
+// widget itself calls this when a cell is recycled or covered by a menu, where
+// the pointer has not actually left the row.
+func (c *tooltipCell) cancelToolTip() {
 	c.hovered = false
 	c.RichText.MouseOut()
 }
@@ -278,7 +293,7 @@ func (c *tooltipCell) TappedSecondary(e *fyne.PointEvent) {
 	// A tool tip draws into the layer on the window content, which the menu
 	// overlay covers. Cancel any pending one before the overlay goes up, or it
 	// fires under the menu with nowhere to draw.
-	c.MouseOut()
+	c.cancelToolTip()
 
 	path := c.path
 	menu := fyne.NewMenu("",
@@ -307,6 +322,29 @@ var lastResultText string
 // selection highlights a single cell; a file list wants the whole row, so the
 // highlight is drawn per-cell from this value instead. UI thread only.
 var selectedRow = -1
+
+// hoveredRow is the row under the pointer, or -1 for none. Drawn per-cell like
+// selectedRow, so the whole row lights up rather than just the cell. UI thread
+// only.
+//
+// It is fed from tooltipCell.MouseIn/MouseOut rather than the table's own
+// OnHighlighted callback: the driver delivers hover to a single object, the
+// innermost hoverable one, and every data cell is a hoverable tooltipCell. The
+// table therefore only ever sees the positions between and around cells, which
+// it treats as "no cell", so OnHighlighted never fires over a result row.
+var hoveredRow = -1
+
+// setHoveredRow moves the hover highlight, repainting only the two rows that
+// change so sweeping the pointer down the list doesn't refresh the whole table.
+func setHoveredRow(row int) {
+	if row == hoveredRow {
+		return
+	}
+	previous := hoveredRow
+	hoveredRow = row
+	refreshRow(previous)
+	refreshRow(row)
+}
 
 // refreshRow repaints one row's cells. Refreshing the whole table to move a
 // highlight re-runs every visible cell and is felt as a delay on click.
@@ -495,7 +533,15 @@ func makeTable() *widget.Table {
 				// Scrolling recycles this cell onto another row without the
 				// pointer moving, so no MouseOut arrives. A tip already armed
 				// would fire with the old file's details.
-				richText.MouseOut()
+				if richText.path != "" {
+					// Taking a different file (rather than being filled in for
+					// the first time) means the list moved under a pointer that
+					// never left, so the lit row is no longer the one being
+					// pointed at. Assigned rather than going through
+					// setHoveredRow, which would refresh from inside a refresh.
+					hoveredRow = -1
+				}
+				richText.cancelToolTip()
 				richText.path = row.SearchResult.Fullpath
 			}
 			richText.col = id.Col
@@ -504,8 +550,11 @@ func makeTable() *widget.Table {
 			// Only repaint what changed: this runs for every visible cell on
 			// each refresh, so unconditional work here is felt as click lag.
 			var highlight color.Color = color.Transparent
-			if id.Row == selectedRow {
+			switch {
+			case id.Row == selectedRow:
 				highlight = theme.Color(theme.ColorNameSelection)
+			case id.Row == hoveredRow:
+				highlight = theme.Color(theme.ColorNameHover)
 			}
 			if bg.FillColor != highlight {
 				bg.FillColor = highlight
@@ -648,7 +697,9 @@ func (h *sortHeader) Tapped(_ *fyne.PointEvent) {
 	}
 
 	sortRows(tableData)
-	selectedRow = -1 // row indexes no longer point at the same files
+	// row indexes no longer point at the same files
+	selectedRow = -1
+	hoveredRow = -1
 	t.Refresh()
 	t.ScrollToTop()
 }
