@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -268,6 +269,161 @@ func TestUpdateCellClearsHighlightOnUnselectedRows(t *testing.T) {
 
 	if selected == unselected {
 		t.Error("selected and unselected rows painted the same")
+	}
+}
+
+// Hover paints the whole row, not just the cell the pointer is over.
+func TestHoverPaintsWholeRow(t *testing.T) {
+	table := makeTable()
+	defer func() { tableData, selectedRow, hoveredRow = nil, -1, -1 }()
+
+	result := &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}
+	tableData = []RowData{
+		{Name: []string{"a", "", ""}, Base: "a", SearchResult: result},
+		{Name: []string{"b", "", ""}, Base: "b", SearchResult: result},
+	}
+	selectedRow = -1
+	hoveredRow = 1
+
+	cell := table.CreateCell()
+	for col := range headerTitles {
+		table.UpdateCell(widget.TableCellID{Row: 1, Col: col}, cell)
+		got := cell.(*fyne.Container).Objects[0].(*canvas.Rectangle).FillColor
+		if got != theme.Color(theme.ColorNameHover) {
+			t.Errorf("hovered row col %d not painted with the hover colour", col)
+		}
+	}
+
+	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
+	if got := cell.(*fyne.Container).Objects[0].(*canvas.Rectangle).FillColor; got == theme.Color(theme.ColorNameHover) {
+		t.Error("row that is not hovered painted with the hover colour")
+	}
+}
+
+// A selected row keeps its selection colour when the pointer is over it,
+// otherwise moving the mouse would appear to deselect it.
+func TestSelectionWinsOverHover(t *testing.T) {
+	table := makeTable()
+	defer func() { tableData, selectedRow, hoveredRow = nil, -1, -1 }()
+
+	result := &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}
+	tableData = []RowData{{Name: []string{"a", "", ""}, Base: "a", SearchResult: result}}
+	selectedRow = 0
+	hoveredRow = 0
+
+	cell := table.CreateCell()
+	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
+
+	if got := cell.(*fyne.Container).Objects[0].(*canvas.Rectangle).FillColor; got != theme.Color(theme.ColorNameSelection) {
+		t.Error("hover overrode the selection colour on the selected row")
+	}
+}
+
+// The pointer reaches the cells, not the table, so entering a cell is what
+// lights its row. MouseIn arms the tool tip on a goroutine, so this test does
+// not also call MouseOut -- see TestCellMouseOutClearsRow.
+func TestCellHoverLightsItsRow(t *testing.T) {
+	table := makeTable()
+	defer func() { tableData, selectedRow, hoveredRow = nil, -1, -1 }()
+
+	result := &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}
+	tableData = []RowData{
+		{Name: []string{"a", "", ""}, Base: "a", SearchResult: result},
+		{Name: []string{"b", "", ""}, Base: "b", SearchResult: result},
+	}
+	hoveredRow = -1
+
+	cell := table.CreateCell()
+	table.UpdateCell(widget.TableCellID{Row: 1, Col: 0}, cell)
+	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
+
+	text.MouseIn(&desktop.MouseEvent{})
+
+	if hoveredRow != 1 {
+		t.Errorf("hovered row = %d after the pointer entered row 1, want 1", hoveredRow)
+	}
+}
+
+// Leaving a cell puts its row out again. This is the only signal that the
+// pointer has left the table, so without it the last row stays lit.
+func TestCellMouseOutClearsRow(t *testing.T) {
+	table := makeTable()
+	defer func() { tableData, selectedRow, hoveredRow = nil, -1, -1 }()
+
+	result := &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}
+	tableData = []RowData{{Name: []string{"a", "", ""}, Base: "a", SearchResult: result}}
+
+	cell := table.CreateCell()
+	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
+	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
+
+	hoveredRow = 0 // set by MouseIn on entry
+	text.MouseOut()
+
+	if hoveredRow != -1 {
+		t.Errorf("hovered row = %d after the pointer left the cell, want -1", hoveredRow)
+	}
+}
+
+// A wheel scroll moves the list under a stationary pointer, so no MouseOut
+// arrives and the row that was hovered is no longer the one being pointed at.
+// Without this the highlight rides along on a row the pointer has left.
+func TestScrollDropsHoverHighlight(t *testing.T) {
+	table := makeTable()
+	defer func() { tableData, selectedRow, hoveredRow = nil, -1, -1 }()
+
+	rows := make([]RowData, 60)
+	for i := range rows {
+		path := fmt.Sprintf("/tmp/file%02d.go", i)
+		rows[i] = RowData{
+			Name:         []string{fmt.Sprintf("file%02d", i), "", ".go"},
+			Base:         fmt.Sprintf("file%02d.go", i),
+			Path:         "/tmp/",
+			SearchResult: &shared.SearchResult{Fullpath: path, ObjectType: shared.ItemIsFile},
+		}
+	}
+	tableData = rows
+	selectedRow = -1
+
+	w := test.NewWindow(table)
+	defer w.Close()
+	w.Resize(fyne.NewSize(1200, 600))
+	test.LaidOutObjects(table)
+
+	// Populate the cells first: a freshly built cell has no file yet, and it is
+	// taking a *different* file that means the list moved.
+	test.Scroll(w.Canvas(), fyne.NewPos(200, 300), 0, -60)
+
+	hoveredRow = 6 // set by MouseIn on entry
+	test.Scroll(w.Canvas(), fyne.NewPos(200, 300), 0, -400)
+
+	if hoveredRow != -1 {
+		t.Errorf("hovered row = %d after the list scrolled under the pointer, want -1", hoveredRow)
+	}
+}
+
+// Recycling a cell and opening the context menu both cancel a pending tool tip,
+// but the pointer has not left the row, so the highlight must survive both.
+func TestToolTipCancelKeepsRowHighlight(t *testing.T) {
+	table := makeTable()
+	mainWindow = test.NewWindow(nil)
+	defer func() { tableData, selectedRow, hoveredRow, mainWindow = nil, -1, -1, nil }()
+
+	result := &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}
+	tableData = []RowData{{Name: []string{"a", "", ""}, Base: "a", SearchResult: result}}
+
+	cell := table.CreateCell()
+	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
+	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
+
+	hoveredRow = 0
+	text.cancelToolTip()
+
+	if hoveredRow != 0 {
+		t.Errorf("hovered row = %d after cancelling a tool tip, want 0", hoveredRow)
+	}
+	if text.hovered {
+		t.Error("cancelToolTip left the tip armed")
 	}
 }
 
