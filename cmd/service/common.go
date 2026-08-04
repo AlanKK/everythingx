@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
@@ -184,6 +185,25 @@ func deleteMissing(root string) {
 	}
 
 	log.Printf("DB cleanup complete. Total files %d, found %d, missing %d, elapsed time %s", totalFiles, filesExist, filesMissing, time.Since(startTime).String())
+}
+
+// scanPrioritizingHome scans the home directory first if it's inside monitorPath, then the rest.
+func scanPrioritizingHome(monitorPath string) {
+	homeDir := shared.GetHomeDirPath()
+	if isUnderPath(homeDir, monitorPath) {
+		scanDisk(homeDir, "")
+		scanDisk(monitorPath, homeDir)
+		return
+	}
+	scanDisk(monitorPath, "")
+}
+
+func isUnderPath(path string, root string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return !strings.HasPrefix(rel, "..")
 }
 
 func scanDisk(path string, skipPath string) {
