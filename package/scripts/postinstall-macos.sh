@@ -6,7 +6,7 @@
 set -u
 
 PLIST=/Library/LaunchDaemons/com.github.alankk.everythingxd.plist
-LABEL=com.github.alankk.everythingx
+LABEL=com.github.alankk.everythingxd
 
 echo 'Creating data directory /var/lib/everythingx'
 mkdir -p /var/lib/everythingx
