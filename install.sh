@@ -102,7 +102,7 @@ Next step (required for full indexing):
   System Settings -> Privacy & Security -> Full Disk Access -> add /usr/local/bin/everythingxd
 
 Try it:
-  ev -b <filename>        # search from the CLI
+  ev <filename>           # search from the CLI
   open -a EverythingX     # launch the GUI
 Logs: /var/log/everythingxd.log
 EOF
@@ -159,7 +159,7 @@ install_linux() {
 
 The everythingxd daemon needs root for fanotify (Linux kernel 5.9+).
 Try it:
-  ev -b <filename>                  # search from the CLI
+  ev <filename>                     # search from the CLI
   everythingx                       # launch the GUI
   systemctl status everythingxd     # check the service
 Logs: /var/log/everythingxd.log
