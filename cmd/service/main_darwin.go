@@ -47,7 +47,7 @@ var noteDescription = map[fsevents.EventFlags]string{
 }
 
 func shouldIgnorePath(path string) bool {
-	return strings.HasPrefix(path, "/System/Volumes/Data")
+	return strings.HasPrefix(path, "/System/Volumes/Data") || strings.HasPrefix(path, "/Volumes/.timemachine")
 }
 
 var openSettingsOnce sync.Once
