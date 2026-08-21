@@ -62,13 +62,13 @@ matching native package from the latest [release](https://github.com/AlanKK/ever
 and installs it (prompting for `sudo`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sudo sh
 ```
 
 Pin a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | EVERYTHINGX_VERSION=v0.2.2-beta sh
+curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sudo EVERYTHINGX_VERSION=v0.2.2-beta sh
 ```
 
 **Supported platforms:** macOS (Apple Silicon and Intel) and mainstream glibc
