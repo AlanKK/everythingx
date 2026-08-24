@@ -8,7 +8,7 @@ require (
 	github.com/fsnotify/fsevents v0.2.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/mattn/go-sqlite3 v1.14.48
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.1
 	golang.org/x/sys v0.47.0
 )
 
@@ -17,7 +17,6 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/anthonynsimon/bild v0.16.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fredbi/uri v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8 // indirect
@@ -36,13 +35,12 @@ require (
 	github.com/mattn/go-runewidth v0.0.24 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
-	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rymdport/portal v0.4.2 // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/yuin/goldmark v1.8.4 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/image v0.44.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
