@@ -174,8 +174,14 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 //	handle_bytes: 4 bytes
 //	handle_type:  4 bytes  (int32)
 //	f_handle:     handle_bytes bytes
-//	[padding to 8-byte alignment]
 //	filename:     null-terminated string
+//	[padding to 8-byte alignment, after the filename]
+//
+// The kernel (fanotify_fid_info_len / copy_fid_info_to_user in
+// fs/notify/fanotify/fanotify_user.c) only pads the *end* of the whole info
+// record to FANOTIFY_EVENT_ALIGN (8 bytes) so the next info record (or the
+// next event) starts aligned — the filename itself is placed immediately
+// after f_handle, with no padding in between.
 func parseDFIDNamePath(info []byte, mountFDMap map[[2]int32]int) string {
 	const headerSize = 4                            // info_type(1) + pad(1) + len(2)
 	const fsidSize = 8                              // __kernel_fsid_t = {int val[2]}
@@ -206,9 +212,7 @@ func parseDFIDNamePath(info []byte, mountFDMap map[[2]int32]int) string {
 	}
 	handleData := info[offset : offset+int(handleBytes)]
 
-	// The kernel pads sizeof(file_handle)+handleBytes to 8-byte alignment
-	// before placing the filename.
-	nameOffset := headerAndFsidSize + ((handleHeaderSize + int(handleBytes) + 7) &^ 7)
+	nameOffset := headerAndFsidSize + handleHeaderSize + int(handleBytes)
 	if nameOffset >= len(info) {
 		return ""
 	}
