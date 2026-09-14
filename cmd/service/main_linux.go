@@ -358,11 +358,7 @@ func closeMountFDMap(mountFDMap map[[2]int32]int) {
 // events. It is called both at startup and whenever the event reader needs
 // to reinitialize after a fatal read error.
 func setupFanotify(watchMask uint64) (int, map[[2]int32]int, error) {
-	// FAN_UNLIMITED_QUEUE (requires CAP_SYS_ADMIN, which we have as root)
-	// lifts the default 16384-event queue cap so a burst of filesystem
-	// activity (e.g. a bulk move of thousands of files) does not silently
-	// drop events before we ever read them.
-	fanotifyFlags := uint(unix.FAN_CLASS_NOTIF | unix.FAN_UNLIMITED_QUEUE)
+	fanotifyFlags := uint(unix.FAN_CLASS_NOTIF)
 	// FAN_REPORT_DFID_NAME is kernel 5.9+; try it first, fall back to basic mode.
 	const fanReportDfidName = 0x00000C00 // FAN_REPORT_DFID | FAN_REPORT_NAME
 	fd, err := unix.FanotifyInit(fanotifyFlags|fanReportDfidName, unix.O_RDONLY|unix.O_LARGEFILE)
