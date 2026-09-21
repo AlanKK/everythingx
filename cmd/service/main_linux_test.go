@@ -3,9 +3,7 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
-	"log"
 	"testing"
 	"unsafe"
 
@@ -59,50 +57,54 @@ func TestParseFanotifyEventsOverflow(t *testing.T) {
 	assert.Empty(t, records, "an overflow marker alone should not produce file records")
 }
 
-// TestParseDFIDNamePathNameNotPaddedBeforeFilename guards against a real bug
+// dfidNameRecord builds a synthetic DFID_NAME info record for the given handle
+// size and filename, laid out the way the kernel writes one.
+func dfidNameRecord(fsid [2]int32, handleType int32, handleBytes int, name string) []byte {
+	// header(4) + fsid(8) + handle_bytes(4) + handle_type(4) + handle + name + NUL
+	info := make([]byte, 4+8+8+handleBytes+len(name)+1)
+	binary.NativeEndian.PutUint32(info[4:], uint32(fsid[0]))
+	binary.NativeEndian.PutUint32(info[8:], uint32(fsid[1]))
+	binary.NativeEndian.PutUint32(info[12:], uint32(handleBytes))
+	binary.NativeEndian.PutUint32(info[16:], uint32(handleType))
+	copy(info[20+handleBytes:], name)
+	return info
+}
+
+// TestParseDFIDNameInfoNameNotPaddedBeforeFilename guards against a real bug
 // found in production: the kernel places the filename immediately after the
 // raw file handle bytes with no padding (only the *end* of the whole info
-// record is padded to 8-byte alignment). The previous code rounded up to an
+// record is padded to FANOTIFY_EVENT_ALIGN). The previous code rounded up to an
 // 8-byte boundary before the filename too, which silently ate the first N
 // bytes of every filename whenever handle_bytes was not itself a multiple of
 // 8 (observed on ZFS, handle_bytes=12: exactly 4 leading characters of every
 // filename were lost, corrupting every FAN_CREATE/DELETE/MOVE path).
-func TestParseDFIDNamePathNameNotPaddedBeforeFilename(t *testing.T) {
-	const handleBytes = 12 // not a multiple of 8 — reproduces the observed bug
-	const wantName = "abc.txt"
+func TestParseDFIDNameInfoNameNotPaddedBeforeFilename(t *testing.T) {
+	t.Parallel()
+
 	fsid := [2]int32{111, 222}
+	// 12 is not a multiple of 8, which is what exposes the bug; 8 and 16 are
+	// the sizes that hid it, so parse correctly either way.
+	for _, handleBytes := range []int{8, 12, 16, 20} {
+		info := dfidNameRecord(fsid, 1, handleBytes, "abc.txt")
 
-	// header(4) + fsid(8) + handle_bytes(4) + handle_type(4) + handle(handleBytes) + name + NUL
-	info := make([]byte, 4+8+8+handleBytes+len(wantName)+1)
-	binary.NativeEndian.PutUint32(info[4:], uint32(fsid[0]))
-	binary.NativeEndian.PutUint32(info[8:], uint32(fsid[1]))
-	binary.NativeEndian.PutUint32(info[12:], handleBytes)
-	binary.NativeEndian.PutUint32(info[16:], 0x7fffffff) // bogus handle_type, OpenByHandleAt must fail
-	copy(info[20+handleBytes:], wantName)
+		parsed, ok := parseDFIDNameInfo(info)
 
-	dirFD, err := unix.Open("/", unix.O_PATH|unix.O_DIRECTORY, 0)
-	if err != nil {
-		t.Fatalf("could not open / for test fixture: %v", err)
+		assert.True(t, ok, "handle_bytes=%d", handleBytes)
+		assert.Equal(t, "abc.txt", parsed.name,
+			"handle_bytes=%d: name must not lose its leading bytes", handleBytes)
+		assert.Equal(t, fsid, parsed.fsid, "handle_bytes=%d", handleBytes)
+		assert.Len(t, parsed.handleData, handleBytes)
 	}
-	defer unix.Close(dirFD)
-	mountFDMap := map[[2]int32]int{fsid: dirFD}
+}
 
-	var logBuf bytes.Buffer
-	oldOutput := log.Writer()
-	oldVerbose := verbose
-	log.SetOutput(&logBuf)
-	verbose = true
-	defer func() {
-		log.SetOutput(oldOutput)
-		verbose = oldVerbose
-	}()
+func TestParseDFIDNameInfoRejectsTruncatedRecord(t *testing.T) {
+	t.Parallel()
 
-	got := parseDFIDNamePath(info, mountFDMap)
+	// handle_bytes claims 32 but the record only carries 12.
+	info := dfidNameRecord([2]int32{1, 2}, 1, 12, "abc.txt")
+	binary.NativeEndian.PutUint32(info[12:], 32)
 
-	// OpenByHandleAt is expected to fail (the handle is bogus), so the
-	// resolved path is always "" — what we're really checking is the *name*
-	// it logged along the way, which must be the full, untruncated filename.
-	assert.Empty(t, got)
-	assert.Contains(t, logBuf.String(), `name="`+wantName+`"`,
-		"logged name must be the untruncated filename, not missing its leading bytes")
+	_, ok := parseDFIDNameInfo(info)
+
+	assert.False(t, ok, "a record whose handle runs past its end must be rejected")
 }
