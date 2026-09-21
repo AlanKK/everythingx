@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -56,26 +55,7 @@ type fanotifyEventMetadata struct {
 	Pid         int32
 }
 
-// fanotify_event_info_header — common header for all info records
-type fanotifyEventInfoHeader struct {
-	InfoType uint8
-	Pad      uint8
-	Len      uint16
-}
-
-// fanotify_event_info_fid — used with FAN_REPORT_FID / FAN_REPORT_DFID_NAME
-type fanotifyEventInfoFID struct {
-	Header     fanotifyEventInfoHeader
-	FSID       [2]uint64
-	FileHandle [0]byte // variable-length kernel_fsid_t + file_handle
-}
-
 const (
-	fanEventInfoTypeFID      = 1
-	fanEventInfoTypeDFID     = 3
-	fanEventInfoTypeName     = 2
-	fanEventInfoTypeDFIDName = 5
-
 	fanotifyMetadataVersion = 3
 	sizeofEventMetadata     = uint32(unsafe.Sizeof(fanotifyEventMetadata{}))
 )
@@ -161,11 +141,17 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 	return records, overflowed
 }
 
-// parseDFIDNamePath resolves a full path from a DFID_NAME info record.
-// With FAN_REPORT_DFID_NAME the kernel provides a file handle for the parent
-// directory plus the child filename. We look up the correct mountFD from the
-// event's fsid, open the parent dir via open_by_handle_at, read its path from
-// /proc/self/fd, then join with the filename.
+// dfidNameInfo is the decoded content of a DFID_NAME info record: the parent
+// directory's file handle plus the child filename.
+type dfidNameInfo struct {
+	fsid       [2]int32
+	handleType int32
+	handleData []byte
+	name       string
+}
+
+// parseDFIDNameInfo decodes a DFID_NAME info record, reporting false if the
+// record is truncated or carries no usable name.
 //
 // Info record layout (after fanotify_event_metadata):
 //
@@ -175,59 +161,74 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 //	handle_type:  4 bytes  (int32)
 //	f_handle:     handle_bytes bytes
 //	filename:     null-terminated string
-//	[padding to 8-byte alignment, after the filename]
+//	[padding to FANOTIFY_EVENT_ALIGN, after the filename]
 //
 // The kernel (fanotify_fid_info_len / copy_fid_info_to_user in
 // fs/notify/fanotify/fanotify_user.c) only pads the *end* of the whole info
-// record to FANOTIFY_EVENT_ALIGN (8 bytes) so the next info record (or the
+// record to FANOTIFY_EVENT_ALIGN (4 bytes) so the next info record (or the
 // next event) starts aligned — the filename itself is placed immediately
 // after f_handle, with no padding in between.
-func parseDFIDNamePath(info []byte, mountFDMap map[[2]int32]int) string {
+func parseDFIDNameInfo(info []byte) (dfidNameInfo, bool) {
 	const headerSize = 4                            // info_type(1) + pad(1) + len(2)
 	const fsidSize = 8                              // __kernel_fsid_t = {int val[2]}
 	const handleHeaderSize = 8                      // handle_bytes(4) + handle_type(4)
 	const headerAndFsidSize = headerSize + fsidSize // = 12
 	if len(info) < headerAndFsidSize+handleHeaderSize+1 {
-		return ""
+		return dfidNameInfo{}, false
 	}
 
-	// Read fsid to look up the mountFD for this filesystem.
-	fsid := [2]int32{
-		int32(binary.NativeEndian.Uint32(info[headerSize:])),
-		int32(binary.NativeEndian.Uint32(info[headerSize+4:])),
-	}
-	mountFD, ok := mountFDMap[fsid]
-	if !ok {
-		log.Printf("parseDFIDNamePath: unknown fsid=%v (filesystem not monitored)", fsid)
-		return ""
+	parsed := dfidNameInfo{
+		fsid: [2]int32{
+			int32(binary.NativeEndian.Uint32(info[headerSize:])),
+			int32(binary.NativeEndian.Uint32(info[headerSize+4:])),
+		},
+		handleType: int32(binary.NativeEndian.Uint32(info[headerAndFsidSize+4:])),
 	}
 
-	offset := headerAndFsidSize
-	handleBytes := binary.NativeEndian.Uint32(info[offset:])
-	handleType := int32(binary.NativeEndian.Uint32(info[offset+4:]))
-	offset += handleHeaderSize
-
-	if offset+int(handleBytes) > len(info) {
-		return ""
+	handleBytes := int(binary.NativeEndian.Uint32(info[headerAndFsidSize:]))
+	handleStart := headerAndFsidSize + handleHeaderSize
+	if handleStart+handleBytes > len(info) {
+		return dfidNameInfo{}, false
 	}
-	handleData := info[offset : offset+int(handleBytes)]
+	parsed.handleData = info[handleStart : handleStart+handleBytes]
 
-	nameOffset := headerAndFsidSize + handleHeaderSize + int(handleBytes)
+	nameOffset := handleStart + handleBytes
 	if nameOffset >= len(info) {
+		return dfidNameInfo{}, false
+	}
+	parsed.name = unix.ByteSliceToString(info[nameOffset:])
+	if parsed.name == "" || parsed.name == "." {
+		return dfidNameInfo{}, false
+	}
+
+	return parsed, true
+}
+
+// parseDFIDNamePath resolves a full path from a DFID_NAME info record.
+// With FAN_REPORT_DFID_NAME the kernel provides a file handle for the parent
+// directory plus the child filename. We look up the correct mountFD from the
+// event's fsid, open the parent dir via open_by_handle_at, read its path from
+// /proc/self/fd, then join with the filename.
+func parseDFIDNamePath(info []byte, mountFDMap map[[2]int32]int) string {
+	parsed, ok := parseDFIDNameInfo(info)
+	if !ok {
 		return ""
 	}
-	name := unix.ByteSliceToString(info[nameOffset:])
-	if name == "" || name == "." {
+
+	mountFD, ok := mountFDMap[parsed.fsid]
+	if !ok {
+		log.Printf("parseDFIDNamePath: unknown fsid=%v (filesystem not monitored)", parsed.fsid)
 		return ""
 	}
 
 	// Open the parent directory from its file handle.
-	dirFD, err := unix.OpenByHandleAt(mountFD, unix.NewFileHandle(handleType, handleData), unix.O_PATH)
+	dirFD, err := unix.OpenByHandleAt(mountFD, unix.NewFileHandle(parsed.handleType, parsed.handleData), unix.O_PATH)
 	if err != nil {
 		// ESTALE is expected: the parent directory was deleted between the event
 		// and our resolution attempt (e.g. short-lived temp dirs). Drop silently.
 		if err != unix.ESTALE && verbose {
-			log.Printf("OpenByHandleAt failed (fsid=%v, handle_bytes=%d, name=%q): %v", fsid, handleBytes, name, err)
+			log.Printf("OpenByHandleAt failed (fsid=%v, handle_bytes=%d, name=%q): %v",
+				parsed.fsid, len(parsed.handleData), parsed.name, err)
 		}
 		return ""
 	}
@@ -238,7 +239,7 @@ func parseDFIDNamePath(info []byte, mountFDMap map[[2]int32]int) string {
 		return ""
 	}
 
-	return filepath.Join(dirPath, name)
+	return filepath.Join(dirPath, parsed.name)
 }
 
 // objectTypeFromStat returns the ObjectType for the given path using lstat.
@@ -334,12 +335,30 @@ type fanotifyHandle struct {
 	mu         sync.Mutex
 	fd         int
 	mountFDMap map[[2]int32]int
+	closing    bool
 }
 
 func (h *fanotifyHandle) get() (int, map[[2]int32]int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.fd, h.mountFDMap
+}
+
+// beginClose marks the handle as shutting down and returns the fd and mount map
+// to release. The event reader is parked in read() on that fd without holding
+// the lock, so closing it wakes the reader with EBADF — the flag is what tells
+// it to exit rather than treat that as a fault and reinitialize.
+func (h *fanotifyHandle) beginClose() (int, map[[2]int32]int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.closing = true
+	return h.fd, h.mountFDMap
+}
+
+func (h *fanotifyHandle) isClosing() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.closing
 }
 
 func (h *fanotifyHandle) replace(fd int, mountFDMap map[[2]int32]int) {
@@ -384,7 +403,7 @@ func setupFanotify(watchMask uint64) (int, map[[2]int32]int, error) {
 }
 
 func gracefulShutdown(db *sql.DB, fh *fanotifyHandle) {
-	fd, mountFDMap := fh.get()
+	fd, mountFDMap := fh.beginClose()
 	if fd >= 0 {
 		unix.Close(fd)
 	}
@@ -424,19 +443,44 @@ func setupSignalHandlers(db *sql.DB, fh *fanotifyHandle) {
 	}()
 }
 
-// triggerRescan runs a full rescan in the background, coalescing concurrent
-// requests so an overflow burst doesn't queue up multiple redundant scans.
-var rescanPending int32
+// triggerRescan runs a full rescan in the background. A request arriving while
+// a rescan is already running is remembered and runs another pass afterwards
+// rather than being dropped: a rescan walks the whole tree, which is itself the
+// kind of I/O burst that overflows the queue, so the events it is meant to
+// recover frequently arrive mid-scan. Coalescing is per-pass, so a burst still
+// costs at most one extra scan.
+var (
+	rescanMu      sync.Mutex
+	rescanRunning bool
+	rescanAgain   bool
+)
 
 func triggerRescan(reason string) {
-	if !atomic.CompareAndSwapInt32(&rescanPending, 0, 1) {
+	rescanMu.Lock()
+	if rescanRunning {
+		rescanAgain = true
+		rescanMu.Unlock()
 		return
 	}
+	rescanRunning = true
+	rescanMu.Unlock()
+
 	go func() {
-		defer atomic.StoreInt32(&rescanPending, 0)
-		log.Printf("%s — starting full rescan to recover", reason)
-		scanPrioritizingHome(config.MonitorPath)
-		deleteMissing(config.MonitorPath)
+		for {
+			log.Printf("%s — starting full rescan to recover", reason)
+			scanPrioritizingHome(config.MonitorPath)
+			deleteMissing(config.MonitorPath)
+
+			rescanMu.Lock()
+			if !rescanAgain {
+				rescanRunning = false
+				rescanMu.Unlock()
+				return
+			}
+			rescanAgain = false
+			rescanMu.Unlock()
+			reason = "events were lost while the previous rescan was running"
+		}
 	}()
 }
 
@@ -492,6 +536,9 @@ func main() {
 			if err != nil {
 				if err == unix.EINTR || err == unix.EAGAIN {
 					continue
+				}
+				if fh.isClosing() {
+					return
 				}
 				log.Printf("fanotify read error: %v — reinitializing fanotify", err)
 				for {
