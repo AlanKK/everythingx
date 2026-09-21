@@ -11,6 +11,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -91,8 +93,10 @@ func resolvePathFromFD(fd int32) string {
 // parseFanotifyEvents reads raw bytes from the fanotify fd and returns EventRecords.
 // mountFDMap maps filesystem IDs (fsid) to O_PATH file descriptors, used by
 // parseDFIDNamePath to resolve parent directory file handles via open_by_handle_at.
-func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) []*shared.EventRecord {
-	var records []*shared.EventRecord
+// overflowed reports whether the kernel signaled FAN_Q_OVERFLOW, meaning events
+// were dropped before we ever read them — the index can no longer be trusted
+// to be complete and a rescan is required.
+func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*shared.EventRecord, overflowed bool) {
 	n := len(buf)
 
 	for offset := 0; offset+int(sizeofEventMetadata) <= n; {
@@ -112,6 +116,11 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) []*shared.Even
 
 		extraStart := offset + int(sizeofEventMetadata)
 		offset = eventEnd // advance past this event
+
+		if mask&unix.FAN_Q_OVERFLOW != 0 {
+			overflowed = true
+			continue
+		}
 
 		var path string
 		if fd >= 0 {
@@ -149,7 +158,7 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) []*shared.Even
 		}
 		records = append(records, rec)
 	}
-	return records
+	return records, overflowed
 }
 
 // parseDFIDNamePath resolves a full path from a DFID_NAME info record.
@@ -165,8 +174,14 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) []*shared.Even
 //	handle_bytes: 4 bytes
 //	handle_type:  4 bytes  (int32)
 //	f_handle:     handle_bytes bytes
-//	[padding to 8-byte alignment]
 //	filename:     null-terminated string
+//	[padding to 8-byte alignment, after the filename]
+//
+// The kernel (fanotify_fid_info_len / copy_fid_info_to_user in
+// fs/notify/fanotify/fanotify_user.c) only pads the *end* of the whole info
+// record to FANOTIFY_EVENT_ALIGN (8 bytes) so the next info record (or the
+// next event) starts aligned — the filename itself is placed immediately
+// after f_handle, with no padding in between.
 func parseDFIDNamePath(info []byte, mountFDMap map[[2]int32]int) string {
 	const headerSize = 4                            // info_type(1) + pad(1) + len(2)
 	const fsidSize = 8                              // __kernel_fsid_t = {int val[2]}
@@ -197,9 +212,7 @@ func parseDFIDNamePath(info []byte, mountFDMap map[[2]int32]int) string {
 	}
 	handleData := info[offset : offset+int(handleBytes)]
 
-	// The kernel pads sizeof(file_handle)+handleBytes to 8-byte alignment
-	// before placing the filename.
-	nameOffset := headerAndFsidSize + ((handleHeaderSize + int(handleBytes) + 7) &^ 7)
+	nameOffset := headerAndFsidSize + handleHeaderSize + int(handleBytes)
 	if nameOffset >= len(info) {
 		return ""
 	}
@@ -314,17 +327,75 @@ func buildMountFDMap(fanotifyFD int, watchMask uint64) map[[2]int32]int {
 	return fdMap
 }
 
-func gracefulShutdown(db *sql.DB, fanotifyFD int) {
-	if fanotifyFD >= 0 {
-		unix.Close(fanotifyFD)
+// fanotifyHandle holds the fanotify fd and the per-filesystem mount fd map,
+// guarded by a mutex so the event reader can replace them (on reconnect)
+// while the signal handler still sees a consistent pair for shutdown.
+type fanotifyHandle struct {
+	mu         sync.Mutex
+	fd         int
+	mountFDMap map[[2]int32]int
+}
+
+func (h *fanotifyHandle) get() (int, map[[2]int32]int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.fd, h.mountFDMap
+}
+
+func (h *fanotifyHandle) replace(fd int, mountFDMap map[[2]int32]int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	unix.Close(h.fd)
+	closeMountFDMap(h.mountFDMap)
+	h.fd = fd
+	h.mountFDMap = mountFDMap
+}
+
+func closeMountFDMap(mountFDMap map[[2]int32]int) {
+	for _, mfd := range mountFDMap {
+		unix.Close(mfd)
 	}
+}
+
+// setupFanotify opens a fanotify fd (preferring FAN_REPORT_DFID_NAME, kernel
+// 5.9+) and marks every real filesystem found in /proc/mounts for watchMask
+// events. It is called both at startup and whenever the event reader needs
+// to reinitialize after a fatal read error.
+func setupFanotify(watchMask uint64) (int, map[[2]int32]int, error) {
+	fanotifyFlags := uint(unix.FAN_CLASS_NOTIF)
+	// FAN_REPORT_DFID_NAME is kernel 5.9+; try it first, fall back to basic mode.
+	const fanReportDfidName = 0x00000C00 // FAN_REPORT_DFID | FAN_REPORT_NAME
+	fd, err := unix.FanotifyInit(fanotifyFlags|fanReportDfidName, unix.O_RDONLY|unix.O_LARGEFILE)
+	if err != nil {
+		log.Printf("FAN_REPORT_DFID_NAME not available (%v), falling back to basic fanotify (kernel 5.1+ required)", err)
+		fd, err = unix.FanotifyInit(fanotifyFlags, unix.O_RDONLY|unix.O_LARGEFILE)
+		if err != nil {
+			return -1, nil, fmt.Errorf("fanotify_init failed: %w — ensure you are running as root and kernel >= 5.1", err)
+		}
+	}
+
+	mountFDMap := buildMountFDMap(fd, watchMask)
+	if len(mountFDMap) == 0 {
+		unix.Close(fd)
+		return -1, nil, fmt.Errorf("no filesystems could be monitored — ensure running as root")
+	}
+
+	return fd, mountFDMap, nil
+}
+
+func gracefulShutdown(db *sql.DB, fh *fanotifyHandle) {
+	fd, mountFDMap := fh.get()
+	if fd >= 0 {
+		unix.Close(fd)
+	}
+	closeMountFDMap(mountFDMap)
 	if err := db.Close(); err != nil {
 		log.Printf("Error closing database: %v", err)
 	}
 	os.Exit(0)
 }
 
-func setupSignalHandlers(db *sql.DB, fanotifyFD int) {
+func setupSignalHandlers(db *sql.DB, fh *fanotifyHandle) {
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGTERM)
 
@@ -340,16 +411,32 @@ func setupSignalHandlers(db *sql.DB, fanotifyFD int) {
 			select {
 			case <-termChan:
 				log.Println("Received SIGTERM, shutting down.")
-				gracefulShutdown(db, fanotifyFD)
+				gracefulShutdown(db, fh)
 			case <-intChan:
 				log.Println("Received SIGINT (Ctrl+C), shutting down.")
-				gracefulShutdown(db, fanotifyFD)
+				gracefulShutdown(db, fh)
 			case <-usr1Chan:
 				log.Println("Received SIGUSR1. Starting scan...")
 				scanPrioritizingHome(config.MonitorPath)
 				deleteMissing(config.MonitorPath)
 			}
 		}
+	}()
+}
+
+// triggerRescan runs a full rescan in the background, coalescing concurrent
+// requests so an overflow burst doesn't queue up multiple redundant scans.
+var rescanPending int32
+
+func triggerRescan(reason string) {
+	if !atomic.CompareAndSwapInt32(&rescanPending, 0, 1) {
+		return
+	}
+	go func() {
+		defer atomic.StoreInt32(&rescanPending, 0)
+		log.Printf("%s — starting full rescan to recover", reason)
+		scanPrioritizingHome(config.MonitorPath)
+		deleteMissing(config.MonitorPath)
 	}()
 }
 
@@ -381,45 +468,43 @@ func main() {
 	// FAN_REPORT_DFID_NAME requires kernel 5.9+. It gives us the parent directory
 	// FID plus the filename in each event, allowing path reconstruction without
 	// keeping a watch table for every directory.
-	fanotifyFlags := uint(unix.FAN_CLASS_NOTIF)
-	// FAN_REPORT_DFID_NAME is kernel 5.9+; try it first, fall back to basic mode.
-	const fanReportDfidName = 0x00000C00 // FAN_REPORT_DFID | FAN_REPORT_NAME
-	fd, err := unix.FanotifyInit(fanotifyFlags|fanReportDfidName, unix.O_RDONLY|unix.O_LARGEFILE)
-	if err != nil {
-		log.Printf("FAN_REPORT_DFID_NAME not available (%v), falling back to basic fanotify (kernel 5.1+ required)", err)
-		fd, err = unix.FanotifyInit(fanotifyFlags, unix.O_RDONLY|unix.O_LARGEFILE)
-		if err != nil {
-			log.Fatalf("fanotify_init failed: %v — ensure you are running as root and kernel >= 5.1", err)
-		}
-	}
-	defer unix.Close(fd)
-
 	watchMask := uint64(unix.FAN_CREATE | unix.FAN_DELETE | unix.FAN_MOVED_FROM | unix.FAN_MOVED_TO | unix.FAN_ONDIR)
-	mountFDMap := buildMountFDMap(fd, watchMask)
-	if len(mountFDMap) == 0 {
-		log.Fatalf("no filesystems could be monitored — ensure running as root")
+	fd, mountFDMap, err := setupFanotify(watchMask)
+	if err != nil {
+		log.Fatal(err)
 	}
-	defer func() {
-		for _, mfd := range mountFDMap {
-			unix.Close(mfd)
-		}
-	}()
+	fh := &fanotifyHandle{fd: fd, mountFDMap: mountFDMap}
 
-	setupSignalHandlers(db, fd)
+	setupSignalHandlers(db, fh)
 
 	// Event reader goroutine — uses blocking reads (no FAN_NONBLOCK),
-	// so the goroutine parks with zero CPU until events arrive.
+	// so the goroutine parks with zero CPU until events arrive. On a fatal
+	// read error it reinitializes fanotify from scratch (with backoff)
+	// instead of dying, since the process otherwise keeps running with
+	// monitoring silently and permanently dead.
 	go func() {
 		log.Println("Event listener ready.")
 		buf := make([]byte, 4096*32)
 		for {
-			n, err := unix.Read(fd, buf)
+			curFD, curMountFDMap := fh.get()
+
+			n, err := unix.Read(curFD, buf)
 			if err != nil {
 				if err == unix.EINTR || err == unix.EAGAIN {
 					continue
 				}
-				log.Printf("fanotify read error: %v", err)
-				return
+				log.Printf("fanotify read error: %v — reinitializing fanotify", err)
+				for {
+					newFD, newMountFDMap, initErr := setupFanotify(watchMask)
+					if initErr == nil {
+						fh.replace(newFD, newMountFDMap)
+						break
+					}
+					log.Printf("fanotify reinitialization failed: %v — retrying in 5s", initErr)
+					time.Sleep(5 * time.Second)
+				}
+				triggerRescan("fanotify was reinitialized after a read error, events may have been missed")
+				continue
 			}
 			if n == 0 {
 				continue
@@ -428,7 +513,10 @@ func main() {
 				log.Printf("fanotify read: %d bytes", n)
 			}
 
-			records := parseFanotifyEvents(buf[:n], mountFDMap)
+			records, overflowed := parseFanotifyEvents(buf[:n], curMountFDMap)
+			if overflowed {
+				triggerRescan("fanotify event queue overflowed, some filesystem events were lost")
+			}
 			if verbose && len(records) <= 5 {
 				for _, rec := range records {
 					action := "created"
