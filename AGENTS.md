@@ -138,7 +138,7 @@ Prepared statements (`prefixSearchStmt`, `insertStmt`, `deleteStmt`) are package
 
 - Go 1.23+
 - CGO toolchain (Xcode command-line tools on macOS; `gcc` on Linux)
-- **Linux only**: `sudo apt-get install libgl1-mesa-dev xorg-dev` (required for Fyne/OpenGL)
+- **Linux only**: `sudo apt-get install libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev` (required for Fyne/OpenGL). The Wayland headers are needed even on a headless or X11-only box: since Fyne 2.8 the vendored GLFW compiles its Wayland backend unconditionally, so omitting them fails the GUI build with `wayland-client-core.h: No such file or directory`. Only the GUI needs these — `everythingxd` and `ev` build without them.
 - `fyne` CLI: `go install fyne.io/fyne/v2/cmd/fyne@latest` (macOS only, for `make app`)
 - **Packaging**: `nfpm` for `.deb`/`.rpm` — `go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest`
 
