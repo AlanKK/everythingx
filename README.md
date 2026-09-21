@@ -139,7 +139,7 @@ make clean    # Remove build artifacts
 ```
 
 ## License
-EverythingX is licensed under the MIT License. See the [LICENSE](LICENSE) file for more information.
+EverythingX is licensed under the MIT License. See the [MIT License](https://opensource.org/licenses/MIT) for more information.
 
 ## Contact, feature requests, and bug reports
 Create an issue on the [Github Page](https://github.com/AlanKK/everythingx/issues)
