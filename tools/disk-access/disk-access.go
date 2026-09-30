@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // TODO: need to ask for full disk access on macOS to get all files under /Users/username
@@ -34,7 +34,7 @@ func main() {
 //	error: any error encountered during the check
 func HasFullDiskAccess(binaryPath string) (bool, error) {
 	// Open connection to TCC database
-	db, err := sql.Open("sqlite3", "/Library/Application Support/com.apple.TCC/TCC.db")
+	db, err := sql.Open("sqlite", "/Library/Application Support/com.apple.TCC/TCC.db")
 	if err != nil {
 		return false, err
 	}

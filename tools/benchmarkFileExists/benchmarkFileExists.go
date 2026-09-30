@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Benchmark the two functions to check if a file exists.  Turns out they are pretty much the same.
@@ -26,7 +26,7 @@ func fileExists2(filename string) bool {
 
 func main() {
 	// Open the database
-	db, err := sql.Open("sqlite3", "/var/lib/everythingx/files.db")
+	db, err := sql.Open("sqlite", "/var/lib/everythingx/files.db")
 	if err != nil {
 		panic(err)
 	}

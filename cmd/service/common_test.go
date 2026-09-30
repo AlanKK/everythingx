@@ -6,8 +6,8 @@ import (
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
 	"github.com/AlanKK/everythingx/internal/shared"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
+	_ "modernc.org/sqlite"
 )
 
 // Mock implementations for testing

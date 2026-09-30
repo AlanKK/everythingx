@@ -124,6 +124,13 @@ jobs:
     - name: test
       run: make test
 
+    - name: Verify CGO-free CLI
+      run: CGO_ENABLED=0 go build -o /tmp/ev-pure-go ./cmd/cli
+
+    - name: Verify CGO-free Linux service
+      if: matrix.platform == 'linux'
+      run: CGO_ENABLED=0 go build -o /tmp/everythingxd-pure-go ./cmd/service
+
     - name: Build
       run: VERSION=${{ needs.version.outputs.version }} make build
 
@@ -206,5 +213,4 @@ jobs:
           artifacts/**/*.pkg
           artifacts/**/*.deb
           artifacts/**/*.rpm
-
 

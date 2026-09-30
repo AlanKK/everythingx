@@ -14,7 +14,7 @@ EverythingX is a fast file-name search tool for macOS and Linux, inspired by [Ev
 
 - **Language**: Go 1.23+
 - **GUI**: [Fyne v2](https://fyne.io/) (`fyne.io/fyne/v2`) with `github.com/dweymouth/fyne-tooltip`
-- **Database**: SQLite3 via `github.com/mattn/go-sqlite3` (CGO required)
+- **Database**: SQLite3 via `modernc.org/sqlite` (pure Go, with FTS5 trigram support)
 - **FS Events (macOS)**: `github.com/fsnotify/fsevents` (FSEvents API, `//go:build darwin`)
 - **FS Events (Linux)**: `golang.org/x/sys/unix` fanotify with `FAN_MARK_FILESYSTEM` (`//go:build linux`, requires root + kernel 5.9+)
 - **CLI flags**: `github.com/jessevdk/go-flags`
@@ -137,7 +137,7 @@ Prepared statements (`prefixSearchStmt`, `insertStmt`, `deleteStmt`) are package
 ### Prerequisites
 
 - Go 1.23+
-- CGO toolchain (Xcode command-line tools on macOS; `gcc` on Linux)
+- CGO toolchain for the GUI and macOS FSEvents service (Xcode command-line tools on macOS; `gcc` on Linux). The `ev` CLI and Linux service use pure Go SQLite.
 - **Linux only**: `sudo apt-get install libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev` (required for Fyne/OpenGL). The Wayland headers are needed even on a headless or X11-only box: since Fyne 2.8 the vendored GLFW compiles its Wayland backend unconditionally, so omitting them fails the GUI build with `wayland-client-core.h: No such file or directory`. Only the GUI needs these — `everythingxd` and `ev` build without them.
 - `fyne` CLI: `go install fyne.io/fyne/v2/cmd/fyne@latest` (macOS only, for `make app`)
 - **Packaging**: `nfpm` for `.deb`/`.rpm` — `go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest`

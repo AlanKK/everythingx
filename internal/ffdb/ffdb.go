@@ -2,6 +2,7 @@ package ffdb
 
 import (
 	"database/sql"
+	"errors"
 	"log"
 	"os"
 	"runtime"
@@ -9,7 +10,8 @@ import (
 	"time"
 
 	"github.com/AlanKK/everythingx/internal/shared"
-	"github.com/mattn/go-sqlite3"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // TODO:  check out driver benchmarks for sqlite3 at https://github.com/cvilsmeier/go-sqlite-bench
@@ -33,7 +35,7 @@ func CreateDB(pathname string) (*sql.DB, error) {
 		return nil, os.ErrExist
 	}
 
-	db, err := sql.Open("sqlite3", pathname)
+	db, err := sql.Open("sqlite", pathname)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +54,7 @@ func OpenDB(pathname string) (*sql.DB, error) {
 		return nil, error(os.ErrNotExist)
 	}
 
-	db, err := sql.Open("sqlite3", pathname)
+	db, err := sql.Open("sqlite", pathname)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +72,7 @@ func OpenDBReadOnly(pathname string) (*sql.DB, error) {
 		return nil, error(os.ErrNotExist)
 	}
 
-	db, err := sql.Open("sqlite3", "file:"+pathname+"?mode=ro")
+	db, err := sql.Open("sqlite", "file:"+pathname+"?mode=ro")
 	if err != nil {
 		return nil, err
 	}
@@ -449,8 +451,6 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 
 // Checks if the given error is a SQLite constraint violation error.
 func isDuplicate(err error) bool {
-	if sqliteErr, ok := err.(sqlite3.Error); ok && sqliteErr.Code == sqlite3.ErrConstraint {
-		return true
-	}
-	return false
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == sqlite3.SQLITE_CONSTRAINT
 }

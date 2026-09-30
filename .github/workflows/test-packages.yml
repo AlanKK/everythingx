@@ -94,7 +94,7 @@ jobs:
           sudo systemctl stop everythingxd
           mkdir -p bin
           ln -s /usr/local/bin/everythingxd bin/everythingxd
-          go build -tags fts5 -o e2eTest/e2etest e2eTest/main.go
+          go build -o e2eTest/e2etest e2eTest/main.go
           sudo e2eTest/e2etest
 
       - name: Cleanup
@@ -148,7 +148,7 @@ jobs:
           everythingxd --version
           mkdir -p bin
           ln -s /usr/local/bin/everythingxd bin/everythingxd
-          go build -tags fts5 -o e2eTest/e2etest e2eTest/main.go
+          go build -o e2eTest/e2etest e2eTest/main.go
           sudo e2eTest/e2etest
 
       - name: Cleanup

@@ -9,7 +9,7 @@ import (
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
 	"github.com/AlanKK/everythingx/internal/shared"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func TestUngzipFile(t *testing.T) {

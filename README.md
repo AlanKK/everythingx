@@ -123,7 +123,7 @@ bin/everythingx
 
 ### Prerequisites
 - Go 1.23+
-- CGO toolchain (Xcode CLT on macOS; `gcc` on Linux)
+- CGO toolchain for the GUI and macOS FSEvents service (Xcode CLT on macOS; `gcc` on Linux). The `ev` CLI and Linux service use pure Go SQLite.
 - **Linux GUI**: `sudo apt-get install libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev` (the Wayland headers are needed even on X11-only or headless systems; the daemon and CLI build without any of these)
 - **macOS app bundle**: `go install fyne.io/fyne/v2/cmd/fyne@latest`
 - **Linux packages**: `go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest`

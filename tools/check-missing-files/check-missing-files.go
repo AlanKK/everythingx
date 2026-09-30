@@ -6,14 +6,14 @@ import (
 	"log"
 	"os"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Get files from the database and check if they exist
 // Print counts.
 func main() {
 	filename := "/Users/alan/Documents/git/everythingx/data/files.db"
-	db, err := sql.Open("sqlite3", filename)
+	db, err := sql.Open("sqlite", filename)
 	if err != nil {
 		log.Fatal(err)
 	}
