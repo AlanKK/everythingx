@@ -185,6 +185,27 @@ jobs:
           everythingx_linux_${{ matrix.arch }}.rpm
         if-no-files-found: error
 
+  windows:
+    name: Windows CLI and indexer
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-go@v7
+      with:
+        go-version: '1.26.4'
+    - name: Test CGO-free packages
+      run: |
+        $env:CGO_ENABLED = '0'
+        go test ./internal/shared ./internal/ffdb ./cmd/service ./cmd/cli
+    - name: Build CGO-free CLI and indexer
+      run: |
+        $env:CGO_ENABLED = '0'
+        New-Item -ItemType Directory -Path bin -Force | Out-Null
+        go build -o bin/ev.exe ./cmd/cli
+        go build -o bin/everythingxd.exe ./cmd/service
+    - name: Smoke test initial index and live changes
+      run: ./tools/windows-smoke.ps1
+
   release:
     name: Create GitHub Release
     needs: [version, build]
@@ -213,4 +234,3 @@ jobs:
           artifacts/**/*.pkg
           artifacts/**/*.deb
           artifacts/**/*.rpm
-

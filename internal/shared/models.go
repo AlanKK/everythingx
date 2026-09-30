@@ -32,6 +32,8 @@ type EventRecord struct {
 	EventTime   int64
 	FoundOnScan bool
 	IsRename    bool
+	Deleted     bool
+	Flush       chan error
 }
 
 func (e EventAction) String() string {

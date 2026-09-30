@@ -1,7 +1,7 @@
 # ![EverythingX icon](assets/icons/retina/white-orange/folder-white-orange-32@2x.png) EverythingX
 
 ## Overview
-EverythingX is a _blazing_ fast file name search tool for macOS and Linux.
+EverythingX is a _blazing_ fast file name search tool for macOS and Linux, with a Windows CLI and indexer.
 
 EverythingX attempts to replicate the very excellent Windows utility called [Everything by Voidtools](https://www.voidtools.com/support/everything/).
 
@@ -52,6 +52,7 @@ The `everythingxd` daemon subscribes to filesystem updates from the kernel. It w
 - **Low resource usage**: Optimized to run efficiently in the background.
 - **macOS**: Uses FSEvents for real-time filesystem monitoring.
 - **Linux**: Uses fanotify (requires root and kernel 5.9+) for mount-level filesystem monitoring.
+- **Windows**: Uses `ReadDirectoryChangesW` to monitor one directory tree, including subdirectories. The CLI and indexer build without CGO.
 
 ## Installation
 
@@ -71,10 +72,10 @@ Pin a specific version:
 curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sudo EVERYTHINGX_VERSION=v0.2.2-beta sh
 ```
 
-**Supported platforms:** macOS (Apple Silicon and Intel) and mainstream glibc
+**Packaged platforms:** macOS (Apple Silicon and Intel) and mainstream glibc
 Linux with `systemd`, on `x86_64` and `arm64` — Debian/Ubuntu and derivatives via
 `.deb`, Fedora/RHEL/openSUSE and derivatives via `.rpm`. Alpine/musl is not
-supported.
+supported. Windows CLI and indexer builds are currently available from source.
 
 ### Manual download
 
@@ -105,6 +106,19 @@ sudo dnf install ./everythingx_linux_*.rpm
 
 The daemon requires root for fanotify (kernel 5.9+). The data directory `/var/lib/everythingx/` is created automatically. The GUI needs libGL/X libraries at runtime; on a minimal/headless server the `everythingxd` daemon and `ev` CLI still work without them.
 
+### Windows CLI and indexer
+
+From PowerShell with Go installed:
+
+```powershell
+$env:CGO_ENABLED = '0'
+go build -o everythingxd.exe ./cmd/service
+go build -o ev.exe ./cmd/cli
+.\everythingxd.exe
+```
+
+In another terminal, run `.\ev.exe filename`. By default, the indexer watches the system drive and stores its database at `%LOCALAPPDATA%\EverythingX\files.db`. To watch another directory or drive, run the indexer with `-monitor_path PATH -db_path DBPATH`, then search with `ev.exe -d DBPATH filename`. Each indexer instance watches one directory tree. The Windows GUI and installer are not yet available.
+
 ## Running Locally (without installing)
 ```bash
 make build
@@ -123,7 +137,7 @@ bin/everythingx
 
 ### Prerequisites
 - Go 1.23+
-- CGO toolchain for the GUI and macOS FSEvents service (Xcode CLT on macOS; `gcc` on Linux). The `ev` CLI and Linux service use pure Go SQLite.
+- CGO toolchain for the GUI and macOS FSEvents service (Xcode CLT on macOS; `gcc` on Linux). The `ev` CLI and Linux/Windows indexers use pure Go SQLite.
 - **Linux GUI**: `sudo apt-get install libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev` (the Wayland headers are needed even on X11-only or headless systems; the daemon and CLI build without any of these)
 - **macOS app bundle**: `go install fyne.io/fyne/v2/cmd/fyne@latest`
 - **Linux packages**: `go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest`

@@ -374,7 +374,8 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 		for j := i + 1; j < len(*eventRecordQueue); j++ {
 			ej := (*eventRecordQueue)[j]
 			if ej.IsRename && ej.ObjectType == shared.ItemIsDir && !handled[j] && shared.FileExists(ej.Path) {
-				_, err = renameDirStmt.Exec(ej.Path, e.Path, e.Path, ej.Filename, e.Path, e.Path+"/", e.Path+"0")
+				lower, upper := descendantBounds(e.Path)
+				_, err = renameDirStmt.Exec(ej.Path, e.Path, e.Path, ej.Filename, e.Path, lower, upper)
 				if err != nil {
 					return err
 				}
@@ -390,7 +391,7 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 		if handled[i] {
 			continue
 		}
-		if e.FoundOnScan || shared.FileExists(e.Path) {
+		if e.FoundOnScan || (!e.Deleted && shared.FileExists(e.Path)) {
 			_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
 			if err != nil {
 				if isDuplicate(err) {
@@ -406,7 +407,8 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 					// Unpaired rename — just remove the dir entry, don't cascade.
 					_, err = deleteStmt.Exec(e.Path)
 				} else {
-					_, err = deleteDirStmt.Exec(e.Path, e.Path+"/", e.Path+"0")
+					lower, upper := descendantBounds(e.Path)
+					_, err = deleteDirStmt.Exec(e.Path, lower, upper)
 				}
 			} else {
 				_, err = deleteStmt.Exec(e.Path)
@@ -453,4 +455,16 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 func isDuplicate(err error) bool {
 	var sqliteErr *sqlite.Error
 	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == sqlite3.SQLITE_CONSTRAINT
+}
+
+func descendantBounds(path string) (string, string) {
+	separator := byte('/')
+	if strings.LastIndexByte(path, '\\') > strings.LastIndexByte(path, '/') {
+		separator = '\\'
+	}
+	lower := path
+	if len(lower) == 0 || lower[len(lower)-1] != separator {
+		lower += string(separator)
+	}
+	return lower, lower[:len(lower)-1] + string(separator+1)
 }

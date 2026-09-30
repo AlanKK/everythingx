@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-EverythingX is a fast file-name search tool for macOS and Linux, inspired by [Everything by Voidtools](https://www.voidtools.com/support/everything/). It consists of three binaries:
+EverythingX is a fast file-name search tool for macOS and Linux, with a Windows CLI and indexer, inspired by [Everything by Voidtools](https://www.voidtools.com/support/everything/). It consists of three binaries:
 
 | Binary | Source | Purpose |
 |---|---|---|
-| `everythingxd` | `cmd/service/` | Background daemon — indexes the filesystem into SQLite via FSEvents (macOS) or fanotify (Linux) |
+| `everythingxd` | `cmd/service/` | Background daemon — indexes the filesystem into SQLite via FSEvents (macOS), fanotify (Linux), or ReadDirectoryChangesW (Windows) |
 | `everythingx` | `cmd/everythingx/` | GUI app — Fyne-based search interface |
 | `ev` | `cmd/cli/` | CLI tool — fast command-line search |
 
@@ -17,6 +17,7 @@ EverythingX is a fast file-name search tool for macOS and Linux, inspired by [Ev
 - **Database**: SQLite3 via `modernc.org/sqlite` (pure Go, with FTS5 trigram support)
 - **FS Events (macOS)**: `github.com/fsnotify/fsevents` (FSEvents API, `//go:build darwin`)
 - **FS Events (Linux)**: `golang.org/x/sys/unix` fanotify with `FAN_MARK_FILESYSTEM` (`//go:build linux`, requires root + kernel 5.9+)
+- **FS Events (Windows)**: `golang.org/x/sys/windows` `ReadDirectoryChangesW` (`//go:build windows`)
 - **CLI flags**: `github.com/jessevdk/go-flags`
 
 ## Repository Layout
@@ -27,9 +28,11 @@ cmd/
     common.go           # shared daemon code (no build tag)
     main_darwin.go      # macOS FSEvents monitoring (//go:build darwin)
     main_linux.go       # Linux fanotify monitoring (//go:build linux)
+    main_windows.go     # Windows directory monitoring (//go:build windows)
     common_test.go      # platform-agnostic tests
     main_darwin_test.go # macOS-only tests
     main_linux_test.go  # Linux-only tests
+    main_windows_test.go # Windows-only tests
     everythingxd.service # systemd unit file
     com.github.alankk.everythingxd.plist # launchd plist (macOS)
   everythingx/    # GUI app (main.go, ui.go, theme.go, assets.go, open_darwin.go, open_linux.go)
@@ -58,6 +61,7 @@ uninstall-linux.sh # Linux uninstall script
    - On startup, performs an initial full-disk scan and populates the SQLite DB.
    - **macOS**: subscribes to FSEvents for real-time create/delete notifications.
    - **Linux**: opens a fanotify fd with `FAN_MARK_FILESYSTEM` for mount-level monitoring.
+   - **Windows**: watches one directory tree recursively with `ReadDirectoryChangesW` and reconciles after lost events.
    - Writes to the DB, which is opened in WAL mode to allow concurrent readers.
    - `shouldIgnorePath()` is defined per-platform: macOS skips `/System/Volumes/Data`; Linux skips `/proc`, `/sys`, `/run`, `/dev`, `/snap`.
 
@@ -77,7 +81,7 @@ CREATE TABLE files (
 CREATE INDEX idx_filename ON files(filename COLLATE BINARY);
 ```
 
-Default DB path: `/var/lib/everythingx/files.db`
+Default DB path: `/var/lib/everythingx/files.db` on macOS/Linux; `%LOCALAPPDATA%\EverythingX\files.db` on Windows.
 
 ### Search Query
 
@@ -129,6 +133,7 @@ Prepared statements (`prefixSearchStmt`, `insertStmt`, `deleteStmt`) are package
 - Shared logic lives in `common.go` (no build tag): config parsing, DB setup, disk scan, event queue, DB writer goroutine.
 - **macOS** (`main_darwin.go`, `//go:build darwin`): FSEvents stream monitoring; installed via launchd plist `com.github.alankk.everythingxd.plist`.
 - **Linux** (`main_linux.go`, `//go:build linux`): fanotify mount-level monitoring via `golang.org/x/sys/unix`; `FAN_REPORT_DFID_NAME` (kernel 5.9+); installed as a systemd service `everythingxd.service`.
+- **Windows** (`main_windows.go`, `//go:build windows`): watches one directory tree recursively with `ReadDirectoryChangesW`; the CLI and indexer build with `CGO_ENABLED=0`.
 - Uses a channel (`dbChannel chan *shared.EventRecord`) to decouple FS events from DB writes.
 - Handles `SIGTERM`/`SIGINT` for graceful shutdown.
 
@@ -137,7 +142,7 @@ Prepared statements (`prefixSearchStmt`, `insertStmt`, `deleteStmt`) are package
 ### Prerequisites
 
 - Go 1.23+
-- CGO toolchain for the GUI and macOS FSEvents service (Xcode command-line tools on macOS; `gcc` on Linux). The `ev` CLI and Linux service use pure Go SQLite.
+- CGO toolchain for the GUI and macOS FSEvents service (Xcode command-line tools on macOS; `gcc` on Linux). The `ev` CLI and Linux/Windows service use pure Go SQLite.
 - **Linux only**: `sudo apt-get install libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev` (required for Fyne/OpenGL). The Wayland headers are needed even on a headless or X11-only box: since Fyne 2.8 the vendored GLFW compiles its Wayland backend unconditionally, so omitting them fails the GUI build with `wayland-client-core.h: No such file or directory`. Only the GUI needs these — `everythingxd` and `ev` build without them.
 - `fyne` CLI: `go install fyne.io/fyne/v2/cmd/fyne@latest` (macOS only, for `make app`)
 - **Packaging**: `nfpm` for `.deb`/`.rpm` — `go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest`
@@ -195,6 +200,11 @@ bin/everythingx
 - VS Code on Linux will show false-positive errors in `main_darwin.go` for `fsevents.*` symbols — these are a cross-compilation analysis artifact, not real build errors.
 - Ignored paths: `/proc`, `/sys`, `/run`, `/dev`, `/snap`.
 - Since Fyne 2.8 the GUI selects Wayland at runtime instead of always going via XWayland. In a Wayland session Fyne still falls back to X11 when the compositor forces client-side decorations. Override the choice with `FYNE_PLATFORM=x11` or `FYNE_PLATFORM=wayland` if window decorations or placement misbehave.
+
+### Windows
+- Build `cmd/cli` and `cmd/service` with `CGO_ENABLED=0`; the Fyne GUI and installer are not yet supported.
+- The indexer watches one directory tree (the system drive by default) and stores its DB under `%LOCALAPPDATA%\EverythingX`.
+- Run `tools/windows-smoke.ps1` after building the Windows binaries in `bin/` to check the initial scan and live create, rename, and delete updates.
 
 # everythingx Project Guide
 

@@ -17,7 +17,7 @@ type Options struct {
 	Args struct {
 		SearchTerm string `positional-arg-name:"searchTerm" description:"Search term, full or partial filename"`
 	} `positional-args:"yes"`
-	DBPath    string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/everythingx/files.db"`
+	DBPath    string `short:"d" long:"db_path" description:"Path to the database file"`
 	Verbose   bool   `short:"v" long:"verbose" description:"Enable verbose logging"`
 	Version   bool   `long:"version" description:"Show version information"`
 	Highlight bool   `short:"b" long:"highlight" description:"Highlight (bold) search term in results for readability"`
@@ -25,6 +25,7 @@ type Options struct {
 
 func main() {
 	var opts Options
+	opts.DBPath = shared.DefaultDBPath()
 	parser := flags.NewParser(&opts, flags.Default|flags.PrintErrors|flags.HelpFlag)
 
 	_, err := parser.Parse()

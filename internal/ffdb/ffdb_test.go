@@ -762,6 +762,28 @@ func TestBulkStoreEvents_DirDeleteCascade(t *testing.T) {
 	assertCount(t, db, 0, "after cascade dir delete")
 }
 
+func TestBulkStoreEvents_WindowsDirDeleteCascade(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "windows-paths.db")
+	db, err := CreateDB(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	seed := []shared.EventRecord{
+		{Filename: "project", Path: `C:\root\project`, ObjectType: shared.ItemIsDir, FoundOnScan: true},
+		{Filename: "child.txt", Path: `C:\root\project\child.txt`, ObjectType: shared.ItemIsFile, FoundOnScan: true},
+		{Filename: "sibling.txt", Path: `C:\root\project2\sibling.txt`, ObjectType: shared.ItemIsFile, FoundOnScan: true},
+	}
+	if err := BulkStoreEvents(db, &seed); err != nil {
+		t.Fatal(err)
+	}
+	removed := []shared.EventRecord{{Path: `C:\root\project`, ObjectType: shared.ItemIsDir, Deleted: true}}
+	if err := BulkStoreEvents(db, &removed); err != nil {
+		t.Fatal(err)
+	}
+	assertCount(t, db, 1, "after Windows directory cascade")
+}
+
 // TestBulkStoreEvents_DirRename tests the rename/move scenario:
 // A directory is renamed (mv /tmp/projectA /tmp/projectB). The FS watcher
 // fires a delete event for the old path and a create event for the new path.

@@ -6,10 +6,9 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/user"
+	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -20,10 +19,38 @@ func GetHomeDirPath() string {
 		homeDir = "/Users"
 	case "linux", "freebsd", "openbsd", "netbsd":
 		homeDir = "/home"
+	case "windows":
+		homeDir = filepath.Join(systemDriveRoot(), "Users")
 	default:
 		log.Printf("Unsupported operating system: %s", runtime.GOOS)
 	}
 	return homeDir
+}
+
+func DefaultMonitorPath() string {
+	if runtime.GOOS == "windows" {
+		return systemDriveRoot()
+	}
+	return "/"
+}
+
+func DefaultDBPath() string {
+	if runtime.GOOS == "windows" {
+		cacheDir, err := os.UserCacheDir()
+		if err != nil {
+			cacheDir = os.TempDir()
+		}
+		return filepath.Join(cacheDir, "EverythingX", "files.db")
+	}
+	return "/var/lib/everythingx/files.db"
+}
+
+func systemDriveRoot() string {
+	drive := os.Getenv("SystemDrive")
+	if drive == "" {
+		drive = "C:"
+	}
+	return drive + `\`
 }
 
 func FileExists(filename string) bool {
@@ -61,24 +88,6 @@ func GetFileInfo(path string) (string, error) {
 	}
 
 	return b.String(), nil
-}
-
-// fileOwnerGroup resolves the owner and group names for a file, falling back to
-// numeric ids when a name lookup fails.
-func fileOwnerGroup(fileInfo os.FileInfo) (owner, group string) {
-	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
-	if !ok {
-		return "", ""
-	}
-	owner = fmt.Sprintf("%d", stat.Uid)
-	group = fmt.Sprintf("%d", stat.Gid)
-	if u, err := user.LookupId(fmt.Sprintf("%d", stat.Uid)); err == nil {
-		owner = u.Username
-	}
-	if g, err := user.LookupGroupId(fmt.Sprintf("%d", stat.Gid)); err == nil {
-		group = g.Name
-	}
-	return owner, group
 }
 
 // HumanizeSize formats a byte count as a short human-readable string.

@@ -35,8 +35,8 @@ var config Config
 func getCommandLineArgs() Config {
 	var showVersion bool
 	config = Config{}
-	flag.StringVar(&config.MonitorPath, "monitor_path", "/", "Path to monitor for file system events")
-	flag.StringVar(&config.DBPath, "db_path", "/var/lib/everythingx/files.db", "Path to the database file")
+	flag.StringVar(&config.MonitorPath, "monitor_path", shared.DefaultMonitorPath(), "Path to monitor for file system events")
+	flag.StringVar(&config.DBPath, "db_path", shared.DefaultDBPath(), "Path to the database file")
 	flag.BoolVar(&config.NoCache, "nocache", false, "Disable caching")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Enable verbose logging")
 	flag.BoolVar(&showVersion, "version", false, "Display version information and exit")
@@ -124,7 +124,10 @@ func databaseWriter(db *sql.DB, noCache bool) {
 	var eventRecordQueue = []shared.EventRecord{}
 	log.Printf("Queue %p", &eventRecordQueue)
 
-	flush := func() {
+	flush := func() error {
+		if len(eventRecordQueue) == 0 {
+			return nil
+		}
 		err := ffdb.BulkStoreEvents(db, &eventRecordQueue)
 		if err != nil {
 			log.Println("Error writing to db: ", err)
@@ -134,6 +137,7 @@ func databaseWriter(db *sql.DB, noCache bool) {
 			eventRecordQueue = make([]shared.EventRecord, 0, 1000)
 		}
 		lastFlushTime = time.Now()
+		return err
 	}
 
 	ticker := time.NewTicker(delayTime)
@@ -143,7 +147,12 @@ func databaseWriter(db *sql.DB, noCache bool) {
 		select {
 		case event, ok := <-dbChannel:
 			if !ok {
+				flush()
 				return
+			}
+			if event.Flush != nil {
+				event.Flush <- flush()
+				continue
 			}
 			eventRecordQueue = append(eventRecordQueue, *event)
 			if time.Since(lastFlushTime) >= delayTime || len(eventRecordQueue) >= maxQueueSize {
@@ -155,6 +164,12 @@ func databaseWriter(db *sql.DB, noCache bool) {
 			}
 		}
 	}
+}
+
+func flushDatabaseWriter() error {
+	result := make(chan error, 1)
+	dbChannel <- &shared.EventRecord{Flush: result}
+	return <-result
 }
 
 // If a file is missing, create an EventRecord with a delete action.
