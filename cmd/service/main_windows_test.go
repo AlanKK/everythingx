@@ -42,13 +42,13 @@ func TestParseFileChanges(t *testing.T) {
 func TestWindowsWatcherIgnoresOwnDatabase(t *testing.T) {
 	old := config
 	t.Cleanup(func() { config = old })
-	config.DBPath = `C:\Users\test\EverythingX\files.db`
+	config.DBPath = `C:\example\EverythingX\files.db`
 	for _, path := range []string{config.DBPath, config.DBPath + "-wal", config.DBPath + "-shm", config.DBPath + "-journal"} {
 		if !shouldIgnorePath(path) {
 			t.Fatalf("database path was not ignored: %s", path)
 		}
 	}
-	if shouldIgnorePath(`C:\Users\test\EverythingX\notes.txt`) {
+	if shouldIgnorePath(`C:\example\EverythingX\notes.txt`) {
 		t.Fatal("unrelated path was ignored")
 	}
 }

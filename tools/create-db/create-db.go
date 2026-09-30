@@ -5,10 +5,11 @@ import (
 	"log"
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
+	"github.com/AlanKK/everythingx/internal/shared"
 )
 
 func main() {
-	pathname := flag.String("path", "/Users/alan/Documents/everythingx/files.db", "Path to the database file")
+	pathname := flag.String("path", shared.DefaultDBPath(), "Path to the database file")
 	flag.Parse()
 
 	db, err := ffdb.CreateDB(*pathname)

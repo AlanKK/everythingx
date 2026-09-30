@@ -2,23 +2,26 @@ package main
 
 import (
 	"database/sql"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 
+	"github.com/AlanKK/everythingx/internal/shared"
 	_ "modernc.org/sqlite"
 )
 
 // Get files from the database and check if they exist
 // Print counts.
 func main() {
-	filename := "/Users/alan/Documents/everythingx/files.db"
-	db, err := sql.Open("sqlite", filename)
+	filename := flag.String("path", shared.DefaultDBPath(), "Path to the database file")
+	flag.Parse()
+	db, err := sql.Open("sqlite", *filename)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	fmt.Println("Checking ", filename)
+	fmt.Println("Checking ", *filename)
 
 	rows, err := db.Query("SELECT fullpath FROM files")
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 
 func main() {
 	root := flag.String("root", "/", "Root path to begin scan")
+	output := flag.String("output", "myscan-md5.txt", "Path for the scan output")
 	flag.Parse()
 
 	log.Println("Scanning from", *root)
@@ -23,7 +24,7 @@ func main() {
 	fileCount := 0
 	dirCount := 0
 
-	outputFile, err := os.Create("/Users/alan/Documents/git/everythingx/data/myscan-md5.txt")
+	outputFile, err := os.Create(*output)
 	if err != nil {
 		log.Fatalf("Error creating output file: %v", err)
 	}
