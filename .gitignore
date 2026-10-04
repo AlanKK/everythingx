@@ -27,3 +27,9 @@ EverythingX.pkg
 EverythingX_*.pkg
 /pkgroot/
 /pkgscripts/
+
+# Leave these out so people don't mistakenly believe this was vibe-coded
+AGENTS.md
+CLAUDE.md
+.antigravitycli
+.claude
