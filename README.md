@@ -29,9 +29,16 @@ The EverythingX CLI, called `ev`, allows you to search for files and directories
 
 ### Usage
 ```
-ev search_term [-b]
+ev search_term [-b] [-u] [-x]
 
 -b bold search term in the result. This option helps readability of the output but interferes with piping results to another command.
+-u show only results in the current user's home directory ($HOME).
+-x show only executable files (regular files, or symlinks to them, with any execute bit set). Each result is checked on disk, so this is slower for terms with many matches.
+```
+
+```
+ev -ux build
+/home/alan/bin/build.sh
 ```
 
 ```
