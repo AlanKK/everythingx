@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
 	"github.com/AlanKK/everythingx/internal/shared"
@@ -17,10 +18,47 @@ type Options struct {
 	Args struct {
 		SearchTerm string `positional-arg-name:"searchTerm" description:"Search term, full or partial filename"`
 	} `positional-args:"yes"`
-	DBPath    string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/everythingx/files.db"`
-	Verbose   bool   `short:"v" long:"verbose" description:"Enable verbose logging"`
-	Version   bool   `long:"version" description:"Show version information"`
-	Highlight bool   `short:"b" long:"highlight" description:"Highlight (bold) search term in results for readability"`
+	DBPath     string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/everythingx/files.db"`
+	Verbose    bool   `short:"v" long:"verbose" description:"Enable verbose logging"`
+	Version    bool   `long:"version" description:"Show version information"`
+	Highlight  bool   `short:"b" long:"highlight" description:"Highlight (bold) search term in results for readability"`
+	UserHome   bool   `short:"u" long:"user" description:"Show only results in the current user's home directory"`
+	Executable bool   `short:"x" long:"executable" description:"Show only executable files"`
+}
+
+// Keeps only results that are dir itself or inside it.
+func filterUnderDir(results []*shared.SearchResult, dir string) []*shared.SearchResult {
+	dir = strings.TrimRight(dir, "/")
+	filtered := results[:0]
+	for _, r := range results {
+		if r.Fullpath == dir || strings.HasPrefix(r.Fullpath, dir+"/") {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
+// Keeps only regular files (or symlinks to them) with any execute bit set.
+func filterExecutable(results []*shared.SearchResult) []*shared.SearchResult {
+	filtered := results[:0]
+	for _, r := range results {
+		if r.ObjectType != shared.ItemIsFile && r.ObjectType != shared.ItemIsSymlink {
+			continue
+		}
+		if isExecutable(r.Fullpath) {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
+// Reports whether path (following symlinks) is a regular file with any execute bit set.
+func isExecutable(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0
 }
 
 func main() {
@@ -67,6 +105,19 @@ func main() {
 		if err != nil {
 			fmt.Println("Error searching for ", opts.Args.SearchTerm, err)
 			os.Exit(1)
+		}
+
+		if opts.UserHome {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				fmt.Println("Error finding home directory: ", err)
+				os.Exit(1)
+			}
+			results = filterUnderDir(results, home)
+		}
+
+		if opts.Executable {
+			results = filterExecutable(results)
 		}
 
 		sort.Slice(results, func(i, j int) bool {
