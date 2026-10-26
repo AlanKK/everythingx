@@ -22,7 +22,7 @@ import (
 )
 
 // ignorePaths contains Linux kernel virtual filesystems and other paths that
-// should not be indexed — they are not real files and change constantly.
+// should not be indexed. They are not real files and change constantly.
 var ignorePaths = []string{
 	"/proc",
 	"/sys",
@@ -74,7 +74,7 @@ func resolvePathFromFD(fd int32) string {
 // mountFDMap maps filesystem IDs (fsid) to O_PATH file descriptors, used by
 // parseDFIDNamePath to resolve parent directory file handles via open_by_handle_at.
 // overflowed reports whether the kernel signaled FAN_Q_OVERFLOW, meaning events
-// were dropped before we ever read them — the index can no longer be trusted
+// were dropped before we ever read them, so the index can no longer be trusted
 // to be complete and a rescan is required.
 func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*shared.EventRecord, overflowed bool) {
 	n := len(buf)
@@ -95,7 +95,7 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 		}
 
 		extraStart := offset + int(sizeofEventMetadata)
-		offset = eventEnd // advance past this event
+		offset = eventEnd
 
 		if mask&unix.FAN_Q_OVERFLOW != 0 {
 			overflowed = true
@@ -107,7 +107,7 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 			path = resolvePathFromFD(fd)
 			unix.Close(int(fd))
 		} else if extraStart < eventEnd {
-			// Slice directly from buf — no copy needed
+			// no copy needed
 			path = parseDFIDNamePath(buf[extraStart:eventEnd], mountFDMap)
 		}
 
@@ -166,7 +166,7 @@ type dfidNameInfo struct {
 // The kernel (fanotify_fid_info_len / copy_fid_info_to_user in
 // fs/notify/fanotify/fanotify_user.c) only pads the *end* of the whole info
 // record to FANOTIFY_EVENT_ALIGN (4 bytes) so the next info record (or the
-// next event) starts aligned — the filename itself is placed immediately
+// next event) starts aligned. The filename itself is placed immediately
 // after f_handle, with no padding in between.
 func parseDFIDNameInfo(info []byte) (dfidNameInfo, bool) {
 	const headerSize = 4                            // info_type(1) + pad(1) + len(2)
@@ -346,7 +346,7 @@ func (h *fanotifyHandle) get() (int, map[[2]int32]int) {
 
 // beginClose marks the handle as shutting down and returns the fd and mount map
 // to release. The event reader is parked in read() on that fd without holding
-// the lock, so closing it wakes the reader with EBADF — the flag is what tells
+// the lock, so closing it wakes the reader with EBADF. The flag is what tells
 // it to exit rather than treat that as a fault and reinitialize.
 func (h *fanotifyHandle) beginClose() (int, map[[2]int32]int) {
 	h.mu.Lock()
@@ -389,14 +389,14 @@ func setupFanotify(watchMask uint64) (int, map[[2]int32]int, error) {
 		log.Printf("FAN_REPORT_DFID_NAME not available (%v), falling back to basic fanotify (kernel 5.1+ required)", err)
 		fd, err = unix.FanotifyInit(fanotifyFlags, unix.O_RDONLY|unix.O_LARGEFILE)
 		if err != nil {
-			return -1, nil, fmt.Errorf("fanotify_init failed: %w — ensure you are running as root and kernel >= 5.1", err)
+			return -1, nil, fmt.Errorf("fanotify_init failed: %w (are you root, kernel >= 5.1?)", err)
 		}
 	}
 
 	mountFDMap := buildMountFDMap(fd, watchMask)
 	if len(mountFDMap) == 0 {
 		unix.Close(fd)
-		return -1, nil, fmt.Errorf("no filesystems could be monitored — ensure running as root")
+		return -1, nil, fmt.Errorf("no filesystems could be monitored (are you root?)")
 	}
 
 	return fd, mountFDMap, nil
@@ -467,7 +467,7 @@ func triggerRescan(reason string) {
 
 	go func() {
 		for {
-			log.Printf("%s — starting full rescan to recover", reason)
+			log.Printf("%s, starting full rescan to recover", reason)
 			scanPrioritizingHome(config.MonitorPath)
 			deleteMissing(config.MonitorPath)
 
@@ -521,7 +521,7 @@ func main() {
 
 	setupSignalHandlers(db, fh)
 
-	// Event reader goroutine — uses blocking reads (no FAN_NONBLOCK),
+	// Event reader goroutine. Uses blocking reads (no FAN_NONBLOCK),
 	// so the goroutine parks with zero CPU until events arrive. On a fatal
 	// read error it reinitializes fanotify from scratch (with backoff)
 	// instead of dying, since the process otherwise keeps running with
@@ -540,14 +540,14 @@ func main() {
 				if fh.isClosing() {
 					return
 				}
-				log.Printf("fanotify read error: %v — reinitializing fanotify", err)
+				log.Printf("fanotify read error: %v; reinitializing fanotify", err)
 				for {
 					newFD, newMountFDMap, initErr := setupFanotify(watchMask)
 					if initErr == nil {
 						fh.replace(newFD, newMountFDMap)
 						break
 					}
-					log.Printf("fanotify reinitialization failed: %v — retrying in 5s", initErr)
+					log.Printf("fanotify reinitialization failed: %v; retrying in 5s", initErr)
 					time.Sleep(5 * time.Second)
 				}
 				triggerRescan("fanotify was reinitialized after a read error, events may have been missed")

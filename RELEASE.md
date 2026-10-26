@@ -1,67 +1,53 @@
-# Release Process
+# Releases
 
-## How CI Works
+Every merge to `main` builds and tests on all platforms, then tags and publishes a new
+release automatically. If a build or test fails, nothing gets tagged; fix it and merge again.
 
 | Trigger | What runs |
 |---|---|
-| Push/merge to `main` | **Auto-release.** Build + tests on all platforms, then auto-increments the build counter and publishes a "Latest" GitHub Release with the macOS `.pkg` installers + Linux `.deb`/`.rpm`. |
-| Tag `v*` | Build + tests, then a GitHub Release using the tag's version. |
-| PR / other branch / manual dispatch | Build + unit tests only (`0.0.0-dev`). No release. |
+| Merge to `main` | Build, test, bump the build counter, publish as Latest with the `.pkg`, `.deb` and `.rpm` files |
+| Tag `v*` | Build, test, publish a release with the tag's version |
+| PR, other branches, manual dispatch | Build and unit tests only (`0.0.0-dev`), no release |
 
-Runs are serialized per-ref (`concurrency`), so two merges to `main` in quick succession queue rather than race — each gets its own incremented version.
+Runs are serialized per ref, so two quick merges queue up and each gets its own version.
 
-## Releasing
+## Versions
 
-**You don't have to do anything.** Every merge to `main` automatically:
+Auto builds count up from the highest `v0.2.N-beta` tag: `v0.2.1-beta`, `v0.2.2-beta`, and so on.
 
-1. Reads the highest existing `v0.2.N-beta` tag and computes the next one (`v0.2.N+1-beta`).
-2. Builds and tests on every platform.
-3. If everything passes, creates that tag at the merge commit and publishes it as the **Latest** GitHub Release with auto-generated notes and all packages attached.
-
-If any build or test fails, no tag or release is created — fix and merge again.
-
-### Manual (semver) releases
-
-To cut a versioned release outside the build counter (e.g. a real `v1.0.0`), tag it yourself:
+For a real version, tag it by hand:
 
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-CI runs on the tag and publishes the release. Tag-created events use `GITHUB_TOKEN`, so the auto-tag from a `main` build never re-triggers the workflow.
+Manual tags must be `v` followed by a digit (`v1.0.0`, `v2.1.0-rc.1`). The auto-tag uses
+`GITHUB_TOKEN`, so it doesn't re-trigger the workflow.
 
-## Version Scheme
+Package versions drop the `v`. deb/rpm need a leading digit, and nfpm writes `-beta` as
+`~beta` (`everythingx_0.2.1~beta_amd64.deb`). Version, commit and build date are baked in
+with `-ldflags`; check with `ev --version` or `everythingxd --version`.
 
-- **Auto builds** (merge to `main`) use a monotonic build counter: `v0.2.1-beta`, `v0.2.2-beta`, … derived from the latest `v0.2.N-beta` tag.
-- **Manual tags** must start with `v` followed by a digit (e.g., `v1.0.0`, `v1.0-beta-1`, `v2.1.0-rc.1`). Bump major/minor by tagging manually; the counter resumes from the next `v0.2.N-beta`.
-- The `v` prefix is stripped for package versions (e.g., `v0.2.1-beta` → `0.2.1-beta`). deb/rpm require a version starting with a digit; nfpm renders the `-beta` prerelease as `~beta` (e.g. `everythingx_0.2.1~beta_amd64.deb`).
-- PR / feature-branch / manual-dispatch builds use `0.0.0-dev`.
-- Version, commit, and build date are embedded in all binaries via `-ldflags`.
-- Check with: `ev --version` or `everythingxd --version`
-
-## Artifacts Produced
+## Artifacts
 
 | Artifact | Platform | Contents |
 |---|---|---|
-| `EverythingX_macos-apple-arm64.pkg` | macOS Apple Silicon | Installer package: `EverythingX.app` → `/Applications`, `ev`/`everythingxd` → `/usr/local/bin`, launchd plist → `/Library/LaunchDaemons`; postinstall starts the daemon |
+| `EverythingX_macos-apple-arm64.pkg` | macOS Apple Silicon | `EverythingX.app` → `/Applications`, `ev`/`everythingxd` → `/usr/local/bin`, launchd plist → `/Library/LaunchDaemons`; postinstall starts the daemon |
 | `EverythingX_macos-intel-amd64.pkg` | macOS Intel | Same as above |
 | `everythingx_linux_amd64.deb` | Linux x86_64 (Debian/Ubuntu) | `everythingxd`, `ev`, systemd service, desktop entry |
 | `everythingx_linux_arm64.deb` | Linux arm64 (Debian/Ubuntu) | Same as above |
 | `everythingx_linux_amd64.rpm` | Linux x86_64 (Fedora/RHEL) | Same as above |
 | `everythingx_linux_arm64.rpm` | Linux arm64 (Fedora/RHEL) | Same as above |
 
-Asset names are stable (no embedded version) so `install.sh` can fetch them from
-`releases/latest/download/`. Each Linux runner builds its own arch natively (amd64 on
-`ubuntu-latest`, arm64 on `ubuntu-24.04-arm`) and the `release` job just collects
-every artifact — it no longer rebuilds packages itself.
+Asset names don't include the version, so `install.sh` can fetch them from
+`releases/latest/download/`. Each Linux arch is built natively (`ubuntu-latest` for amd64,
+`ubuntu-24.04-arm` for arm64) and the `release` job only collects the artifacts.
 
-## Manual Smoke Test
+## Smoke test
 
-After publishing a release, you can re-test the published artifacts on clean runners:
+To re-test a published release on clean runners:
 
 ```bash
 gh workflow run "Test Published Release" -f tag=v1.0-beta-1
 ```
-
-This downloads the release assets from GitHub and tests installation on each platform.

@@ -12,14 +12,14 @@
 #   EVERYTHINGX_VERSION   pin a specific release tag (e.g. v0.2.2-beta).
 #                         Defaults to the latest release.
 #
-# POSIX sh only (no bashisms) — the pipe target is often dash.
+# POSIX sh only since the pipe target is often dash.
 
 set -eu
 
 REPO="${EVERYTHINGX_REPO:-AlanKK/everythingx}"
 VERSION="${EVERYTHINGX_VERSION:-latest}"
 
-# ---- output helpers ---------------------------------------------------------
+# output helpers
 if [ -t 1 ]; then
     BOLD="$(printf '\033[1m')"; RED="$(printf '\033[31m')"
     GREEN="$(printf '\033[32m')"; RESET="$(printf '\033[0m')"
@@ -30,7 +30,7 @@ info() { printf '%s\n' "${BOLD}==>${RESET} $*"; }
 warn() { printf '%s\n' "${BOLD}${RED}warning:${RESET} $*" >&2; }
 err()  { printf '%s\n' "${BOLD}${RED}error:${RESET} $*" >&2; exit 1; }
 
-# ---- privilege escalation ---------------------------------------------------
+# privilege escalation
 # Under `curl | sh` there is no script file to re-exec, so prefix privileged
 # commands with $SUDO rather than re-running ourselves.
 SUDO=""
@@ -42,7 +42,7 @@ if [ "$(id -u)" -ne 0 ]; then
     fi
 fi
 
-# ---- download helper --------------------------------------------------------
+# download helper
 download() {
     _url="$1"; _out="$2"
     if command -v curl >/dev/null 2>&1; then
@@ -66,7 +66,7 @@ asset_url() {
     fi
 }
 
-# ---- detect architecture ----------------------------------------------------
+# detect architecture
 ARCH="$(uname -m)"
 case "$ARCH" in
     x86_64 | amd64)          ARCH="amd64" ;;
@@ -76,7 +76,7 @@ esac
 
 OS="$(uname -s)"
 
-# ---- temp workspace ---------------------------------------------------------
+# temp workspace
 TMPDIR_EX="$(mktemp -d 2>/dev/null || mktemp -d -t everythingx)"
 cleanup() { rm -rf "$TMPDIR_EX"; }
 trap cleanup EXIT INT TERM
@@ -109,7 +109,7 @@ EOF
 }
 
 install_linux() {
-    # CGO/glibc binaries — musl (Alpine) is not supported.
+    # CGO/glibc binaries; musl (Alpine) is not supported.
     if command -v apk >/dev/null 2>&1 || grep -qs '^ID=alpine' /etc/os-release 2>/dev/null; then
         err "Alpine/musl is not supported. EverythingX ships glibc binaries (Debian, Ubuntu, Fedora, RHEL, openSUSE, ...)."
     fi
@@ -152,7 +152,7 @@ install_linux() {
 
     printf '\n%s\n' "${GREEN}${BOLD}EverythingX installed.${RESET}"
     if ! command -v systemctl >/dev/null 2>&1; then
-        warn "systemd not detected — the daemon was not started automatically."
+        warn "systemd not detected, so the daemon was not started automatically."
         printf '%s\n' "Start it manually with: sudo everythingxd"
     fi
     cat <<'EOF'

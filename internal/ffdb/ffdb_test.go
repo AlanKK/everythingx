@@ -748,7 +748,7 @@ func TestBulkStoreEvents_DirDeleteCascade(t *testing.T) {
 
 	assertCount(t, db, 5, "after seeding")
 
-	// Directory has been rm -rf'd — it no longer exists on disk.
+	// Directory has been rm -rf'd, so it no longer exists on disk.
 	// The FS watcher fires a delete event for the dir only (children events dropped).
 	deleteEvents := []shared.EventRecord{
 		{Filename: "project", Path: "/tmp/project", ObjectType: shared.ItemIsDir},
@@ -765,7 +765,7 @@ func TestBulkStoreEvents_DirDeleteCascade(t *testing.T) {
 // TestBulkStoreEvents_DirRename tests the rename/move scenario:
 // A directory is renamed (mv /tmp/projectA /tmp/projectB). The FS watcher
 // fires a delete event for the old path and a create event for the new path.
-// Only the directory events fire — children don't get individual events.
+// Only the directory events fire; children don't get individual events.
 func TestBulkStoreEvents_DirRename(t *testing.T) {
 	testDBPath := "test.db"
 	os.Remove(testDBPath)

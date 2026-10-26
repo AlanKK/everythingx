@@ -1,31 +1,19 @@
 # ![EverythingX icon](assets/icons/retina/white-orange/folder-white-orange-32@2x.png) EverythingX
 
-## Overview
-EverythingX is a _blazing_ fast file name search tool for macOS and Linux.
+EverythingX is a fast file name search tool for macOS and Linux.
 
-EverythingX attempts to replicate the very excellent Windows utility called [Everything by Voidtools](https://www.voidtools.com/support/everything/).
+It started as an attempt to get [Everything by Voidtools](https://www.voidtools.com/support/everything/) on a Mac. A background service watches the filesystem and keeps an index up to date without rescanning the disk. You search it from a GUI app or from the command line, and results show up as you type.
 
-A background service captures real-time updates as files and directories change without scanning your disk. An app and a command-line tool do fast searches as you type.
+Compared to Spotlight, `locate` and `find`, it's quicker to index, it picks up changes as they happen, it stays light on CPU and memory, and it starts instantly.
 
-## How is EverythingX different from other search tools such as Spotlight, locate, and find?
-- Minimal resource usage
-- Quick file indexing
-- Real-time updating
-- Clean and simple user interface
-- Instant search results as you type
-- Quick startup
-- Open source
+There are three binaries:
 
-## Components
+- `everythingxd`: the background daemon that watches for file changes
+- `everythingx`: the GUI app
+- `ev`: the command-line search
 
-| Binary | Purpose |
-|--------|---------|
-| `everythingxd` | Background daemon — subscribes to filesystem updates in real time |
-| `everythingx` | GUI application — instant search as you type |
-| `ev` | CLI tool — fast command-line search |
-
-## Command Line Interface (CLI)
-The EverythingX CLI, called `ev`, allows you to search for files and directories from the command-line. It is far faster than using `find`. Pipe the output to grep or other tools to filter results.
+## Command line
+`ev` searches the index from the command line. It's much faster than `find`, and you can pipe the output into `grep` or anything else.
 
 ### Usage
 ```
@@ -48,23 +36,17 @@ ev bashrc
 /home/alan/.bashrc
 ```
 
-## EverythingX App
-`everythingx` is a GUI application that provides an intuitive way to search and manage files on your system. Instant search results as you type to find full file paths and details.
+## GUI app
+`everythingx` shows full paths and file details as you type. Columns sort and resize, and right-clicking a result lets you reveal it or copy its name, path or folder.
 
-## Background Service
-The `everythingxd` daemon subscribes to filesystem updates from the kernel. It will occasionally index of your files to ensure fast and accurate search results.
-
-### Features
-- **Automatic indexing**: Keeps your file index up-to-date in real time.
-- **Low resource usage**: Optimized to run efficiently in the background.
-- **macOS**: Uses FSEvents for real-time filesystem monitoring.
-- **Linux**: Uses fanotify (requires root and kernel 5.9+) for mount-level filesystem monitoring.
+## Background service
+`everythingxd` gets file change events from the kernel: FSEvents on macOS, and fanotify on Linux (needs root and kernel 5.9+). It also does an occasional full scan to catch anything it missed.
 
 ## Installation
 
 ### Quick install (recommended)
 
-One command for both macOS and Linux — it detects your OS and CPU, downloads the
+One command for both macOS and Linux. It detects your OS and CPU, downloads the
 matching native package from the latest [release](https://github.com/AlanKK/everythingx/releases/latest),
 and installs it (prompting for `sudo`):
 
@@ -79,7 +61,7 @@ curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh 
 ```
 
 **Supported platforms:** macOS (Apple Silicon and Intel) and mainstream glibc
-Linux with `systemd`, on `x86_64` and `arm64` — Debian/Ubuntu and derivatives via
+Linux with `systemd`, on `x86_64` and `arm64`: Debian/Ubuntu and derivatives via
 `.deb`, Fedora/RHEL/openSUSE and derivatives via `.rpm`. Alpine/musl is not
 supported.
 
@@ -112,7 +94,7 @@ sudo dnf install ./everythingx_linux_*.rpm
 
 The daemon requires root for fanotify (kernel 5.9+). The data directory `/var/lib/everythingx/` is created automatically. The GUI needs libGL/X libraries at runtime; on a minimal/headless server the `everythingxd` daemon and `ev` CLI still work without them.
 
-## Running Locally (without installing)
+## Running locally without installing
 ```bash
 make build
 
@@ -126,7 +108,7 @@ bin/ev -b filename
 bin/everythingx
 ```
 
-## Building from Source
+## Building from source
 
 ### Prerequisites
 - Go 1.27.3+
@@ -135,7 +117,7 @@ bin/everythingx
 - **macOS app bundle**: `go install fyne.io/fyne/v2/cmd/fyne@latest`
 - **Linux packages**: `go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest`
 
-### Build Commands
+### Build commands
 ```bash
 make build    # Build all binaries into bin/
 make test     # Run unit tests
