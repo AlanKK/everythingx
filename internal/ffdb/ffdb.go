@@ -401,7 +401,7 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 		} else {
 			if e.ObjectType == shared.ItemIsDir {
 				if e.IsRename {
-					// Unpaired rename — just remove the dir entry, don't cascade.
+					// Unpaired rename: just remove the dir entry, don't cascade.
 					_, err = deleteStmt.Exec(e.Path)
 				} else {
 					_, err = deleteDirStmt.Exec(e.Path, e.Path+"/", e.Path+"0")

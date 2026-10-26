@@ -208,3 +208,117 @@ jobs:
           artifacts/**/*.rpm
 
 
+
+  # Point the Homebrew tap (AlanKK/homebrew-everythingx) at this release.
+  # Every release reaches here, so a beta built after a higher manual tag
+  # would downgrade brew users; the version guard skips anything not newer.
+  publish-homebrew:
+    name: Publish Homebrew cask
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    if: needs.version.outputs.release == 'true'
+    concurrency:
+      group: publish-brew
+      cancel-in-progress: false
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Download macOS .pkg artifacts
+      uses: actions/download-artifact@v8
+      with:
+        pattern: everythingx_pkg_*
+        merge-multiple: true
+        path: pkgs/
+
+    - name: Check out tap
+      uses: actions/checkout@v7
+      with:
+        repository: AlanKK/homebrew-everythingx
+        token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        path: tap
+
+    - name: Render and push cask
+      env:
+        TAG: ${{ needs.version.outputs.tag }}
+        VERSION: ${{ needs.version.outputs.version }}
+      run: |
+        cask=tap/Casks/everythingx.rb
+        mkdir -p tap/Casks
+
+        # Compare as Debian versions with '-' read as '~' (same mapping nfpm
+        # uses), so 0.2.9-beta < 0.2.10-beta < 1.0.0.
+        if [ -f "$cask" ]; then
+          current=$(sed -n 's/^ *version "\(.*\)"$/\1/p' "$cask" | head -1)
+          new_cmp=$(printf '%s' "$VERSION" | tr - '~')
+          cur_cmp=$(printf '%s' "$current" | tr - '~')
+          if ! dpkg --compare-versions "$new_cmp" gt "$cur_cmp"; then
+            echo "Tap already serves ${current}; ${VERSION} is not newer, skipping."
+            exit 0
+          fi
+        fi
+
+        package/homebrew/render-cask.sh "$TAG" "$VERSION" \
+          pkgs/EverythingX_macos-apple-arm64.pkg \
+          pkgs/EverythingX_macos-intel-amd64.pkg > "$cask"
+
+        cd tap
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add Casks/everythingx.rb
+        git commit -m "everythingx ${TAG}"
+        git push
+
+  # Rebuild the apt repo (alankk.github.io/everythingx) from the newest
+  # releases and deploy it to GitHub Pages. The repo is rebuilt from scratch
+  # each time and keeps the highest versions, so a beta built after a higher
+  # manual tag never becomes the candidate and apt never downgrades.
+  publish-apt:
+    name: Publish apt repository
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    if: needs.version.outputs.release == 'true'
+    concurrency:
+      group: publish-apt
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Install apt-ftparchive
+      run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends apt-utils
+
+    - name: Download .deb files from recent releases
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        for tag in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 --exclude-drafts \
+            --json tagName --jq '.[].tagName'); do
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'everythingx_linux_*.deb' --dir "dl/$tag" \
+            || echo "No .deb assets in $tag, skipping."
+        done
+
+    - name: Import signing key
+      env:
+        APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+      run: printf '%s\n' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+
+    - name: Build repository
+      env:
+        APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+      run: package/apt/build-repo.sh site dl/*/*.deb
+
+    - uses: actions/upload-pages-artifact@v5
+      with:
+        path: site
+
+    - id: deploy
+      uses: actions/deploy-pages@v5

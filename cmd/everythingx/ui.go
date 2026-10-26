@@ -569,7 +569,7 @@ func makeTable() *widget.Table {
 					// No match, or the highlighted term sits too far right to
 					// fit before the column edge. Render the whole name as a
 					// single trailing segment so RichText truncates it with an
-					// ellipsis — its ellipsis only applies to the last segment,
+					// ellipsis; its ellipsis only applies to the last segment,
 					// so a long leading segment would otherwise overflow into
 					// the Path column.
 					segments = []widget.RichTextSegment{plainNameSegment(before + term + after)}
@@ -810,7 +810,7 @@ func loadUI() {
 	// throwaway one on every launch (breaking the Preferences/Storage APIs).
 	//
 	// Migrations["fyneDo"] tells Fyne that every UI mutation from a goroutine
-	// already goes through fyne.Do — keep it that way when adding UI code, as
+	// already goes through fyne.Do. Keep it that way when adding UI code, as
 	// this also switches off Fyne's wrong-thread runtime warnings.
 	app.SetMetadata(fyne.AppMetadata{
 		ID:         AppID,
