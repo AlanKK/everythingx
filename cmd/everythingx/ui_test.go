@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -544,5 +546,121 @@ func TestMoveSelectionWithNoResults(t *testing.T) {
 
 	if selectedRow != -1 {
 		t.Errorf("selected row %d with no results, want -1", selectedRow)
+	}
+}
+
+func TestHomeResultsListsDirsFirstAndSkipsHidden(t *testing.T) {
+	dir := t.TempDir()
+	for _, d := range []string{"b-dir", "A-dir", ".hidden-dir"} {
+		if err := os.Mkdir(filepath.Join(dir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{"c.txt", "B.txt", ".bashrc"} {
+		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "A-dir", "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "c.txt"), filepath.Join(dir, "link")); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := homeResults(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for _, r := range results {
+		got = append(got, filepath.Base(r.Fullpath))
+	}
+	want := []string{"A-dir", "b-dir", "B.txt", "c.txt", "link"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("homeResults = %v, want %v", got, want)
+	}
+	if results[0].ObjectType != shared.ItemIsDir {
+		t.Errorf("A-dir type = %v, want dir", results[0].ObjectType)
+	}
+	if results[4].ObjectType != shared.ItemIsSymlink {
+		t.Errorf("link type = %v, want symlink", results[4].ObjectType)
+	}
+}
+
+func TestBuildRowsWithoutTermHighlightsNothing(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(file, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := buildRows([]*shared.SearchResult{
+		{Fullpath: dir, ObjectType: shared.ItemIsDir},
+		{Fullpath: file, ObjectType: shared.ItemIsFile},
+	}, "")
+
+	if rows[0].Base != filepath.Base(dir)+"/" || rows[0].Size != "--" || rows[0].SizeBytes != -1 {
+		t.Errorf("dir row = %+v, want trailing slash and no size", rows[0])
+	}
+	if rows[1].Name[1] != "" || rows[1].Name[0]+rows[1].Name[2] != "notes.txt" {
+		t.Errorf("file row name = %q, want no highlighted term", rows[1].Name)
+	}
+	if rows[1].SizeBytes != 5 || rows[1].Path != dir+"/" {
+		t.Errorf("file row = %+v, want size 5 in %s/", rows[1], dir)
+	}
+}
+
+// A default view that lands after a search started must not replace the
+// search's results.
+func TestApplyRowsDropsStaleResults(t *testing.T) {
+	table := makeTable()
+	label := widget.NewLabel("")
+	defer func() { tableData, lastResultText, showingDefault = nil, "", false }()
+
+	stale := searchCounter.Add(1)
+	current := searchCounter.Add(1)
+
+	applyRows(current, []RowData{row("search-hit", 1, time.Time{})}, "1 objects", false, table, label)
+	applyRows(stale, []RowData{row("home-a", 1, time.Time{}), row("home-b", 1, time.Time{})}, "2 items in ~", true, table, label)
+
+	assertOrder(t, tableData, "search-hit")
+	if label.Text != "1 objects" {
+		t.Errorf("status = %q, want the search's", label.Text)
+	}
+	if showingDefault {
+		t.Error("stale default view marked the table as showing the default view")
+	}
+}
+
+func TestEmptyStateOnlyForEmptyDefaultView(t *testing.T) {
+	makeEmptyState()
+	defer func() { emptyState, indexLabel, tableData, showingDefault = nil, nil, nil, false }()
+
+	showingDefault, tableData = true, nil
+	updateEmptyState()
+	if !emptyState.Visible() {
+		t.Error("empty state hidden for an empty default view")
+	}
+
+	tableData = []RowData{row("Documents/", -1, time.Time{})}
+	updateEmptyState()
+	if emptyState.Visible() {
+		t.Error("empty state shown over the home listing")
+	}
+
+	showingDefault, tableData = false, nil
+	updateEmptyState()
+	if emptyState.Visible() {
+		t.Error("empty state shown for a search with no hits")
+	}
+}
+
+func TestFormatCount(t *testing.T) {
+	for n, want := range map[int]string{0: "0", 999: "999", 1000: "1,000", 5785272: "5,785,272", -1234: "-1,234"} {
+		if got := formatCount(n); got != want {
+			t.Errorf("formatCount(%d) = %q, want %q", n, got, want)
+		}
 	}
 }

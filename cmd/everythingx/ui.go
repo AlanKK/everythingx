@@ -2,10 +2,14 @@ package main
 
 import (
 	"cmp"
+	"database/sql"
 	"fmt"
 	"image/color"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -87,17 +91,196 @@ var searchCounter atomic.Int64
 // only ever touched from the UI thread (in entry.OnChanged).
 var searchDebounceTimer *time.Timer
 
-// clearResults empties the table and resets the status bar. Must run on the UI
-// thread.
-func clearResults(t *widget.Table, statusBar *widget.Label) {
-	searchCounter.Add(1) // invalidate any in-flight search
-	tableData = nil
-	lastResultText = "0 objects"
+// indexedText is the size of the index, e.g. "5,785,272 files indexed", or ""
+// until the count arrives. UI thread only.
+var indexedText string
+
+// showingDefault is true while the table holds the default view (the home
+// directory listing) rather than search results. UI thread only.
+var showingDefault bool
+
+// defaultStatus is the status bar text for the default view.
+func defaultStatus(items int) string {
+	text := fmt.Sprintf("%d items in ~", items)
+	if indexedText != "" {
+		text += " · " + indexedText
+	}
+	return text
+}
+
+// showDefaultView lists the top level of the home directory, which is what the
+// window shows whenever the search box is empty. The listing runs off the UI
+// thread and, like a search, is dropped if a search starts before it lands.
+// Must run on the UI thread.
+func showDefaultView(t *widget.Table, statusBar *widget.Label) {
+	myID := searchCounter.Add(1) // invalidate any in-flight search
+
+	go func() {
+		var rows []RowData
+		if home, err := os.UserHomeDir(); err == nil {
+			results, err := homeResults(home)
+			if err != nil {
+				fmt.Println("Error listing home directory:", err)
+			}
+			rows = buildRows(results, "")
+		}
+
+		fyne.Do(func() {
+			applyRows(myID, rows, defaultStatus(len(rows)), true, t, statusBar)
+		})
+	}()
+}
+
+// homeResults lists dir's own entries, not recursively, as search results:
+// directories first, then by name ignoring case. Hidden entries are skipped.
+func homeResults(dir string) ([]*shared.SearchResult, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]*shared.SearchResult, 0, len(entries))
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		objType := shared.ItemIsFile
+		switch {
+		case e.IsDir():
+			objType = shared.ItemIsDir
+		case e.Type()&fs.ModeSymlink != 0:
+			objType = shared.ItemIsSymlink
+		}
+		results = append(results, &shared.SearchResult{
+			Fullpath:   filepath.Join(dir, e.Name()),
+			ObjectType: objType,
+		})
+	}
+
+	sort.SliceStable(results, func(i, j int) bool {
+		iDir := results[i].ObjectType == shared.ItemIsDir
+		jDir := results[j].ObjectType == shared.ItemIsDir
+		if iDir != jDir {
+			return iDir
+		}
+		return strings.ToLower(results[i].Fullpath) < strings.ToLower(results[j].Fullpath)
+	})
+	return results, nil
+}
+
+// buildRows stats each result and splits its name around searchText for
+// highlighting. An empty searchText highlights nothing. Does file I/O, so run
+// it off the UI thread.
+func buildRows(results []*shared.SearchResult, searchText string) []RowData {
+	rows := make([]RowData, 0, len(results))
+	for _, r := range results {
+		fullpath := r.Fullpath
+		base := filepath.Base(r.Fullpath)
+		dir := filepath.Dir(fullpath) + "/"
+		size, modified, sizeBytes, modTime := shared.GetFileSizeMod(fullpath)
+
+		if r.ObjectType == shared.ItemIsDir {
+			base += "/"
+			fullpath += "/"
+			size = "--"
+			sizeBytes = -1
+		}
+
+		beforeTerm, searchTerm, afterTerm := shared.SplitFileName(base, searchText)
+
+		rows = append(rows, RowData{
+			Name:         []string{beforeTerm, searchTerm, afterTerm},
+			Base:         base,
+			Path:         dir,
+			Size:         size,
+			Modified:     modified,
+			SizeBytes:    sizeBytes,
+			ModTime:      modTime,
+			SearchResult: r,
+		})
+	}
+	return rows
+}
+
+// applyRows puts rows in the table unless a newer search or default view has
+// started since id was taken. isDefault says whether rows are the default view
+// or search results. Must run on the UI thread.
+func applyRows(id int64, rows []RowData, resultText string, isDefault bool, t *widget.Table, statusBar *widget.Label) {
+	// Re-check on the UI thread: a newer search may have started between the
+	// caller's last check and this running. Without this, an older/slower
+	// search could overwrite fresher results.
+	if searchCounter.Load() != id {
+		return
+	}
+	showingDefault = isDefault
+	tableData = rows
+	sortRows(tableData) // keep the chosen column ordering as results stream in
+	lastResultText = resultText
 	selectedRow = -1
 	hoveredRow = -1
 	t.Refresh()
-	t.ScrollToTop()
-	statusBar.SetText(lastResultText)
+	t.ScrollToTop() // reset scroll so new results start at the top
+	statusBar.SetText(resultText)
+	updateEmptyState()
+}
+
+// emptyState is the logo and prompt drawn over the table when the default view
+// has nothing to list. Nil until loadUI builds it.
+var emptyState *fyne.Container
+
+// indexLabel shows the index size on the empty state.
+var indexLabel *widget.Label
+
+// updateEmptyState shows the logo only when the default view is empty. A
+// search with no hits keeps the table, so "0 objects" reads as an answer. Must
+// run on the UI thread.
+func updateEmptyState() {
+	if emptyState == nil {
+		return
+	}
+	if showingDefault && len(tableData) == 0 {
+		emptyState.Show()
+	} else {
+		emptyState.Hide()
+	}
+}
+
+// loadIndexCount counts the indexed files off the UI thread, then shows the
+// count in the empty state and, while the default view is up, the status bar.
+// Showing it at all tells the user the index is there and being read.
+func loadIndexCount(db *sql.DB) {
+	go func() {
+		count, err := ffdb.RecordCount(db)
+		fyne.Do(func() {
+			if err != nil {
+				fmt.Println("Error counting indexed files:", err)
+				indexedText = "Index not available. Is everythingxd running?"
+			} else {
+				indexedText = formatCount(count) + " files indexed"
+			}
+			indexLabel.SetText(indexedText)
+			if showingDefault {
+				lastResultText = defaultStatus(len(tableData))
+				statusBar.SetText(lastResultText)
+			}
+		})
+	}()
+}
+
+// formatCount writes n with thousands separators, e.g. 5785272 as "5,785,272".
+func formatCount(n int) string {
+	if n < 0 {
+		return "-" + formatCount(-n)
+	}
+	s := strconv.Itoa(n)
+	var b strings.Builder
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }
 
 // handleAutoCompleteEntryChanged runs the search off the UI thread so that
@@ -105,7 +288,7 @@ func clearResults(t *widget.Table, statusBar *widget.Label) {
 // per-file stat calls execute.
 func handleAutoCompleteEntryChanged(searchText string, t *widget.Table, statusBar *widget.Label) {
 	if len(searchText) == 0 {
-		fyne.Do(func() { clearResults(t, statusBar) })
+		fyne.Do(func() { showDefaultView(t, statusBar) })
 		return
 	}
 
@@ -126,33 +309,7 @@ func handleAutoCompleteEntryChanged(searchText string, t *widget.Table, statusBa
 			return
 		}
 
-		newData := make([]RowData, 0, len(results))
-		for _, r := range results {
-			fullpath := r.Fullpath
-			base := filepath.Base(r.Fullpath)
-			dir := filepath.Dir(fullpath) + "/"
-			size, modified, sizeBytes, modTime := shared.GetFileSizeMod(fullpath)
-
-			if r.ObjectType == shared.ItemIsDir {
-				base += "/"
-				fullpath += "/"
-				size = "--"
-				sizeBytes = -1
-			}
-
-			beforeTerm, searchTerm, afterTerm := shared.SplitFileName(base, searchText)
-
-			newData = append(newData, RowData{
-				Name:         []string{beforeTerm, searchTerm, afterTerm},
-				Base:         base,
-				Path:         dir,
-				Size:         size,
-				Modified:     modified,
-				SizeBytes:    sizeBytes,
-				ModTime:      modTime,
-				SearchResult: r,
-			})
-		}
+		newData := buildRows(results, searchText)
 
 		if searchCounter.Load() != myID {
 			return
@@ -166,20 +323,7 @@ func handleAutoCompleteEntryChanged(searchText string, t *widget.Table, statusBa
 		}
 
 		fyne.Do(func() {
-			// Re-check on the UI thread: a newer search may have started
-			// between the check above and this closure running. Without this,
-			// an older/slower search could overwrite fresher results.
-			if searchCounter.Load() != myID {
-				return
-			}
-			tableData = newData
-			sortRows(tableData) // keep the chosen column ordering as results stream in
-			lastResultText = resultText
-			selectedRow = -1
-			hoveredRow = -1
-			t.Refresh()
-			t.ScrollToTop() // reset scroll so new results start at the top
-			statusBar.SetText(resultText)
+			applyRows(myID, newData, resultText, false, t, statusBar)
 		})
 
 		shared.PrintMemUsage()
@@ -802,7 +946,27 @@ Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 
 var statusBar *widget.Label
 
-func loadUI() {
+// makeEmptyState builds the logo and prompt shown when there is nothing to
+// list, so the window never opens blank. Hidden until updateEmptyState decides.
+func makeEmptyState() *fyne.Container {
+	var img *canvas.Image
+	if fyne.CurrentApp().Settings().ThemeVariant() == theme.VariantDark {
+		img = canvas.NewImageFromResource(resourceFolderWhiteOrange5122xPng)
+	} else {
+		img = canvas.NewImageFromResource(resourceFolderOrangeBlack5122xPng)
+	}
+	img.FillMode = canvas.ImageFillContain
+	img.SetMinSize(fyne.NewSize(128, 128))
+
+	prompt := widget.NewLabelWithStyle("Type to search", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	indexLabel = widget.NewLabelWithStyle("Counting indexed files…", fyne.TextAlignCenter, fyne.TextStyle{})
+
+	emptyState = container.NewCenter(container.NewVBox(img, prompt, indexLabel))
+	emptyState.Hide()
+	return emptyState
+}
+
+func loadUI(db *sql.DB) {
 	// Declare the app identity and the fyne.Do migration in code rather than in
 	// a FyneApp.toml: `make app` runs `fyne package -executable`, which wraps the
 	// already-built binary, so TOML metadata is never compiled in and is not
@@ -852,7 +1016,7 @@ func loadUI() {
 
 	entry := newSearchEntry()
 
-	statusBar = widget.NewLabel("0 objects")
+	statusBar = widget.NewLabel("")
 	statusBar.TextStyle = fyne.TextStyle{Bold: true}
 
 	// Debounce keystrokes: only search once typing pauses, so fast typing
@@ -862,8 +1026,9 @@ func loadUI() {
 			searchDebounceTimer.Stop()
 		}
 		if len(s) == 0 {
-			// Clear immediately; no need to wait for the debounce.
-			clearResults(table, statusBar)
+			// Show the default view immediately; no need to wait for the
+			// debounce.
+			showDefaultView(table, statusBar)
 			return
 		}
 		searchDebounceTimer = time.AfterFunc(searchDebounce, func() {
@@ -876,12 +1041,15 @@ func loadUI() {
 		statusBar,
 		nil,
 		nil,
-		table,
+		container.NewStack(table, makeEmptyState()),
 	)
 
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(content, w.Canvas()))
 	w.Canvas().Focus(entry)
 	w.Resize(fyne.NewSize(1300, 800))
+
+	showDefaultView(table, statusBar)
+	loadIndexCount(db)
 
 	shared.PrintMemUsage()
 	w.ShowAndRun()

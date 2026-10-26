@@ -21,7 +21,7 @@ func main() {
 	if verbose {
 		fmt.Println("Opening database ", dbFile)
 	}
-	_, err := ffdb.OpenDBReadOnly(dbFile)
+	db, err := ffdb.OpenDBReadOnly(dbFile)
 	if err != nil {
 		fmt.Println("Error opening database: ", dbFile, err)
 		os.Exit(1)
@@ -43,7 +43,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	loadUI()
+	loadUI(db)
 }
 
 func getCommandLineArgs() (string, string, bool) {
