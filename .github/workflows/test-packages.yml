@@ -156,6 +156,57 @@ jobs:
         if: always()
         run: sudo dpkg -r everythingx || true
 
+  test-apt:
+    name: Test apt repository (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Add repository and install
+        run: |
+          sudo install -d -m 0755 /etc/apt/keyrings
+          curl -fsSL https://alankk.github.io/everythingx/everythingx.gpg | sudo tee /etc/apt/keyrings/everythingx.gpg >/dev/null
+          echo "deb [signed-by=/etc/apt/keyrings/everythingx.gpg] https://alankk.github.io/everythingx stable main" | sudo tee /etc/apt/sources.list.d/everythingx.list
+          sudo apt-get update
+          apt-cache policy everythingx
+          sudo apt-get install -y everythingx
+
+      - name: Verify installation
+        run: |
+          test -x /usr/local/bin/everythingxd
+          test -x /usr/local/bin/ev
+          ev --version
+          everythingxd --version
+          systemctl is-active everythingxd
+          # The repo installs its highest version, which may not be the tag under test.
+          ev --version | grep -F "Version: ${TAG#v},"
+
+      - name: Stop daemon and run e2e test
+        run: |
+          sudo systemctl stop everythingxd
+          mkdir -p bin
+          ln -s /usr/local/bin/everythingxd bin/everythingxd
+          go build -tags fts5 -o e2eTest/e2etest e2eTest/main.go
+          sudo e2eTest/e2etest
+
+      - name: Cleanup
+        if: always()
+        run: sudo apt-get purge -y everythingx || true
+
   test-linux-rpm:
     name: Test Linux .rpm (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}

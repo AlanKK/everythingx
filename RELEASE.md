@@ -68,6 +68,44 @@ group, so two releases never push at once.
 The `.pkg` is not signed or notarized. The `test-brew` job in the smoke test checks that
 Homebrew still installs it.
 
+## apt repository
+
+After each release, the `publish-apt` job rebuilds the apt repo at
+[alankk.github.io/everythingx](https://alankk.github.io/everythingx) and deploys it to GitHub
+Pages. It downloads the `.deb` assets of the 20 newest releases and runs
+`package/apt/build-repo.sh site dl/*/*.deb`, which:
+
+- reads each deb's version and arch from the package (`0.2.9~beta`, not the tag's `0.2.9-beta`)
+- keeps the 5 highest versions per arch (`dpkg --compare-versions`) in `pool/main/e/everythingx/`
+- writes `dists/stable/main/binary-{amd64,arm64}/Packages{,.gz}` and `dists/stable/Release` with
+  `apt-ftparchive`, and signs them as `InRelease` and `Release.gpg`
+- exports the public key to `everythingx.gpg` and writes a small `index.html`
+
+Nothing is committed to git. Every run rebuilds the whole repo from Releases, so a run skipped by
+the `publish-apt` concurrency group loses nothing. Because the highest versions win, a
+`0.2.N-beta` built after a manual `v1.0.0` never becomes the candidate, and `apt upgrade` never
+downgrades.
+
+To build it locally (needs `apt-utils` and a secret key in your gpg keyring; set
+`APT_GPG_KEY_ID` to pick one):
+
+```bash
+package/apt/build-repo.sh site path/to/*.deb
+cd site && python3 -m http.server
+```
+
+**One-time setup.**
+1. Generate a signing key and store it as Actions secrets:
+   ```bash
+   gpg --quick-gen-key "EverythingX apt <AlanKK@users.noreply.github.com>" rsa4096 sign never
+   gpg --armor --export-secret-keys <key-id>   # -> secret APT_GPG_PRIVATE_KEY
+   ```
+   If the key has a passphrase, store it as `APT_GPG_PASSPHRASE`. Keep a backup of the key.
+   Users trust it by fingerprint, so a new key means everyone has to re-download `everythingx.gpg`.
+2. Settings → Pages → Source: **GitHub Actions**.
+3. Settings → Environments → `github-pages` → Deployment branches and tags: allow `main` and tags
+   matching `v*`; otherwise runs triggered by a manual tag can't deploy.
+
 ## Smoke test
 
 To re-test a published release on clean runners:
@@ -76,5 +114,6 @@ To re-test a published release on clean runners:
 gh workflow run "Test Published Release" -f tag=v1.0-beta-1
 ```
 
-`test-brew` installs from the tap and fails if the tap serves a different version from the
-tag under test, which is expected when the version guard skipped that tag.
+`test-brew` and `test-apt` install from the tap and the apt repo. They fail if those serve a
+different version from the tag under test, which is expected when the tag isn't the highest
+version (the brew version guard skipped it, or apt prefers a higher one).

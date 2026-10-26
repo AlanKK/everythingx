@@ -268,3 +268,57 @@ jobs:
         git add Casks/everythingx.rb
         git commit -m "everythingx ${TAG}"
         git push
+
+  # Rebuild the apt repo (alankk.github.io/everythingx) from the newest
+  # releases and deploy it to GitHub Pages. The repo is rebuilt from scratch
+  # each time and keeps the highest versions, so a beta built after a higher
+  # manual tag never becomes the candidate and apt never downgrades.
+  publish-apt:
+    name: Publish apt repository
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    if: needs.version.outputs.release == 'true'
+    concurrency:
+      group: publish-apt
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Install apt-ftparchive
+      run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends apt-utils
+
+    - name: Download .deb files from recent releases
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        for tag in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 --exclude-drafts \
+            --json tagName --jq '.[].tagName'); do
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'everythingx_linux_*.deb' --dir "dl/$tag" \
+            || echo "No .deb assets in $tag, skipping."
+        done
+
+    - name: Import signing key
+      env:
+        APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+      run: printf '%s\n' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+
+    - name: Build repository
+      env:
+        APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+      run: package/apt/build-repo.sh site dl/*/*.deb
+
+    - uses: actions/upload-pages-artifact@v5
+      with:
+        path: site
+
+    - id: deploy
+      uses: actions/deploy-pages@v5

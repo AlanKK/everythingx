@@ -76,6 +76,18 @@ daemon and removes the app and binaries; add `--zap` to also delete the index in
 `/var/lib/everythingx` and the log. Full Disk Access still has to be granted by hand
 (see below).
 
+### apt (Debian/Ubuntu)
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://alankk.github.io/everythingx/everythingx.gpg | sudo tee /etc/apt/keyrings/everythingx.gpg >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/everythingx.gpg] https://alankk.github.io/everythingx stable main" | sudo tee /etc/apt/sources.list.d/everythingx.list
+sudo apt update && sudo apt install everythingx
+```
+
+`apt upgrade` picks up new releases. The repo covers amd64 and arm64 and keeps the five
+newest versions; for anything older, use the manual download below.
+
 ### Manual download
 
 Prefer to install by hand? Grab the package for your platform from the
