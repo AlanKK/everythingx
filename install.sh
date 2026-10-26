@@ -9,7 +9,7 @@
 # the install step.
 #
 # Environment overrides:
-#   EVERYTHINGX_VERSION   pin a specific release tag (e.g. v0.2.2-beta).
+#   EVERYTHINGX_VERSION   pin a specific release tag (e.g. v1.0.0).
 #                         Defaults to the latest release.
 #
 # POSIX sh only since the pipe target is often dash.
