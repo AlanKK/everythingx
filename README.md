@@ -44,11 +44,49 @@ ev bashrc
 
 ## Installation
 
-### Quick install (recommended)
+Pick your platform. Each recommended method also handles upgrades.
 
-One command for both macOS and Linux. It detects your OS and CPU, downloads the
-matching native package from the latest [release](https://github.com/AlanKK/everythingx/releases/latest),
-and installs it (prompting for `sudo`):
+| Platform | Recommended |
+|---|---|
+| macOS (Apple Silicon and Intel) | [Homebrew](#macos-homebrew) |
+| Debian, Ubuntu and derivatives | [apt](#debian--ubuntu-apt) |
+| Fedora, RHEL, openSUSE and derivatives | [Install script](#fedora--rhel--opensuse-install-script) |
+
+**Supported platforms:** macOS (Apple Silicon and Intel) and mainstream glibc
+Linux with `systemd`, on `x86_64` and `arm64`. Alpine/musl is not supported.
+
+### macOS: Homebrew
+
+```bash
+brew install --cask alankk/everythingx/everythingx
+```
+
+`brew upgrade` picks up new releases. `brew uninstall --cask everythingx` stops the
+daemon and removes the app and binaries; add `--zap` to also delete the index in
+`/var/lib/everythingx` and the log.
+
+**Full Disk Access:** however you install on macOS, grant Full Disk Access to
+`everythingxd` in `System Settings -> Privacy & Security -> Full Disk Access` for
+complete indexing. This has to be done by hand.
+
+### Debian / Ubuntu: apt
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://alankk.github.io/everythingx/everythingx.gpg | sudo tee /etc/apt/keyrings/everythingx.gpg >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/everythingx.gpg] https://alankk.github.io/everythingx stable main" | sudo tee /etc/apt/sources.list.d/everythingx.list
+sudo apt update && sudo apt install everythingx
+```
+
+`apt upgrade` picks up new releases. The repo covers amd64 and arm64 and keeps the five
+newest versions; for anything older, use the manual download below.
+
+### Fedora / RHEL / openSUSE: install script
+
+There's no dnf/zypper repository yet, so use the install script. It also works on
+macOS and Debian/Ubuntu if you'd rather not use Homebrew or apt. It detects your OS
+and CPU, downloads the matching native package from the latest
+[release](https://github.com/AlanKK/everythingx/releases/latest), and installs it:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sudo sh
@@ -60,33 +98,7 @@ Pin a specific version:
 curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sudo EVERYTHINGX_VERSION=v0.2.2-beta sh
 ```
 
-**Supported platforms:** macOS (Apple Silicon and Intel) and mainstream glibc
-Linux with `systemd`, on `x86_64` and `arm64`: Debian/Ubuntu and derivatives via
-`.deb`, Fedora/RHEL/openSUSE and derivatives via `.rpm`. Alpine/musl is not
-supported.
-
-### Homebrew (macOS)
-
-```bash
-brew install --cask alankk/everythingx/everythingx
-```
-
-`brew upgrade` picks up new releases. `brew uninstall --cask everythingx` stops the
-daemon and removes the app and binaries; add `--zap` to also delete the index in
-`/var/lib/everythingx` and the log. Full Disk Access still has to be granted by hand
-(see below).
-
-### apt (Debian/Ubuntu)
-
-```bash
-sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsSL https://alankk.github.io/everythingx/everythingx.gpg | sudo tee /etc/apt/keyrings/everythingx.gpg >/dev/null
-echo "deb [signed-by=/etc/apt/keyrings/everythingx.gpg] https://alankk.github.io/everythingx stable main" | sudo tee /etc/apt/sources.list.d/everythingx.list
-sudo apt update && sudo apt install everythingx
-```
-
-`apt upgrade` picks up new releases. The repo covers amd64 and arm64 and keeps the five
-newest versions; for anything older, use the manual download below.
+Re-run the script to upgrade.
 
 ### Manual download
 
@@ -102,9 +114,8 @@ Prefer to install by hand? Grab the package for your platform from the
 | Linux arm64 (Debian/Ubuntu) | `everythingx_linux_arm64.deb` |
 | Linux arm64 (Fedora/RHEL) | `everythingx_linux_arm64.rpm` |
 
-**macOS:** double-click the `.pkg` file to install. Grant Full Disk Access to
-`everythingxd` in `System Settings -> Privacy & Security -> Full Disk Access` for
-complete indexing.
+**macOS:** double-click the `.pkg` file to install, then grant Full Disk Access as
+described above.
 
 **Linux:**
 ```bash
@@ -114,6 +125,8 @@ sudo dpkg -i everythingx_linux_*.deb
 # Fedora/RHEL
 sudo dnf install ./everythingx_linux_*.rpm
 ```
+
+### Linux notes
 
 The daemon requires root for fanotify (kernel 5.9+). The data directory `/var/lib/everythingx/` is created automatically. The GUI needs libGL/X libraries at runtime; on a minimal/headless server the `everythingxd` daemon and `ev` CLI still work without them.
 
