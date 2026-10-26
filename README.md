@@ -95,7 +95,7 @@ curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh 
 Pin a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sudo EVERYTHINGX_VERSION=v0.2.2-beta sh
+curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sudo EVERYTHINGX_VERSION=v1.0.0 sh
 ```
 
 Re-run the script to upgrade.

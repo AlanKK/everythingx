@@ -13,20 +13,21 @@ Runs are serialized per ref, so two quick merges queue up and each gets its own 
 
 ## Versions
 
-Auto builds count up from the highest `v0.2.N-beta` tag: `v0.2.1-beta`, `v0.2.2-beta`, and so on.
+Auto builds bump the patch of the highest `v1.x.y` tag: `v1.0.0`, `v1.0.1`, `v1.0.2`, and so on (the first
+release on a repo with no `v1.*.*` tag is `v1.0.0`).
 
-For a real version, tag it by hand:
+To move the minor or major version, tag it by hand; later auto builds continue from that tag:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
-Manual tags must be `v` followed by a digit (`v1.0.0`, `v2.1.0-rc.1`). The auto-tag uses
+Manual tags must be `v` followed by a digit (`v1.1.0`, `v2.1.0-rc.1`). The auto-tag uses
 `GITHUB_TOKEN`, so it doesn't re-trigger the workflow.
 
 Package versions drop the `v`. deb/rpm need a leading digit, and nfpm writes `-beta` as
-`~beta` (`everythingx_0.2.1~beta_amd64.deb`). Version, commit and build date are baked in
+`~beta` for pre-release tags (`everythingx_0.2.1~beta_amd64.deb`). Version, commit and build date are baked in
 with `-ldflags`; check with `ev --version` or `everythingxd --version`.
 
 ## Artifacts

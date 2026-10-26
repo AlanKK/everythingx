@@ -35,13 +35,35 @@ contents:
     file_info:
       mode: 0644
 
-  # Desktop entry for GUI launcher integration
-  - src: assets/everythingx.desktop
-    dst: /usr/share/applications/everythingx.desktop
+  # Desktop entry for GUI launcher integration. The basename must match the
+  # app ID (AppID in cmd/everythingx/assets.go): Wayland compositors look up
+  # the window's app_id as <app_id>.desktop to find its icon and name.
+  - src: assets/com.github.alankk.everythingx.desktop
+    dst: /usr/share/applications/com.github.alankk.everythingx.desktop
     file_info:
       mode: 0644
 
-  # App icon
+  # App icon, referenced as Icon=everythingx by the desktop entry
+  - src: assets/icons/retina/orange-black/folder-orange-black-16@2x.png
+    dst: /usr/share/icons/hicolor/32x32/apps/everythingx.png
+    file_info:
+      mode: 0644
+
+  - src: assets/icons/retina/orange-black/folder-orange-black-32@2x.png
+    dst: /usr/share/icons/hicolor/64x64/apps/everythingx.png
+    file_info:
+      mode: 0644
+
+  - src: assets/icons/retina/orange-black/folder-orange-black-64@2x.png
+    dst: /usr/share/icons/hicolor/128x128/apps/everythingx.png
+    file_info:
+      mode: 0644
+
+  - src: assets/icons/retina/orange-black/folder-orange-black-128@2x.png
+    dst: /usr/share/icons/hicolor/256x256/apps/everythingx.png
+    file_info:
+      mode: 0644
+
   - src: assets/icons/retina/orange-black/folder-orange-black-512@2x.png
     dst: /usr/share/pixmaps/everythingx.png
     file_info:

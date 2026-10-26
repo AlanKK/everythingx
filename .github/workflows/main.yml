@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   # Compute the version once per run and decide whether to release:
-  #  - push to main -> auto-increment build counter (v1.0.N), publish "Latest" release
+  #  - push to main -> auto-increment patch version (v1.x.N), publish "Latest" release
   #  - tag v*       -> use the tag version, publish release
   #  - anything else -> 0.0.0-dev, no release
   version:
@@ -53,14 +53,17 @@ jobs:
             fi
             release=true
           elif [[ "$EVENT" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            # Auto build-counter release on every merge to main: v0.2.N-beta.
+            # Auto release on every merge to main: bump the patch of the highest
+            # v1.x.y tag (starting at v1.0.0 when there is none).
             git fetch --tags --force
-            latest=$(git tag -l 'v0.2.*-beta' \
-              | sed -n 's/^v0\.2\.\([0-9][0-9]*\)-beta$/\1/p' \
-              | sort -n | tail -1)
-            next=$(( ${latest:-0} + 1 ))
-            ver="0.2.${next}-beta"
-            tag="v0.2.${next}-beta"
+            latest=$(git tag -l 'v1.*' | grep -E '^v1\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+            if [[ -z "$latest" ]]; then
+              ver="1.0.0"
+            else
+              IFS=. read -r major minor patch <<< "${latest#v}"
+              ver="${major}.${minor}.$((patch + 1))"
+            fi
+            tag="v${ver}"
             release=true
           else
             # Feature-branch push / PR / manual dispatch: build and test only.
