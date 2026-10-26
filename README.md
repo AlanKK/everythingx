@@ -74,7 +74,7 @@ complete indexing. This has to be done by hand.
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
 curl -fsSL https://alankk.github.io/everythingx/everythingx.gpg | sudo tee /etc/apt/keyrings/everythingx.gpg >/dev/null
-echo "deb [signed-by=/etc/apt/keyrings/everythingx.gpg] https://alankk.github.io/everythingx stable main" | sudo tee /etc/apt/sources.list.d/everythingx.list
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/everythingx.gpg] https://alankk.github.io/everythingx stable main" | sudo tee /etc/apt/sources.list.d/everythingx.list
 sudo apt update && sudo apt install everythingx
 ```
 
@@ -84,9 +84,9 @@ newest versions; for anything older, use the manual download below.
 ### Fedora / RHEL / openSUSE: install script
 
 There's no dnf/zypper repository yet, so use the install script. It also works on
-macOS and Debian/Ubuntu if you'd rather not use Homebrew or apt. It detects your OS
-and CPU, downloads the matching native package from the latest
-[release](https://github.com/AlanKK/everythingx/releases/latest), and installs it:
+macOS. It detects your OS and CPU, downloads the matching native package from the
+latest [release](https://github.com/AlanKK/everythingx/releases/latest), and installs
+it. On Debian/Ubuntu it sets up the [apt repository](#debian--ubuntu-apt) instead:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sudo sh
@@ -98,7 +98,7 @@ Pin a specific version:
 curl -fsSL https://raw.githubusercontent.com/AlanKK/everythingx/main/install.sh | sudo EVERYTHINGX_VERSION=v1.0.0 sh
 ```
 
-Re-run the script to upgrade.
+Re-run the script to upgrade (on Debian/Ubuntu, `apt upgrade` does it).
 
 ### Manual download
 
