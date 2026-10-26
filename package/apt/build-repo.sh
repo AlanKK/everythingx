@@ -104,7 +104,7 @@ cat > "$out/index.html" <<'EOF'
 <pre>
 sudo install -d -m 0755 /etc/apt/keyrings
 curl -fsSL https://alankk.github.io/everythingx/everythingx.gpg | sudo tee /etc/apt/keyrings/everythingx.gpg >/dev/null
-echo "deb [signed-by=/etc/apt/keyrings/everythingx.gpg] https://alankk.github.io/everythingx stable main" | sudo tee /etc/apt/sources.list.d/everythingx.list
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/everythingx.gpg] https://alankk.github.io/everythingx stable main" | sudo tee /etc/apt/sources.list.d/everythingx.list
 sudo apt update &amp;&amp; sudo apt install everythingx
 </pre>
 </body>
