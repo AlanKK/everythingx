@@ -580,14 +580,14 @@ func TestHomeResultsListsFilesOnly(t *testing.T) {
 	for _, r := range results {
 		got = append(got, filepath.Base(r.Fullpath))
 	}
-	want := []string{"B.txt", "c.txt", "link"}
+	want := []string{".bashrc", "B.txt", "c.txt", "link"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("homeResults = %v, want %v", got, want)
 	}
-	if results[0].ObjectType != shared.ItemIsFile {
+	if results[1].ObjectType != shared.ItemIsFile {
 		t.Errorf("B.txt type = %v, want file", results[0].ObjectType)
 	}
-	if results[2].ObjectType != shared.ItemIsSymlink {
+	if results[3].ObjectType != shared.ItemIsSymlink {
 		t.Errorf("link type = %v, want symlink", results[4].ObjectType)
 	}
 }

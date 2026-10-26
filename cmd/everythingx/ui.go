@@ -132,8 +132,8 @@ func showDefaultView(t *widget.Table, statusBar *widget.Label) {
 }
 
 // homeResults lists the files directly in dir, not recursively, as search
-// results sorted by name ignoring case. Directories, symlinks to directories
-// and hidden entries are skipped.
+// results sorted by name ignoring case, dotfiles included. Directories and
+// symlinks to directories are skipped.
 func homeResults(dir string) ([]*shared.SearchResult, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -142,9 +142,6 @@ func homeResults(dir string) ([]*shared.SearchResult, error) {
 
 	results := make([]*shared.SearchResult, 0, len(entries))
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
 		if e.IsDir() {
 			continue
 		}
