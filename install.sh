@@ -5,8 +5,9 @@
 #
 # Detects your OS + CPU architecture, downloads the matching native package
 # (.pkg on macOS, .deb/.rpm on Linux) from the latest GitHub Release, and
-# installs it with the platform's native installer. Escalates to sudo only for
-# the install step.
+# installs it with the platform's native installer. On Debian/Ubuntu it adds the
+# apt repo instead, so `apt upgrade` picks up new releases. Escalates to sudo
+# only for the install step.
 #
 # Environment overrides:
 #   EVERYTHINGX_VERSION   pin a specific release tag (e.g. v1.0.0).
@@ -18,6 +19,7 @@ set -eu
 
 REPO="${EVERYTHINGX_REPO:-AlanKK/everythingx}"
 VERSION="${EVERYTHINGX_VERSION:-latest}"
+APT_REPO_URL="https://alankk.github.io/everythingx"
 
 # output helpers
 if [ -t 1 ]; then
@@ -108,24 +110,25 @@ Logs: /var/log/everythingxd.log
 EOF
 }
 
-install_linux() {
-    # CGO/glibc binaries; musl (Alpine) is not supported.
-    if command -v apk >/dev/null 2>&1 || grep -qs '^ID=alpine' /etc/os-release 2>/dev/null; then
-        err "Alpine/musl is not supported. EverythingX ships glibc binaries (Debian, Ubuntu, Fedora, RHEL, openSUSE, ...)."
-    fi
+# Add the apt repo and install from it, so `apt upgrade` picks up new releases.
+install_apt_repo() {
+    key="$TMPDIR_EX/everythingx.gpg"
+    info "Adding the EverythingX apt repository ..."
+    download "$APT_REPO_URL/everythingx.gpg" "$key"
 
-    # Choose package family by the tooling actually present on the host.
-    if command -v dpkg >/dev/null 2>&1 || command -v apt-get >/dev/null 2>&1; then
-        family="deb"
-        asset="everythingx_linux_${ARCH}.deb"
-    elif command -v rpm >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1 \
-        || command -v yum >/dev/null 2>&1 || command -v zypper >/dev/null 2>&1; then
-        family="rpm"
-        asset="everythingx_linux_${ARCH}.rpm"
-    else
-        err "No supported package manager found (need dpkg/apt for .deb or rpm/dnf/yum/zypper for .rpm)."
-    fi
+    info "Installing (you may be prompted for your password) ..."
+    # 0644 so apt's unprivileged _apt user can read the key.
+    $SUDO install -d -m 0755 /etc/apt/keyrings
+    $SUDO install -m 0644 "$key" /etc/apt/keyrings/everythingx.gpg
+    echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/everythingx.gpg] $APT_REPO_URL stable main" \
+        | $SUDO tee /etc/apt/sources.list.d/everythingx.list >/dev/null
+    $SUDO apt-get update || err "apt-get update failed."
+    $SUDO apt-get install -y everythingx || err "apt-get install failed."
+}
 
+# Download a release's .deb or .rpm and install it directly.
+install_linux_package() {
+    family="$1"; asset="$2"
     out="$TMPDIR_EX/$asset"
     info "Downloading ${asset} ..."
     download "$(asset_url "$asset")" "$out"
@@ -148,6 +151,33 @@ install_linux() {
         else
             $SUDO rpm -i "$out" || err "rpm install failed."
         fi
+    fi
+}
+
+install_linux() {
+    # CGO/glibc binaries; musl (Alpine) is not supported.
+    if command -v apk >/dev/null 2>&1 || grep -qs '^ID=alpine' /etc/os-release 2>/dev/null; then
+        err "Alpine/musl is not supported. EverythingX ships glibc binaries (Debian, Ubuntu, Fedora, RHEL, openSUSE, ...)."
+    fi
+
+    # Choose package family by the tooling actually present on the host.
+    if command -v dpkg >/dev/null 2>&1 || command -v apt-get >/dev/null 2>&1; then
+        family="deb"
+        asset="everythingx_linux_${ARCH}.deb"
+    elif command -v rpm >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1 \
+        || command -v yum >/dev/null 2>&1 || command -v zypper >/dev/null 2>&1; then
+        family="rpm"
+        asset="everythingx_linux_${ARCH}.rpm"
+    else
+        err "No supported package manager found (need dpkg/apt for .deb or rpm/dnf/yum/zypper for .rpm)."
+    fi
+
+    # The apt repo keeps only the newest versions, so a pinned version still
+    # downloads the .deb directly.
+    if [ "$family" = "deb" ] && [ "$VERSION" = "latest" ] && command -v apt-get >/dev/null 2>&1; then
+        install_apt_repo
+    else
+        install_linux_package "$family" "$asset"
     fi
 
     printf '\n%s\n' "${GREEN}${BOLD}EverythingX installed.${RESET}"
