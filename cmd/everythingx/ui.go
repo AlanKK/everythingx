@@ -96,19 +96,19 @@ var searchDebounceTimer *time.Timer
 var indexedText string
 
 // showingDefault is true while the table holds the default view (the home
-// directory listing) rather than search results. UI thread only.
+// directory's files) rather than search results. UI thread only.
 var showingDefault bool
 
 // defaultStatus is the status bar text for the default view.
 func defaultStatus(items int) string {
-	text := fmt.Sprintf("%d items in ~", items)
+	text := fmt.Sprintf("%d files in ~", items)
 	if indexedText != "" {
 		text += " · " + indexedText
 	}
 	return text
 }
 
-// showDefaultView lists the top level of the home directory, which is what the
+// showDefaultView lists the files directly in the home directory, which is what the
 // window shows whenever the search box is empty. The listing runs off the UI
 // thread and, like a search, is dropped if a search starts before it lands.
 // Must run on the UI thread.
@@ -131,8 +131,9 @@ func showDefaultView(t *widget.Table, statusBar *widget.Label) {
 	}()
 }
 
-// homeResults lists dir's own entries, not recursively, as search results:
-// directories first, then by name ignoring case. Hidden entries are skipped.
+// homeResults lists the files directly in dir, not recursively, as search
+// results sorted by name ignoring case. Directories, symlinks to directories
+// and hidden entries are skipped.
 func homeResults(dir string) ([]*shared.SearchResult, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -144,25 +145,21 @@ func homeResults(dir string) ([]*shared.SearchResult, error) {
 		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
+		if e.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
 		objType := shared.ItemIsFile
-		switch {
-		case e.IsDir():
-			objType = shared.ItemIsDir
-		case e.Type()&fs.ModeSymlink != 0:
+		if e.Type()&fs.ModeSymlink != 0 {
+			if info, err := os.Stat(path); err == nil && info.IsDir() {
+				continue
+			}
 			objType = shared.ItemIsSymlink
 		}
-		results = append(results, &shared.SearchResult{
-			Fullpath:   filepath.Join(dir, e.Name()),
-			ObjectType: objType,
-		})
+		results = append(results, &shared.SearchResult{Fullpath: path, ObjectType: objType})
 	}
 
 	sort.SliceStable(results, func(i, j int) bool {
-		iDir := results[i].ObjectType == shared.ItemIsDir
-		jDir := results[j].ObjectType == shared.ItemIsDir
-		if iDir != jDir {
-			return iDir
-		}
 		return strings.ToLower(results[i].Fullpath) < strings.ToLower(results[j].Fullpath)
 	})
 	return results, nil

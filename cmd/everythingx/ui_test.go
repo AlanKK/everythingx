@@ -549,7 +549,7 @@ func TestMoveSelectionWithNoResults(t *testing.T) {
 	}
 }
 
-func TestHomeResultsListsDirsFirstAndSkipsHidden(t *testing.T) {
+func TestHomeResultsListsFilesOnly(t *testing.T) {
 	dir := t.TempDir()
 	for _, d := range []string{"b-dir", "A-dir", ".hidden-dir"} {
 		if err := os.Mkdir(filepath.Join(dir, d), 0o755); err != nil {
@@ -567,6 +567,9 @@ func TestHomeResultsListsDirsFirstAndSkipsHidden(t *testing.T) {
 	if err := os.Symlink(filepath.Join(dir, "c.txt"), filepath.Join(dir, "link")); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Symlink(filepath.Join(dir, "A-dir"), filepath.Join(dir, "dir-link")); err != nil {
+		t.Fatal(err)
+	}
 
 	results, err := homeResults(dir)
 	if err != nil {
@@ -577,14 +580,14 @@ func TestHomeResultsListsDirsFirstAndSkipsHidden(t *testing.T) {
 	for _, r := range results {
 		got = append(got, filepath.Base(r.Fullpath))
 	}
-	want := []string{"A-dir", "b-dir", "B.txt", "c.txt", "link"}
+	want := []string{"B.txt", "c.txt", "link"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Errorf("homeResults = %v, want %v", got, want)
+		t.Fatalf("homeResults = %v, want %v", got, want)
 	}
-	if results[0].ObjectType != shared.ItemIsDir {
-		t.Errorf("A-dir type = %v, want dir", results[0].ObjectType)
+	if results[0].ObjectType != shared.ItemIsFile {
+		t.Errorf("B.txt type = %v, want file", results[0].ObjectType)
 	}
-	if results[4].ObjectType != shared.ItemIsSymlink {
+	if results[2].ObjectType != shared.ItemIsSymlink {
 		t.Errorf("link type = %v, want symlink", results[4].ObjectType)
 	}
 }
@@ -623,7 +626,7 @@ func TestApplyRowsDropsStaleResults(t *testing.T) {
 	current := searchCounter.Add(1)
 
 	applyRows(current, []RowData{row("search-hit", 1, time.Time{})}, "1 objects", false, table, label)
-	applyRows(stale, []RowData{row("home-a", 1, time.Time{}), row("home-b", 1, time.Time{})}, "2 items in ~", true, table, label)
+	applyRows(stale, []RowData{row("home-a", 1, time.Time{}), row("home-b", 1, time.Time{})}, "2 files in ~", true, table, label)
 
 	assertOrder(t, tableData, "search-hit")
 	if label.Text != "1 objects" {
@@ -644,7 +647,7 @@ func TestEmptyStateOnlyForEmptyDefaultView(t *testing.T) {
 		t.Error("empty state hidden for an empty default view")
 	}
 
-	tableData = []RowData{row("Documents/", -1, time.Time{})}
+	tableData = []RowData{row("notes.txt", 1, time.Time{})}
 	updateEmptyState()
 	if emptyState.Visible() {
 		t.Error("empty state shown over the home listing")
