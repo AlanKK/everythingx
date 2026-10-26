@@ -65,6 +65,17 @@ Linux with `systemd`, on `x86_64` and `arm64`: Debian/Ubuntu and derivatives via
 `.deb`, Fedora/RHEL/openSUSE and derivatives via `.rpm`. Alpine/musl is not
 supported.
 
+### Homebrew (macOS)
+
+```bash
+brew install --cask alankk/everythingx/everythingx
+```
+
+`brew upgrade` picks up new releases. `brew uninstall --cask everythingx` stops the
+daemon and removes the app and binaries; add `--zap` to also delete the index in
+`/var/lib/everythingx` and the log. Full Disk Access still has to be granted by hand
+(see below).
+
 ### Manual download
 
 Prefer to install by hand? Grab the package for your platform from the

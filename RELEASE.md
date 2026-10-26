@@ -44,6 +44,30 @@ Asset names don't include the version, so `install.sh` can fetch them from
 `releases/latest/download/`. Each Linux arch is built natively (`ubuntu-latest` for amd64,
 `ubuntu-24.04-arm` for arm64) and the `release` job only collects the artifacts.
 
+## Homebrew tap
+
+After each release, the `publish-homebrew` job renders `package/homebrew/everythingx.rb.tmpl`
+with the release's tag, version and `.pkg` checksums (`package/homebrew/render-cask.sh`), and
+pushes it to `Casks/everythingx.rb` in
+[`AlanKK/homebrew-everythingx`](https://github.com/AlanKK/homebrew-everythingx). Users install
+with `brew install --cask alankk/everythingx/everythingx`.
+
+**Version guard.** Every release is published, so a `0.2.N-beta` built after a manual `v1.0.0`
+would sort lower, and `brew upgrade` would treat it as an update and downgrade users. The job
+reads the cask's current `version` and compares it with `dpkg --compare-versions`, with `-`
+mapped to `~` as nfpm does (`0.2.9~beta` < `0.2.10~beta` < `1.0.0`). If the new version isn't
+higher, it logs "skipping" and pushes nothing. The job runs in the `publish-brew` concurrency
+group, so two releases never push at once.
+
+**One-time setup.**
+1. Create the public repo `AlanKK/homebrew-everythingx` with at least one commit (a README is
+   enough; `actions/checkout` can't check out an empty repo). The job creates `Casks/`.
+2. Create a fine-grained PAT with **Contents: Read and write** on that repo only.
+3. Store it in this repo as the Actions secret `HOMEBREW_TAP_TOKEN`.
+
+The `.pkg` is not signed or notarized. The `test-brew` job in the smoke test checks that
+Homebrew still installs it.
+
 ## Smoke test
 
 To re-test a published release on clean runners:
@@ -51,3 +75,6 @@ To re-test a published release on clean runners:
 ```bash
 gh workflow run "Test Published Release" -f tag=v1.0-beta-1
 ```
+
+`test-brew` installs from the tap and fails if the tap serves a different version from the
+tag under test, which is expected when the version guard skipped that tag.
