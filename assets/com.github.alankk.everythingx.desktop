@@ -9,3 +9,4 @@ Terminal=false
 Categories=Utility;FileManager;
 Keywords=search;file;find;index;
 StartupNotify=true
+StartupWMClass=EverythingX
