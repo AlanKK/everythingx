@@ -8,11 +8,11 @@ Compared to Spotlight, `locate` and `find`, it's quicker to index, it picks up c
 
 ### GUI app
 
-<img src="assets/demos/everythingx-demo.gif" alt="EverythingX GUI demo" width="100%">
+<img src="assets/demos/everythingx-demo.gif" alt="EverythingX GUI demo" width="70%">
 
 ### Command line
 
-<img src="assets/demos/ev-demo.gif" alt="EverythingX command-line demo" width="100%">
+<img src="assets/demos/ev-demo.gif" alt="EverythingX command-line demo" width="70%">
 
 There are three binaries:
 
