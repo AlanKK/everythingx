@@ -6,9 +6,13 @@ It started as an attempt to get [Everything by Voidtools](https://www.voidtools.
 
 Compared to Spotlight, `locate` and `find`, it's quicker to index, it picks up changes as they happen, it stays light on CPU and memory, and it starts instantly.
 
-| GUI app | Command line |
-|---|---|
-| <img src="assets/demos/everythingx-demo.gif" alt="EverythingX GUI demo" width="100%"> | <img src="assets/demos/ev-demo.gif" alt="EverythingX command-line demo" width="100%"> |
+### GUI app
+
+<img src="assets/demos/everythingx-demo.gif" alt="EverythingX GUI demo" width="100%">
+
+### Command line
+
+<img src="assets/demos/ev-demo.gif" alt="EverythingX command-line demo" width="100%">
 
 There are three binaries:
 
