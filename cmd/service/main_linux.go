@@ -129,9 +129,10 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 		}
 
 		objType := objectTypeFromStat(path)
-		// objectTypeFromStat returns ItemIsFile when the item is already gone.
-		// Use the FAN_ONDIR flag to correctly identify directory delete events.
-		if isDelete && mask&unix.FAN_ONDIR != 0 {
+		// objectTypeFromStat returns ItemIsFile when the item is already gone
+		// (deleted, or renamed again before we got here). FAN_ONDIR is set by
+		// the kernel for any directory event, so trust it over lstat.
+		if mask&unix.FAN_ONDIR != 0 {
 			objType = shared.ItemIsDir
 		}
 
