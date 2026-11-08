@@ -388,7 +388,11 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 		if handled[i] {
 			continue
 		}
-		if e.FoundOnScan || shared.FileExists(e.Path) {
+		// Existence is checked at flush time, up to 10 s after the event. A
+		// removal is applied regardless, because a different object may have
+		// taken the path since (mv A B; mv C A) and would otherwise keep the
+		// old object's rows alive under it.
+		if !e.IsDelete && (e.FoundOnScan || shared.FileExists(e.Path)) {
 			_, err = insertStmt.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
 			if err != nil {
 				if isDuplicate(err) {
