@@ -32,6 +32,11 @@ type EventRecord struct {
 	EventTime   int64
 	FoundOnScan bool
 	IsRename    bool
+	// IsDelete marks a record for an event that removed the path (Linux:
+	// FAN_DELETE / FAN_MOVED_FROM). It is applied even if something new
+	// exists at the path by flush time; that new object has its own later
+	// event in the same queue and is inserted after the delete.
+	IsDelete bool
 }
 
 func (e EventAction) String() string {
