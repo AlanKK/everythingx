@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/signal"
@@ -76,7 +77,12 @@ func resolvePathFromFD(fd int32) string {
 // overflowed reports whether the kernel signaled FAN_Q_OVERFLOW, meaning events
 // were dropped before we ever read them, so the index can no longer be trusted
 // to be complete and a rescan is required.
-func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*shared.EventRecord, overflowed bool) {
+//
+// movedInDirs lists directories that appeared through a rename or move
+// (FAN_MOVED_TO with FAN_ONDIR). fanotify reports only the directory itself,
+// not its contents, and the old path is deleted from the index together with
+// everything under it, so the caller must index the contents again.
+func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*shared.EventRecord, movedInDirs []string, overflowed bool) {
 	n := len(buf)
 
 	for offset := 0; offset+int(sizeofEventMetadata) <= n; {
@@ -123,10 +129,15 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 		}
 
 		objType := objectTypeFromStat(path)
-		// objectTypeFromStat returns ItemIsFile when the item is already gone.
-		// Use the FAN_ONDIR flag to correctly identify directory delete events.
-		if isDelete && mask&unix.FAN_ONDIR != 0 {
+		// objectTypeFromStat returns ItemIsFile when the item is already gone
+		// (deleted, or renamed again before we got here). FAN_ONDIR is set by
+		// the kernel for any directory event, so trust it over lstat.
+		if mask&unix.FAN_ONDIR != 0 {
 			objType = shared.ItemIsDir
+		}
+
+		if mask&unix.FAN_MOVED_TO != 0 && mask&unix.FAN_ONDIR != 0 {
+			movedInDirs = append(movedInDirs, path)
 		}
 
 		rec := &shared.EventRecord{
@@ -138,7 +149,7 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 		}
 		records = append(records, rec)
 	}
-	return records, overflowed
+	return records, movedInDirs, overflowed
 }
 
 // dfidNameInfo is the decoded content of a DFID_NAME info record: the parent
@@ -455,6 +466,58 @@ var (
 	rescanAgain   bool
 )
 
+// movedDirQueue feeds indexMovedDir. It is buffered so a burst of folder
+// renames does not stall the fanotify reader; if it still fills up, a full
+// rescan covers whatever could not be queued.
+var movedDirQueue = make(chan string, 4096)
+
+func startMovedDirIndexer() {
+	go func() {
+		for dir := range movedDirQueue {
+			indexMovedDir(dir)
+		}
+	}()
+}
+
+func queueMovedDir(dir string) {
+	select {
+	case movedDirQueue <- dir:
+	default:
+		triggerRescan("too many renamed or moved folders to index one by one")
+	}
+}
+
+// indexMovedDir walks a directory that was renamed or moved into place and
+// sends everything under it to the database writer. Records are not marked
+// FoundOnScan, so anything that disappears again before the next flush is
+// dropped there. A directory that no longer exists (renamed again) is
+// skipped; the later rename event covers it.
+func indexMovedDir(root string) {
+	count := 0
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || path == root {
+			return nil
+		}
+		if shouldIgnorePath(path) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		dbChannel <- &shared.EventRecord{
+			Filename:   d.Name(),
+			Path:       path,
+			ObjectType: objectTypeFromStat(path),
+			EventTime:  time.Now().UnixNano(),
+		}
+		count++
+		return nil
+	})
+	if verbose {
+		log.Printf("Indexed %d entries under moved folder %s", count, root)
+	}
+}
+
 func triggerRescan(reason string) {
 	rescanMu.Lock()
 	if rescanRunning {
@@ -520,6 +583,7 @@ func main() {
 	fh := &fanotifyHandle{fd: fd, mountFDMap: mountFDMap}
 
 	setupSignalHandlers(db, fh)
+	startMovedDirIndexer()
 
 	// Event reader goroutine. Uses blocking reads (no FAN_NONBLOCK),
 	// so the goroutine parks with zero CPU until events arrive. On a fatal
@@ -560,7 +624,7 @@ func main() {
 				log.Printf("fanotify read: %d bytes", n)
 			}
 
-			records, overflowed := parseFanotifyEvents(buf[:n], curMountFDMap)
+			records, movedInDirs, overflowed := parseFanotifyEvents(buf[:n], curMountFDMap)
 			if overflowed {
 				triggerRescan("fanotify event queue overflowed, some filesystem events were lost")
 			}
@@ -575,6 +639,9 @@ func main() {
 			}
 			for _, rec := range records {
 				dbChannel <- rec
+			}
+			for _, dir := range movedInDirs {
+				queueMovedDir(dir)
 			}
 		}
 	}()
