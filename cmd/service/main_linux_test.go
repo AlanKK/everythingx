@@ -4,9 +4,11 @@ package main
 
 import (
 	"encoding/binary"
+	"os"
 	"testing"
 	"unsafe"
 
+	"github.com/AlanKK/everythingx/internal/shared"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sys/unix"
 )
@@ -107,4 +109,34 @@ func TestParseDFIDNameInfoRejectsTruncatedRecord(t *testing.T) {
 	_, ok := parseDFIDNameInfo(info)
 
 	assert.False(t, ok, "a record whose handle runs past its end must be rejected")
+}
+
+// TestParseFanotifyEventsDeleteIgnoresNewObject covers a file deleted and
+// replaced by a directory of the same name before the event is read: the
+// delete has no FAN_ONDIR, so it must stay a file delete even though lstat
+// now finds a directory at that path.
+func TestParseFanotifyEventsDeleteIgnoresNewObject(t *testing.T) {
+	dir := t.TempDir() // stands in for the new directory at the reused path
+	f, err := os.Open(dir)
+	assert.NoError(t, err)
+	fd, err := unix.Dup(int(f.Fd())) // parseFanotifyEvents closes the fd it is given
+	assert.NoError(t, err)
+	f.Close()
+
+	event := fanotifyEventMetadata{
+		EventLen:    sizeofEventMetadata,
+		Vers:        fanotifyMetadataVersion,
+		MetadataLen: uint16(sizeofEventMetadata),
+		Mask:        unix.FAN_DELETE,
+		Fd:          int32(fd),
+	}
+	buf := unsafe.Slice((*byte)(unsafe.Pointer(&event)), int(unsafe.Sizeof(event)))
+
+	records, _ := parseFanotifyEvents(buf, nil)
+
+	if assert.Len(t, records, 1) {
+		assert.Equal(t, dir, records[0].Path)
+		assert.Equal(t, shared.ItemIsFile, records[0].ObjectType, "a delete without FAN_ONDIR must not be typed from the new object")
+		assert.True(t, records[0].IsDelete)
+	}
 }

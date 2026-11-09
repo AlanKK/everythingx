@@ -122,7 +122,14 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 			continue
 		}
 
-		objType := objectTypeFromStat(path)
+		// For a pure delete the path is either gone or already taken by a new
+		// object, so lstat says nothing about what was removed; FAN_ONDIR
+		// below is the only reliable signal. Otherwise a file replaced by a
+		// directory of the same name would be deleted as a directory.
+		objType := shared.ItemIsFile
+		if !(isDelete && !isCreate) {
+			objType = objectTypeFromStat(path)
+		}
 		// objectTypeFromStat returns ItemIsFile when the item is already gone.
 		// Use the FAN_ONDIR flag to correctly identify directory delete events.
 		if isDelete && mask&unix.FAN_ONDIR != 0 {
@@ -135,6 +142,9 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 			ObjectType: objType,
 			EventID:    0,
 			EventTime:  time.Now().UnixNano(),
+			// A merged event with both create and delete bits is ambiguous;
+			// leave it to the existence check at flush time.
+			IsDelete: isDelete && !isCreate,
 		}
 		records = append(records, rec)
 	}

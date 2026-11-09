@@ -883,3 +883,72 @@ func countAll(t *testing.T, db *sql.DB) int {
 	}
 	return count
 }
+
+// TestBulkStoreEvents_DeleteAppliedWhenPathReused covers "mv A B; mv C A"
+// within one flush window: by flush time A exists again (it is C now), but
+// the delete event for the old A must still remove the old A's rows, and the
+// later create event must re-insert A.
+func TestBulkStoreEvents_DeleteAppliedWhenPathReused(t *testing.T) {
+	testDBPath := "test_reuse.db"
+	os.Remove(testDBPath)
+
+	db, err := CreateDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+
+	// A real directory, so FileExists(A) is true at flush time.
+	dirA := t.TempDir()
+
+	seed := []shared.EventRecord{
+		{Filename: filepath.Base(dirA), Path: dirA, ObjectType: shared.ItemIsDir, FoundOnScan: true},
+		{Filename: "old_a.zip", Path: dirA + "/old_a.zip", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+	}
+	if err = BulkStoreEvents(db, &seed); err != nil {
+		t.Fatalf("Expected no error seeding DB, got %v", err)
+	}
+	assertCount(t, db, 2, "after seeding")
+
+	events := []shared.EventRecord{
+		{Filename: filepath.Base(dirA), Path: dirA, ObjectType: shared.ItemIsDir, IsDelete: true}, // old A moved away
+		{Filename: filepath.Base(dirA), Path: dirA, ObjectType: shared.ItemIsDir},                 // C moved into A
+	}
+	if err = BulkStoreEvents(db, &events); err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	assertCount(t, db, 1, "after delete + re-create of the same path")
+	var n int
+	if err = db.QueryRow("SELECT COUNT(*) FROM files WHERE fullpath = ?", dirA+"/old_a.zip").Scan(&n); err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("Expected the old A's child to be removed, still found %d row(s)", n)
+	}
+}
+
+// TestBulkStoreEvents_ExistenceCheckWithoutDeleteFlag keeps the old
+// behaviour for records that are not flagged as deletes (macOS events,
+// deleteMissing): a path that exists at flush time is inserted, not deleted.
+func TestBulkStoreEvents_ExistenceCheckWithoutDeleteFlag(t *testing.T) {
+	testDBPath := "test_noflag.db"
+	os.Remove(testDBPath)
+
+	db, err := CreateDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+
+	dir := t.TempDir()
+	events := []shared.EventRecord{
+		{Filename: filepath.Base(dir), Path: dir, ObjectType: shared.ItemIsDir},
+	}
+	if err = BulkStoreEvents(db, &events); err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	assertCount(t, db, 1, "existing path without IsDelete is inserted")
+}
