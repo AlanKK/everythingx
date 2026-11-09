@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/AlanKK/everythingx/internal/shared"
 )
@@ -882,4 +883,41 @@ func countAll(t *testing.T, db *sql.DB) int {
 		t.Fatalf("Expected no error counting, got %v", err)
 	}
 	return count
+}
+
+// TestBulkStoreEvents_WritesInsideTransaction guards against executing the
+// package-level statements outside the batch's transaction. With a single
+// pooled connection, the transaction holds that connection, so any write
+// that is not bound to the transaction waits for a free connection forever.
+func TestBulkStoreEvents_WritesInsideTransaction(t *testing.T) {
+	testDBPath := "test_tx.db"
+	os.Remove(testDBPath)
+
+	db, err := CreateDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer db.Close()
+	defer os.Remove(testDBPath)
+	db.SetMaxOpenConns(1)
+
+	events := []shared.EventRecord{
+		{Filename: "a.txt", Path: "/tmp/tx/a.txt", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+		{Filename: "b.txt", Path: "/tmp/tx/b.txt", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+		{Filename: "a.txt", Path: "/tmp/tx/a.txt", ObjectType: shared.ItemIsFile, FoundOnScan: true}, // duplicate
+		{Filename: "gone", Path: "/tmp/tx/does-not-exist", ObjectType: shared.ItemIsFile},            // delete
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- BulkStoreEvents(db, &events) }()
+	select {
+	case err = <-done:
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("BulkStoreEvents blocked: a write is not using the transaction's connection")
+	}
+
+	assertCount(t, db, 2, "after a batch with a duplicate and a delete")
 }
