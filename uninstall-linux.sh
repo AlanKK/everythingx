@@ -14,7 +14,18 @@ rm -f /etc/systemd/system/everythingxd.service
 systemctl daemon-reload
 
 echo 'Removing executables'
-rm -f /usr/local/bin/everythingxd /usr/local/bin/ev
+rm -f /usr/local/bin/everythingxd /usr/local/bin/ev /usr/local/bin/everythingx
+
+echo 'Removing desktop entry and icons'
+rm -f /usr/share/applications/com.github.alankk.everythingx.desktop \
+      /usr/share/icons/hicolor/{32x32,64x64,128x128,256x256}/apps/everythingx.png \
+      /usr/share/pixmaps/everythingx.png
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+fi
 
 echo 'Removing data directory'
 rm -rf /var/lib/everythingx
