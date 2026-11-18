@@ -1043,20 +1043,25 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	w.Canvas().Focus(entry)
 	w.Resize(fyne.NewSize(1300, 800))
 
-	// A later launch asks us to come forward instead of starting a second
-	// instance. Show restores a window hidden to the tray; RequestFocus raises
-	// and un-minimizes it on X11 and macOS. On Wayland Fyne can't request
-	// focus, so the compositor may leave a minimized window where it is.
-	if instanceLn != nil {
-		serveInstance(instanceLn, func() {
-			fyne.Do(func() {
-				w.Show()
-				w.RequestFocus()
-				w.Canvas().Focus(entry)
-			})
+	// Bring the window forward when the user launches the app again. Show
+	// restores a window hidden to the tray; RequestFocus raises and
+	// un-minimizes it on X11 and macOS. On Wayland Fyne can't request focus,
+	// so the compositor may leave a minimized window where it is.
+	showWindow := func() {
+		fyne.Do(func() {
+			w.Show()
+			w.RequestFocus()
+			w.Canvas().Focus(entry)
 		})
+	}
+	// A second process (Linux, or the macOS binary run directly) hands off
+	// over the single-instance socket.
+	if instanceLn != nil {
+		serveInstance(instanceLn, showWindow)
 		a.Lifecycle().SetOnStopped(func() { instanceLn.Close() })
 	}
+	// Reopening the macOS .app doesn't start a second process; see watchReopen.
+	a.Lifecycle().SetOnStarted(func() { watchReopen(showWindow) })
 
 	showDefaultView(table, statusBar)
 	loadIndexCount(db)
