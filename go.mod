@@ -9,7 +9,7 @@ require (
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/stretchr/testify v1.12.1
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 )
 
 require (
