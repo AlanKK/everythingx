@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -960,7 +961,7 @@ func makeEmptyState() *fyne.Container {
 	return emptyState
 }
 
-func loadUI(db *sql.DB) {
+func loadUI(db *sql.DB, instanceLn net.Listener) {
 	// Declare the app identity and the fyne.Do migration in code rather than in
 	// a FyneApp.toml: `make app` runs `fyne package -executable`, which wraps the
 	// already-built binary, so TOML metadata is never compiled in and is not
@@ -1041,6 +1042,21 @@ func loadUI(db *sql.DB) {
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(content, w.Canvas()))
 	w.Canvas().Focus(entry)
 	w.Resize(fyne.NewSize(1300, 800))
+
+	// A later launch asks us to come forward instead of starting a second
+	// instance. Show restores a window hidden to the tray; RequestFocus raises
+	// and un-minimizes it on X11 and macOS. On Wayland Fyne can't request
+	// focus, so the compositor may leave a minimized window where it is.
+	if instanceLn != nil {
+		serveInstance(instanceLn, func() {
+			fyne.Do(func() {
+				w.Show()
+				w.RequestFocus()
+				w.Canvas().Focus(entry)
+			})
+		})
+		a.Lifecycle().SetOnStopped(func() { instanceLn.Close() })
+	}
 
 	showDefaultView(table, statusBar)
 	loadIndexCount(db)
