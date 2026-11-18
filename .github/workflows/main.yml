@@ -2,9 +2,11 @@ name: Build, Test and Release
 
 on:
   push:
-    branches: [ "main", "linux-support" ]
+    branches: [ "main" ]
+    # Releases are cut by pushing a version tag (vMAJOR.MINOR.PATCH or
+    # vMAJOR.MINOR.PATCH-pre). The version job validates the format strictly.
     tags:
-      - 'v*'
+      - 'v*.*.*'
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -12,18 +14,16 @@ on:
 permissions:
   contents: read
 
-# Serialize release-producing runs on the same ref so the build-counter
-# version job never reads a stale tag. Merges to main queue (never cancel)
-# so every merge gets its own incremented version. Feature branches stay parallel.
+# One run at a time per ref. Superseded PR runs are cancelled; main and tag
+# runs always finish so a release is never interrupted halfway.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Compute the version once per run and decide whether to release:
-  #  - push to main -> auto-increment patch version (v1.x.N), publish "Latest" release
-  #  - tag v*       -> use the tag version, publish release
-  #  - anything else -> 0.0.0-dev, no release
+  #  - tag vX.Y.Z[-pre] on a commit in main -> release with that version
+  #  - anything else (PR, push to main, dispatch on a branch) -> 0.0.0-dev, no release
   version:
     name: Determine version
     runs-on: ubuntu-latest
@@ -31,49 +31,45 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
       release: ${{ steps.v.outputs.release }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0  # need full tag history for the build counter
+          fetch-depth: 0  # need main's history to check the tag is on it
 
       - id: v
-        env:
-          EVENT: ${{ github.event_name }}
         run: |
           release=false
+          prerelease=false
           tag=""
+          ver="0.0.0-dev"
 
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            # Explicit tag release. Strip leading 'v' (e.g. v1.2.3 -> 1.2.3).
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             tag="$GITHUB_REF_NAME"
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              echo "::error::Tag '$tag' is not vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-pre (e.g. v1.1.0, v1.2.0-rc.1)."
+              exit 1
+            fi
+
+            # Only ship commits that landed on main (and so passed PR CI).
+            git fetch --no-tags origin main
+            if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/main; then
+              echo "::error::Tag '$tag' points at $(git rev-parse --short HEAD), which is not on main."
+              exit 1
+            fi
+
             ver="${tag#v}"
-            # deb/rpm require versions starting with a digit; prefix if needed.
-            if [[ ! "$ver" =~ ^[0-9] ]]; then
-              ver="0.0.0+$(echo "$ver" | sed 's/^[^a-zA-Z0-9]*//')"
-            fi
             release=true
-          elif [[ "$EVENT" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            # Auto release on every merge to main: bump the patch of the highest
-            # v1.x.y tag (starting at v1.0.0 when there is none).
-            git fetch --tags --force
-            latest=$(git tag -l 'v1.*' | grep -E '^v1\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
-            if [[ -z "$latest" ]]; then
-              ver="1.0.0"
-            else
-              IFS=. read -r major minor patch <<< "${latest#v}"
-              ver="${major}.${minor}.$((patch + 1))"
-            fi
-            tag="v${ver}"
-            release=true
-          else
-            # Feature-branch push / PR / manual dispatch: build and test only.
-            ver="0.0.0-dev"
+            if [[ "$ver" == *-* ]]; then prerelease=true; fi
           fi
 
-          echo "version=${ver}" >> "$GITHUB_OUTPUT"
-          echo "tag=${tag}"     >> "$GITHUB_OUTPUT"
-          echo "release=${release}" >> "$GITHUB_OUTPUT"
-          echo "Resolved version=${ver} tag=${tag} release=${release}"
+          {
+            echo "version=${ver}"
+            echo "tag=${tag}"
+            echo "release=${release}"
+            echo "prerelease=${prerelease}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved version=${ver} tag=${tag} release=${release} prerelease=${prerelease}"
 
   build:
     name: Build and Test on ${{ matrix.runner }} (${{ matrix.arch }})
@@ -198,13 +194,13 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v3
       with:
-        # On auto (main) runs github.ref is a branch, so name the tag explicitly.
-        # The action creates this tag at the run's commit if it does not exist.
-        # (Tag is created via GITHUB_TOKEN, which does NOT re-trigger this workflow.)
         tag_name: ${{ needs.version.outputs.tag }}
         name: ${{ needs.version.outputs.tag }}
         generate_release_notes: true
-        make_latest: "true"
+        # Pre-releases (v1.2.0-rc.1) never become Latest, so install.sh,
+        # brew and apt keep serving the newest stable release.
+        prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
+        make_latest: ${{ needs.version.outputs.prerelease == 'true' && 'false' || 'true' }}
         files: |
           artifacts/**/*.pkg
           artifacts/**/*.deb
@@ -212,14 +208,15 @@ jobs:
 
 
 
-  # Point the Homebrew tap (AlanKK/homebrew-everythingx) at this release.
-  # Every release reaches here, so a beta built after a higher manual tag
-  # would downgrade brew users; the version guard skips anything not newer.
+  # Point the Homebrew tap (AlanKK/homebrew-everythingx) at this stable release.
+  # Pre-releases are skipped. The version guard also skips a tag that is not
+  # newer than what the tap serves (e.g. a v1.0.5 hotfix tagged after v1.1.0),
+  # so brew users are never downgraded.
   publish-homebrew:
     name: Publish Homebrew cask
     needs: [version, release]
     runs-on: ubuntu-latest
-    if: needs.version.outputs.release == 'true'
+    if: needs.version.outputs.release == 'true' && needs.version.outputs.prerelease != 'true'
     concurrency:
       group: publish-brew
       cancel-in-progress: false
@@ -272,15 +269,16 @@ jobs:
         git commit -m "everythingx ${TAG}"
         git push
 
-  # Rebuild the apt repo (alankk.github.io/everythingx) from the newest
+  # Rebuild the apt repo (alankk.github.io/everythingx) from the newest stable
   # releases and deploy it to GitHub Pages. The repo is rebuilt from scratch
-  # each time and keeps the highest versions, so a beta built after a higher
-  # manual tag never becomes the candidate and apt never downgrades.
+  # each time and keeps the highest versions, so an older hotfix tag never
+  # becomes the candidate and apt never downgrades. Pre-releases are skipped
+  # here and excluded from the download, so they never reach apt users.
   publish-apt:
     name: Publish apt repository
     needs: [version, release]
     runs-on: ubuntu-latest
-    if: needs.version.outputs.release == 'true'
+    if: needs.version.outputs.release == 'true' && needs.version.outputs.prerelease != 'true'
     concurrency:
       group: publish-apt
       cancel-in-progress: false
@@ -302,7 +300,7 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        for tag in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 --exclude-drafts \
+        for tag in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 --exclude-drafts --exclude-pre-releases \
             --json tagName --jq '.[].tagName'); do
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
             --pattern 'everythingx_linux_*.deb' --dir "dl/$tag" \
