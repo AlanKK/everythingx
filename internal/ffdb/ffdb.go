@@ -58,6 +58,7 @@ func OpenDB(pathname string) (*sql.DB, error) {
 	}
 
 	configureDB(db)
+	migrateSearchName(db)
 	prepareStatements(db)
 
 	return db, err
@@ -75,14 +76,14 @@ func OpenDBReadOnly(pathname string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	prepareStatements(db)
+	prepareReadStatements(db)
 
 	return db, err
 }
 
 // Creates the necessary tables and indexes in the database.
 func createTablesAndIndexes(db *sql.DB) {
-	_, err := db.Exec("CREATE TABLE IF NOT EXISTS files(filename TEXT NOT NULL, fullpath TEXT NOT NULL UNIQUE, event_id INTEGER, object_type INTEGER)")
+	_, err := db.Exec("CREATE TABLE IF NOT EXISTS files(filename TEXT NOT NULL, fullpath TEXT NOT NULL UNIQUE, event_id INTEGER, object_type INTEGER, search_name TEXT NOT NULL DEFAULT '')")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -92,29 +93,7 @@ func createTablesAndIndexes(db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.Exec("CREATE VIRTUAL TABLE files_fts USING fts5(filename, content='files', content_rowid='rowid', tokenize='trigram')")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Triggers to keep the FTS index in sync with the files table.
-	_, err = db.Exec(`CREATE TRIGGER files_ai AFTER INSERT ON files BEGIN
-		INSERT INTO files_fts(rowid, filename) VALUES (new.rowid, new.filename);
-	END`)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = db.Exec(`CREATE TRIGGER files_ad AFTER DELETE ON files BEGIN
-		INSERT INTO files_fts(files_fts, rowid, filename) VALUES('delete', old.rowid, old.filename);
-	END`)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = db.Exec(`CREATE TRIGGER files_au AFTER UPDATE ON files BEGIN
-		INSERT INTO files_fts(files_fts, rowid, filename) VALUES('delete', old.rowid, old.filename);
-		INSERT INTO files_fts(rowid, filename) VALUES (new.rowid, new.filename);
-	END`)
-	if err != nil {
+	if err = createSearchIndex(db); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -143,9 +122,25 @@ func configureDB(db *sql.DB) {
 
 // Prepares the SQL statements for later use.
 func prepareStatements(db *sql.DB) {
+	prepareReadStatements(db)
+	prepareWriteStatements(db)
+}
+
+// prepareReadStatements prepares only the queries that search clients use.
+// A read-only client (ev, the GUI) can then open a database the daemon has
+// not migrated yet, whose schema lacks columns the write statements use.
+func prepareReadStatements(db *sql.DB) {
 	var err error
 
-	prefixSearchStmt, err = db.Prepare("SELECT fullpath, object_type FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
+	// Search the normalized names when the database has them (see
+	// SearchName); otherwise fall back to the raw filename.
+	searchNameEnabled = hasSearchNameColumn(db) && ftsUsesSearchName(db)
+	nameCol := "filename"
+	if searchNameEnabled {
+		nameCol = "search_name"
+	}
+
+	prefixSearchStmt, err = db.Prepare("SELECT fullpath, object_type FROM files WHERE " + nameCol + " LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -157,7 +152,16 @@ func prepareStatements(db *sql.DB) {
 		trigramSearchStmt = nil
 	}
 
-	insertStmt, err = db.Prepare("INSERT INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)")
+	fullPathLikeStmt, err = db.Prepare("SELECT fullpath FROM files where fullpath like ?")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func prepareWriteStatements(db *sql.DB) {
+	var err error
+
+	insertStmt, err = db.Prepare("INSERT INTO files (filename, fullpath, event_id, object_type, search_name) VALUES (?, ?, ?, ?, ?)")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -172,15 +176,11 @@ func prepareStatements(db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	renameDirStmt, err = db.Prepare("UPDATE files SET fullpath = ? || SUBSTR(fullpath, LENGTH(?) + 1), filename = CASE WHEN fullpath = ? THEN ? ELSE filename END WHERE fullpath = ? OR (fullpath > ? AND fullpath < ?)")
+	renameDirStmt, err = db.Prepare("UPDATE files SET fullpath = ? || SUBSTR(fullpath, LENGTH(?) + 1), filename = CASE WHEN fullpath = ? THEN ? ELSE filename END, search_name = CASE WHEN fullpath = ? THEN ? ELSE search_name END WHERE fullpath = ? OR (fullpath > ? AND fullpath < ?)")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fullPathLikeStmt, err = db.Prepare("SELECT fullpath FROM files where fullpath like ?")
-	if err != nil {
-		log.Fatal(err)
-	}
 }
 
 // Performs a substring search for filenames containing the given term.
@@ -190,6 +190,9 @@ func PrefixSearch(prefix string, limit int) ([]*shared.SearchResult, error) {
 	var rows *sql.Rows
 	var err error
 
+	if searchNameEnabled {
+		prefix = SearchName(prefix)
+	}
 	if len(prefix) >= 3 && trigramSearchStmt != nil {
 		// Wrap in double quotes so FTS5 treats the term as a literal phrase,
 		// preventing characters like "." from causing syntax errors.
@@ -233,7 +236,7 @@ func DeleteRecord(db *sql.DB, fullpath string) error {
 
 // Inserts a new record into the database.
 func InsertRecord(db *sql.DB, filename string, path string, eventID uint64, objectType shared.ObjectType) error {
-	_, err := db.Exec("INSERT OR IGNORE INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)", filename, path, eventID, objectType)
+	_, err := db.Exec("INSERT OR IGNORE INTO files (filename, fullpath, event_id, object_type, search_name) VALUES (?, ?, ?, ?, ?)", filename, path, eventID, objectType, SearchName(filename))
 	return err
 }
 
@@ -296,7 +299,7 @@ func BulkInsertRecords(db *sql.DB, filename string, path string) error {
 
 		txInsert := tx.Stmt(insertStmt)
 		for _, record := range records {
-			_, err = txInsert.Exec(record.filename, record.path, nil, 0)
+			_, err = txInsert.Exec(record.filename, record.path, nil, 0, SearchName(record.filename))
 			if err != nil {
 				return err
 			}
@@ -326,14 +329,14 @@ func CommitRecords(db *sql.DB) error {
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare("INSERT INTO files (filename, fullpath) VALUES (?, ?)")
+	stmt, err := tx.Prepare("INSERT INTO files (filename, fullpath, search_name) VALUES (?, ?, ?)")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, record := range records {
-		_, err = stmt.Exec(record.filename, record.path)
+		_, err = stmt.Exec(record.filename, record.path, SearchName(record.filename))
 		if err != nil {
 			return err
 		}
@@ -385,7 +388,7 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 		for j := i + 1; j < len(*eventRecordQueue); j++ {
 			ej := (*eventRecordQueue)[j]
 			if ej.IsRename && ej.ObjectType == shared.ItemIsDir && !handled[j] && shared.FileExists(ej.Path) {
-				_, err = txRenameDir.Exec(ej.Path, e.Path, e.Path, ej.Filename, e.Path, e.Path+"/", e.Path+"0")
+				_, err = txRenameDir.Exec(ej.Path, e.Path, e.Path, ej.Filename, e.Path, SearchName(ej.Filename), e.Path, e.Path+"/", e.Path+"0")
 				if err != nil {
 					return err
 				}
@@ -406,7 +409,7 @@ func BulkStoreEvents(db *sql.DB, eventRecordQueue *[]shared.EventRecord) error {
 		// taken the path since (mv A B; mv C A) and would otherwise keep the
 		// old object's rows alive under it.
 		if !e.IsDelete && (e.FoundOnScan || shared.FileExists(e.Path)) {
-			_, err = txInsert.Exec(e.Filename, e.Path, e.EventID, e.ObjectType)
+			_, err = txInsert.Exec(e.Filename, e.Path, e.EventID, e.ObjectType, SearchName(e.Filename))
 			if err != nil {
 				if isDuplicate(err) {
 					num_duplicate++

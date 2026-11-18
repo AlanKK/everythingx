@@ -60,7 +60,7 @@ func TestGetRecord(t *testing.T) {
 			Fullpath:   fmt.Sprintf("/path/to/testfile%02d.txt", i),
 			ObjectType: shared.ItemIsFile,
 		}
-		_, err = db.Exec("INSERT INTO files (filename, fullpath, object_type) VALUES (?, ?, ?)", filepath.Base(result.Fullpath), result.Fullpath, result.ObjectType)
+		_, err = db.Exec("INSERT INTO files (filename, fullpath, object_type, search_name) VALUES (?, ?, ?, ?)", filepath.Base(result.Fullpath), result.Fullpath, result.ObjectType, SearchName(filepath.Base(result.Fullpath)))
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}

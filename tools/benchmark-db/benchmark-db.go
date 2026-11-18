@@ -136,7 +136,7 @@ func copyData(sourceDB, targetDB *sql.DB) {
 		log.Fatalf("Failed to begin transaction: %v", err)
 	}
 
-	insertStmt, err := targetTx.Prepare("INSERT INTO files (filename, fullpath, event_id, object_type) VALUES (?, ?, ?, ?)")
+	insertStmt, err := targetTx.Prepare("INSERT INTO files (filename, fullpath, event_id, object_type, search_name) VALUES (?, ?, ?, ?, ?)")
 	if err != nil {
 		log.Fatalf("Failed to prepare insert statement: %v", err)
 	}
@@ -153,7 +153,7 @@ func copyData(sourceDB, targetDB *sql.DB) {
 			log.Fatalf("Failed to scan row: %v", err)
 		}
 
-		_, err = insertStmt.Exec(filename, fullpath, eventID, objectType)
+		_, err = insertStmt.Exec(filename, fullpath, eventID, objectType, ffdb.SearchName(filename))
 		if err != nil {
 			log.Fatalf("Failed to insert row into target database: %v", err)
 		}
