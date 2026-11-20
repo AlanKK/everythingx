@@ -18,6 +18,13 @@ import (
 )
 
 var dbChannel chan *shared.EventRecord
+
+// walkChannel carries entries found by walking a renamed or moved folder
+// (Linux only; nil elsewhere, so the writer never selects it). It is separate
+// from dbChannel so a large walk never takes up the buffer the event reader
+// depends on, and it carries chunks so a walk costs one flush per chunk
+// rather than one per entry when caching is off.
+var walkChannel chan []shared.EventRecord
 var fullPathLikeQueryEach = ffdb.FullPathLikeQueryEach
 var fileExists = shared.FileExists
 
@@ -139,16 +146,41 @@ func databaseWriter(db *sql.DB, noCache bool) {
 	ticker := time.NewTicker(delayTime)
 	defer ticker.Stop()
 
+	flushIfDue := func() {
+		if time.Since(lastFlushTime) >= delayTime || len(eventRecordQueue) >= maxQueueSize {
+			flush()
+		}
+	}
+
+	events, walks := dbChannel, walkChannel
 	for {
+		// Drain dbChannel first so the event reader never waits behind a
+		// folder walk; walk chunks are taken only when no event is pending.
 		select {
-		case event, ok := <-dbChannel:
+		case event, ok := <-events:
 			if !ok {
 				return
 			}
 			eventRecordQueue = append(eventRecordQueue, *event)
-			if time.Since(lastFlushTime) >= delayTime || len(eventRecordQueue) >= maxQueueSize {
-				flush()
+			flushIfDue()
+			continue
+		default:
+		}
+
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return
 			}
+			eventRecordQueue = append(eventRecordQueue, *event)
+			flushIfDue()
+		case chunk, ok := <-walks:
+			if !ok {
+				walks = nil
+				continue
+			}
+			eventRecordQueue = append(eventRecordQueue, chunk...)
+			flushIfDue()
 		case <-ticker.C:
 			if len(eventRecordQueue) > 0 {
 				flush()
@@ -204,6 +236,30 @@ func isUnderPath(path string, root string) bool {
 		return false
 	}
 	return !strings.HasPrefix(rel, "..")
+}
+
+// objectTypeFromDirEntry maps the type bits WalkDir already read to an
+// ObjectType, avoiding an extra lstat per entry.
+func objectTypeFromDirEntry(d fs.DirEntry) shared.ObjectType {
+	t := d.Type()
+	switch {
+	case t.IsRegular():
+		return shared.ItemIsFile
+	case t.IsDir():
+		return shared.ItemIsDir
+	case t&fs.ModeSymlink != 0:
+		return shared.ItemIsSymlink
+	case t&fs.ModeNamedPipe != 0:
+		return shared.ItemIsNamedPipe
+	case t&fs.ModeSocket != 0:
+		return shared.ItemIsSocket
+	case t&fs.ModeCharDevice != 0:
+		return shared.ItemIsCharDevice
+	case t&fs.ModeDevice != 0:
+		return shared.ItemIsBlockDevice
+	default:
+		return shared.ItemIsFile
+	}
 }
 
 func scanDisk(path string, skipPath string) {

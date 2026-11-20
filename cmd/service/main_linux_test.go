@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -114,29 +115,43 @@ func TestParseDFIDNameInfoRejectsTruncatedRecord(t *testing.T) {
 	assert.False(t, ok, "a record whose handle runs past its end must be rejected")
 }
 
+// collectWalk runs indexMovedDir against a test walkChannel and returns every
+// record it sent, along with the size of each chunk.
+func collectWalk(t *testing.T, root string) ([]shared.EventRecord, []int) {
+	t.Helper()
+	originalWalkChannel := walkChannel
+	walkChannel = make(chan []shared.EventRecord, 1000)
+	defer func() { walkChannel = originalWalkChannel }()
+
+	indexMovedDir(root)
+	close(walkChannel)
+
+	var recs []shared.EventRecord
+	var sizes []int
+	for chunk := range walkChannel {
+		recs = append(recs, chunk...)
+		sizes = append(sizes, len(chunk))
+	}
+	return recs, sizes
+}
+
 // TestIndexMovedDirSendsContents covers the folder-rename fix: fanotify only
 // reports the renamed folder itself, and the old path is deleted from the
 // index together with everything under it, so every entry below the new path
 // must be sent to the database writer again.
 func TestIndexMovedDirSendsContents(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "renamed")
-	for _, p := range []string{"sub/deeper"} {
-		assert.NoError(t, os.MkdirAll(filepath.Join(root, p), 0o755))
-	}
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "sub/deeper"), 0o755))
 	for _, f := range []string{"a.zip", "sub/b.zip", "sub/deeper/c.zip"} {
 		assert.NoError(t, os.WriteFile(filepath.Join(root, f), nil, 0o644))
 	}
+	assert.NoError(t, os.Symlink("a.zip", filepath.Join(root, "link")))
 
-	originalDbChannel := dbChannel
-	dbChannel = make(chan *shared.EventRecord, 100)
-	defer func() { dbChannel = originalDbChannel }()
-
-	indexMovedDir(root)
-	close(dbChannel)
+	recs, _ := collectWalk(t, root)
 
 	var got []string
 	types := map[string]shared.ObjectType{}
-	for rec := range dbChannel {
+	for _, rec := range recs {
 		rel, err := filepath.Rel(root, rec.Path)
 		assert.NoError(t, err)
 		got = append(got, rel)
@@ -147,18 +162,72 @@ func TestIndexMovedDirSendsContents(t *testing.T) {
 	sort.Strings(got)
 
 	// The folder itself is already recorded by its FAN_MOVED_TO event.
-	assert.Equal(t, []string{"a.zip", "sub", "sub/b.zip", "sub/deeper", "sub/deeper/c.zip"}, got)
+	assert.Equal(t, []string{"a.zip", "link", "sub", "sub/b.zip", "sub/deeper", "sub/deeper/c.zip"}, got)
 	assert.Equal(t, shared.ItemIsDir, types["sub/deeper"])
 	assert.Equal(t, shared.ItemIsFile, types["sub/deeper/c.zip"])
+	assert.Equal(t, shared.ItemIsSymlink, types["link"])
+}
+
+// TestIndexMovedDirSendsChunks checks that a large walk is sent in chunks of
+// movedDirChunkSize, so the writer commits once per chunk even with --nocache.
+func TestIndexMovedDirSendsChunks(t *testing.T) {
+	root := t.TempDir()
+	total := movedDirChunkSize*2 + 7
+	for i := 0; i < total; i++ {
+		assert.NoError(t, os.WriteFile(filepath.Join(root, fmt.Sprintf("f%05d", i)), nil, 0o644))
+	}
+
+	recs, sizes := collectWalk(t, root)
+
+	assert.Len(t, recs, total)
+	assert.Equal(t, []int{movedDirChunkSize, movedDirChunkSize, 7}, sizes)
 }
 
 // TestIndexMovedDirMissingFolder checks that a folder renamed again before it
 // could be walked is skipped quietly; the later rename event covers it.
 func TestIndexMovedDirMissingFolder(t *testing.T) {
-	originalDbChannel := dbChannel
-	dbChannel = make(chan *shared.EventRecord, 10)
-	defer func() { dbChannel = originalDbChannel }()
+	recs, sizes := collectWalk(t, filepath.Join(t.TempDir(), "gone"))
+	assert.Empty(t, recs)
+	assert.Empty(t, sizes)
+}
 
-	indexMovedDir(filepath.Join(t.TempDir(), "gone"))
-	assert.Empty(t, dbChannel)
+// TestQueueMovedDirBurstDoesNotRescan covers a burst of folder renames far
+// larger than the old 4096-entry queue: nothing blocks, nothing triggers a
+// rescan, duplicates collapse, and folders come out in arrival order.
+func TestQueueMovedDirBurstDoesNotRescan(t *testing.T) {
+	originalSet, originalRescan := movedDirs, requestRescan
+	defer func() { movedDirs, requestRescan = originalSet, originalRescan }()
+	movedDirs = newMovedDirSet()
+	rescans := 0
+	requestRescan = func(string) { rescans++ }
+
+	const n = 20000
+	for i := 0; i < n; i++ {
+		queueMovedDir(fmt.Sprintf("/data/dir%d", i))
+	}
+	queueMovedDir("/data/dir0")
+
+	assert.Equal(t, 0, rescans)
+	assert.Equal(t, n, movedDirs.len())
+	first, ok := movedDirs.next()
+	assert.True(t, ok)
+	assert.Equal(t, "/data/dir0", first)
+	assert.Equal(t, n-1, movedDirs.len())
+}
+
+// TestQueueMovedDirOverflowRescansOnce checks that overflowing the pending set
+// clears it and requests exactly one rescan, not one per dropped folder.
+func TestQueueMovedDirOverflowRescansOnce(t *testing.T) {
+	originalSet, originalRescan := movedDirs, requestRescan
+	defer func() { movedDirs, requestRescan = originalSet, originalRescan }()
+	movedDirs = newMovedDirSet()
+	rescans := 0
+	requestRescan = func(string) { rescans++ }
+
+	for i := 0; i < maxPendingMovedDirs+10; i++ {
+		queueMovedDir(fmt.Sprintf("/data/dir%d", i))
+	}
+
+	assert.Equal(t, 1, rescans)
+	assert.Equal(t, 9, movedDirs.len(), "folders after the overflow are queued again")
 }

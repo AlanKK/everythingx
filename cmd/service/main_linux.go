@@ -466,34 +466,125 @@ var (
 	rescanAgain   bool
 )
 
-// movedDirQueue feeds indexMovedDir. It is buffered so a burst of folder
-// renames does not stall the fanotify reader; if it still fills up, a full
-// rescan covers whatever could not be queued.
-var movedDirQueue = make(chan string, 4096)
+// Renamed or moved folders waiting for indexMovedDir. Paths go into a
+// deduplicated set instead of a bounded channel, so the fanotify reader never
+// blocks or drops a folder while the walker is busy, and a burst of renames
+// does not turn into a full rescan per dropped folder. Only if the set grows
+// past maxPendingMovedDirs is it cleared and a single rescan requested.
+const (
+	maxPendingMovedDirs = 100000
+	movedDirChunkSize   = 1000
+)
+
+type movedDirSet struct {
+	mu      sync.Mutex
+	pending map[string]struct{}
+	order   []string
+	wake    chan struct{}
+}
+
+func newMovedDirSet() *movedDirSet {
+	return &movedDirSet{pending: map[string]struct{}{}, wake: make(chan struct{}, 1)}
+}
+
+// add queues dir and reports false if the set was full and has been cleared.
+func (m *movedDirSet) add(dir string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.pending[dir]; ok {
+		return true
+	}
+	if len(m.pending) >= maxPendingMovedDirs {
+		m.clearLocked()
+		return false
+	}
+	m.pending[dir] = struct{}{}
+	m.order = append(m.order, dir)
+	select {
+	case m.wake <- struct{}{}:
+	default:
+	}
+	return true
+}
+
+// next returns the oldest queued folder, or false if none is queued.
+func (m *movedDirSet) next() (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.order) == 0 {
+		return "", false
+	}
+	dir := m.order[0]
+	m.order[0] = ""
+	m.order = m.order[1:]
+	delete(m.pending, dir)
+	if len(m.order) == 0 {
+		m.order = nil
+	}
+	return dir, true
+}
+
+func (m *movedDirSet) clear() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clearLocked()
+}
+
+func (m *movedDirSet) clearLocked() {
+	m.pending = map[string]struct{}{}
+	m.order = nil
+}
+
+func (m *movedDirSet) len() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.order)
+}
+
+var movedDirs = newMovedDirSet()
+
+// requestRescan is triggerRescan, swappable in tests.
+var requestRescan = triggerRescan
 
 func startMovedDirIndexer() {
 	go func() {
-		for dir := range movedDirQueue {
-			indexMovedDir(dir)
+		for range movedDirs.wake {
+			for {
+				dir, ok := movedDirs.next()
+				if !ok {
+					break
+				}
+				indexMovedDir(dir)
+			}
 		}
 	}()
 }
 
 func queueMovedDir(dir string) {
-	select {
-	case movedDirQueue <- dir:
-	default:
-		triggerRescan("too many renamed or moved folders to index one by one")
+	if !movedDirs.add(dir) {
+		requestRescan("too many renamed or moved folders to index one by one")
 	}
 }
 
 // indexMovedDir walks a directory that was renamed or moved into place and
-// sends everything under it to the database writer. Records are not marked
-// FoundOnScan, so anything that disappears again before the next flush is
-// dropped there. A directory that no longer exists (renamed again) is
-// skipped; the later rename event covers it.
+// sends everything under it to the database writer in chunks on walkChannel.
+// Records are not marked FoundOnScan, so anything that disappears again
+// before the next flush is dropped there. A directory that no longer exists
+// (renamed again) is skipped; the later rename event covers it.
+//
+// The writer only takes walk chunks when dbChannel is empty, so during a full
+// rescan (which keeps dbChannel busy) the walk waits until the scan is done.
+// That is harmless: the rescan covers the folder anyway.
 func indexMovedDir(root string) {
 	count := 0
+	chunk := make([]shared.EventRecord, 0, movedDirChunkSize)
+	send := func() {
+		if len(chunk) == 0 {
+			return
+		}
+		walkChannel <- chunk
+		chunk = make([]shared.EventRecord, 0, movedDirChunkSize)
+	}
 	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || path == root {
 			return nil
@@ -504,15 +595,19 @@ func indexMovedDir(root string) {
 			}
 			return nil
 		}
-		dbChannel <- &shared.EventRecord{
+		chunk = append(chunk, shared.EventRecord{
 			Filename:   d.Name(),
 			Path:       path,
-			ObjectType: objectTypeFromStat(path),
+			ObjectType: objectTypeFromDirEntry(d),
 			EventTime:  time.Now().UnixNano(),
-		}
+		})
 		count++
+		if len(chunk) >= movedDirChunkSize {
+			send()
+		}
 		return nil
 	})
+	send()
 	if verbose {
 		log.Printf("Indexed %d entries under moved folder %s", count, root)
 	}
@@ -530,6 +625,14 @@ func triggerRescan(reason string) {
 
 	go func() {
 		for {
+			// Folders still waiting to be walked exist on disk now, so the
+			// scan below finds their contents; walking them too is redundant.
+			if n := movedDirs.len(); n > 0 {
+				movedDirs.clear()
+				if verbose {
+					log.Printf("Dropped %d queued folder walks covered by the rescan", n)
+				}
+			}
 			log.Printf("%s, starting full rescan to recover", reason)
 			scanPrioritizingHome(config.MonitorPath)
 			deleteMissing(config.MonitorPath)
@@ -561,6 +664,7 @@ func main() {
 	}()
 
 	dbChannel = make(chan *shared.EventRecord, 5000)
+	walkChannel = make(chan []shared.EventRecord, 4)
 	go databaseWriter(db, config.NoCache)
 
 	if dbIsNew {
