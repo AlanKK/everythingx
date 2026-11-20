@@ -4,10 +4,16 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"testing"
 	"unsafe"
 
+	"github.com/AlanKK/everythingx/internal/shared"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
 
@@ -51,10 +57,11 @@ func TestParseFanotifyEventsOverflow(t *testing.T) {
 	}
 	buf := unsafe.Slice((*byte)(unsafe.Pointer(&event)), int(unsafe.Sizeof(event)))
 
-	records, overflowed := parseFanotifyEvents(buf, nil)
+	records, movedInDirs, overflowed := parseFanotifyEvents(buf, nil)
 
 	assert.True(t, overflowed, "expected overflowed=true for a FAN_Q_OVERFLOW event")
 	assert.Empty(t, records, "an overflow marker alone should not produce file records")
+	assert.Empty(t, movedInDirs, "an overflow marker alone should not report moved folders")
 }
 
 // dfidNameRecord builds a synthetic DFID_NAME info record for the given handle
@@ -107,4 +114,183 @@ func TestParseDFIDNameInfoRejectsTruncatedRecord(t *testing.T) {
 	_, ok := parseDFIDNameInfo(info)
 
 	assert.False(t, ok, "a record whose handle runs past its end must be rejected")
+}
+
+// collectWalk runs indexMovedDir against a test walkChannel and returns every
+// record it sent, along with the size of each chunk.
+func collectWalk(t *testing.T, root string) ([]shared.EventRecord, []int) {
+	t.Helper()
+	originalWalkChannel := walkChannel
+	walkChannel = make(chan []shared.EventRecord, 1000)
+	defer func() { walkChannel = originalWalkChannel }()
+
+	indexMovedDir(root)
+	close(walkChannel)
+
+	var recs []shared.EventRecord
+	var sizes []int
+	for chunk := range walkChannel {
+		recs = append(recs, chunk...)
+		sizes = append(sizes, len(chunk))
+	}
+	return recs, sizes
+}
+
+// TestIndexMovedDirSendsContents covers the folder-rename fix: fanotify only
+// reports the renamed folder itself, and the old path is deleted from the
+// index together with everything under it, so every entry below the new path
+// must be sent to the database writer again.
+func TestIndexMovedDirSendsContents(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "renamed")
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "sub/deeper"), 0o755))
+	for _, f := range []string{"a.zip", "sub/b.zip", "sub/deeper/c.zip"} {
+		assert.NoError(t, os.WriteFile(filepath.Join(root, f), nil, 0o644))
+	}
+	assert.NoError(t, os.Symlink("a.zip", filepath.Join(root, "link")))
+
+	recs, _ := collectWalk(t, root)
+
+	var got []string
+	types := map[string]shared.ObjectType{}
+	for _, rec := range recs {
+		rel, err := filepath.Rel(root, rec.Path)
+		assert.NoError(t, err)
+		got = append(got, rel)
+		types[rel] = rec.ObjectType
+		assert.Equal(t, filepath.Base(rec.Path), rec.Filename)
+		assert.False(t, rec.FoundOnScan, "records must be re-checked for existence at flush time")
+	}
+	sort.Strings(got)
+
+	// The folder itself is already recorded by its FAN_MOVED_TO event.
+	assert.Equal(t, []string{"a.zip", "link", "sub", "sub/b.zip", "sub/deeper", "sub/deeper/c.zip"}, got)
+	assert.Equal(t, shared.ItemIsDir, types["sub/deeper"])
+	assert.Equal(t, shared.ItemIsFile, types["sub/deeper/c.zip"])
+	assert.Equal(t, shared.ItemIsSymlink, types["link"])
+}
+
+// TestIndexMovedDirSendsChunks checks that a large walk is sent in chunks of
+// movedDirChunkSize, so the writer commits once per chunk even with --nocache.
+func TestIndexMovedDirSendsChunks(t *testing.T) {
+	root := t.TempDir()
+	total := movedDirChunkSize*2 + 7
+	for i := 0; i < total; i++ {
+		assert.NoError(t, os.WriteFile(filepath.Join(root, fmt.Sprintf("f%05d", i)), nil, 0o644))
+	}
+
+	recs, sizes := collectWalk(t, root)
+
+	assert.Len(t, recs, total)
+	assert.Equal(t, []int{movedDirChunkSize, movedDirChunkSize, 7}, sizes)
+}
+
+// TestIndexMovedDirMissingFolder checks that a folder renamed again before it
+// could be walked is skipped quietly; the later rename event covers it.
+func TestIndexMovedDirMissingFolder(t *testing.T) {
+	recs, sizes := collectWalk(t, filepath.Join(t.TempDir(), "gone"))
+	assert.Empty(t, recs)
+	assert.Empty(t, sizes)
+}
+
+// TestQueueMovedDirBurstDoesNotRescan covers a burst of folder renames far
+// larger than the old 4096-entry queue: nothing blocks, nothing triggers a
+// rescan, duplicates collapse, and folders come out in arrival order.
+func TestQueueMovedDirBurstDoesNotRescan(t *testing.T) {
+	originalSet, originalRescan := movedDirs, requestRescan
+	defer func() { movedDirs, requestRescan = originalSet, originalRescan }()
+	movedDirs = newMovedDirSet()
+	rescans := 0
+	requestRescan = func(string) { rescans++ }
+
+	const n = 20000
+	for i := 0; i < n; i++ {
+		queueMovedDir(fmt.Sprintf("/data/dir%d", i))
+	}
+	queueMovedDir("/data/dir0")
+
+	assert.Equal(t, 0, rescans)
+	assert.Equal(t, n, movedDirs.len())
+	first, ok := movedDirs.next()
+	assert.True(t, ok)
+	assert.Equal(t, "/data/dir0", first)
+	assert.Equal(t, n-1, movedDirs.len())
+}
+
+// TestQueueMovedDirOverflowRescansOnce checks that overflowing the pending set
+// clears it and requests exactly one rescan, not one per dropped folder.
+func TestQueueMovedDirOverflowRescansOnce(t *testing.T) {
+	originalSet, originalRescan := movedDirs, requestRescan
+	defer func() { movedDirs, requestRescan = originalSet, originalRescan }()
+	movedDirs = newMovedDirSet()
+	rescans := 0
+	requestRescan = func(string) { rescans++ }
+
+	for i := 0; i < maxPendingMovedDirs+10; i++ {
+		queueMovedDir(fmt.Sprintf("/data/dir%d", i))
+	}
+
+	assert.Equal(t, 1, rescans)
+	assert.Equal(t, 9, movedDirs.len(), "folders after the overflow are queued again")
+}
+
+// TestParseFanotifyEventsDeleteIgnoresNewObject covers a file deleted and
+// replaced by a directory of the same name before the event is read: the
+// delete has no FAN_ONDIR, so it must stay a file delete even though lstat
+// now finds a directory at that path.
+func TestParseFanotifyEventsDeleteIgnoresNewObject(t *testing.T) {
+	dir := t.TempDir() // stands in for the new directory at the reused path
+	f, err := os.Open(dir)
+	require.NoError(t, err)
+	fd, err := unix.Dup(int(f.Fd())) // parseFanotifyEvents closes the fd it is given
+	require.NoError(t, err)
+	f.Close()
+
+	event := fanotifyEventMetadata{
+		EventLen:    sizeofEventMetadata,
+		Vers:        fanotifyMetadataVersion,
+		MetadataLen: uint16(sizeofEventMetadata),
+		Mask:        unix.FAN_DELETE,
+		Fd:          int32(fd),
+	}
+	buf := unsafe.Slice((*byte)(unsafe.Pointer(&event)), int(unsafe.Sizeof(event)))
+
+	records, _, _ := parseFanotifyEvents(buf, nil)
+
+	if assert.Len(t, records, 1) {
+		assert.Equal(t, dir, records[0].Path)
+		assert.Equal(t, shared.ItemIsFile, records[0].ObjectType, "a delete without FAN_ONDIR must not be typed from the new object")
+		assert.True(t, records[0].IsDelete)
+	}
+}
+
+// TestParseFanotifyEventsMergedCreateDelete covers a create and a delete of the
+// same name that the kernel merged into one event (rm -r X; mkdir X from one
+// process before the reader caught up): it must produce a delete, so the old
+// folder's rows are cascaded away, followed by an existence-checked record.
+func TestParseFanotifyEventsMergedCreateDelete(t *testing.T) {
+	dir := t.TempDir() // stands in for the new folder at the reused path
+	f, err := os.Open(dir)
+	require.NoError(t, err)
+	fd, err := unix.Dup(int(f.Fd())) // parseFanotifyEvents closes the fd it is given
+	require.NoError(t, err)
+	f.Close()
+
+	event := fanotifyEventMetadata{
+		EventLen:    sizeofEventMetadata,
+		Vers:        fanotifyMetadataVersion,
+		MetadataLen: uint16(sizeofEventMetadata),
+		Mask:        unix.FAN_DELETE | unix.FAN_CREATE | unix.FAN_ONDIR,
+		Fd:          int32(fd),
+	}
+	buf := unsafe.Slice((*byte)(unsafe.Pointer(&event)), int(unsafe.Sizeof(event)))
+
+	records, _, _ := parseFanotifyEvents(buf, nil)
+
+	require.Len(t, records, 2)
+	for _, rec := range records {
+		assert.Equal(t, dir, rec.Path)
+		assert.Equal(t, shared.ItemIsDir, rec.ObjectType)
+	}
+	assert.True(t, records[0].IsDelete, "the delete half must come first and be applied unconditionally")
+	assert.False(t, records[1].IsDelete, "the create half must be left to the existence check")
 }

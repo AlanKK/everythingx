@@ -1,34 +1,44 @@
 # Releases
 
-Every merge to `main` builds and tests on all platforms, then tags and publishes a new
-release automatically. If a build or test fails, nothing gets tagged; fix it and merge again.
+Releases are cut by pushing a version tag. Merges to `main` only build and test.
 
 | Trigger | What runs |
 |---|---|
-| Merge to `main` | Build, test, bump the build counter, publish as Latest with the `.pkg`, `.deb` and `.rpm` files |
-| Tag `v*` | Build, test, publish a release with the tag's version |
-| PR, other branches, manual dispatch | Build and unit tests only (`0.0.0-dev`), no release |
+| PR to `main`, push to `main`, manual dispatch on a branch | Build, unit tests, e2e and packaging on all platforms (`0.0.0-dev`), no release |
+| Tag `vX.Y.Z` | Build and test with that version, publish a GitHub release as Latest, update the Homebrew tap and the apt repo |
+| Tag `vX.Y.Z-pre` (e.g. `v1.2.0-rc.1`) | Build and test, publish a GitHub **pre-release** only: not Latest, not pushed to Homebrew or apt |
 
-Runs are serialized per ref, so two quick merges queue up and each gets its own version.
+The tag run fails before building if the tag isn't `vMAJOR.MINOR.PATCH[-pre]` or if the tagged
+commit isn't on `main`. Superseded PR runs are cancelled; `main` and tag runs always finish.
 
-## Versions
+## Cutting a release
 
-Auto builds bump the patch of the highest `v1.x.y` tag: `v1.0.0`, `v1.0.1`, `v1.0.2`, and so on (the first
-release on a repo with no `v1.*.*` tag is `v1.0.0`).
-
-To move the minor or major version, tag it by hand; later auto builds continue from that tag:
+Batch up as many merges as you like, then:
 
 ```bash
-git tag v1.1.0
+git switch main && git pull
+make release TAG=v1.1.0        # or: package/release.sh v1.1.0
+```
+
+`package/release.sh` refuses to tag unless you're on `main` with a clean tree that matches
+`origin/main`, the latest `main.yml` run on that commit succeeded, the tag doesn't exist, and (for a
+stable tag) it is higher than the newest stable tag. It shows the commit and CI run, asks for
+confirmation, then creates an annotated tag and pushes only that tag. Doing it by hand is the same as:
+
+```bash
+git tag -a v1.1.0 -m "v1.1.0"
 git push origin v1.1.0
 ```
 
-Manual tags must be `v` followed by a digit (`v1.1.0`, `v2.1.0-rc.1`). The auto-tag uses
-`GITHUB_TOKEN`, so it doesn't re-trigger the workflow.
+If a tag run fails, fix it on `main` and tag the next patch version. To retry a run that failed
+for a transient reason, re-run it from the Actions tab.
 
-Package versions drop the `v`. deb/rpm need a leading digit, and nfpm writes `-beta` as
-`~beta` for pre-release tags (`everythingx_0.2.1~beta_amd64.deb`). Version, commit and build date are baked in
-with `-ldflags`; check with `ev --version` or `everythingxd --version`.
+## Versions
+
+Package versions are the tag without the `v`. nfpm writes `-rc.1` as `~rc.1` in deb/rpm
+(`everythingx_1.2.0~rc.1_amd64.deb`), so a pre-release sorts below its final version. Version,
+commit and build date are baked in with `-ldflags`; check with `ev --version` or
+`everythingxd --version`. Non-release builds report `0.0.0-dev`.
 
 ## Artifacts
 
@@ -47,17 +57,16 @@ Asset names don't include the version, so `install.sh` can fetch them from
 
 ## Homebrew tap
 
-After each release, the `publish-homebrew` job renders `package/homebrew/everythingx.rb.tmpl`
+After each stable release, the `publish-homebrew` job renders `package/homebrew/everythingx.rb.tmpl`
 with the release's tag, version and `.pkg` checksums (`package/homebrew/render-cask.sh`), and
 pushes it to `Casks/everythingx.rb` in
 [`AlanKK/homebrew-everythingx`](https://github.com/AlanKK/homebrew-everythingx). Users install
 with `brew install --cask alankk/everythingx/everythingx`.
 
-**Version guard.** Every release is published, so a `0.2.N-beta` built after a manual `v1.0.0`
-would sort lower, and `brew upgrade` would treat it as an update and downgrade users. The job
-reads the cask's current `version` and compares it with `dpkg --compare-versions`, with `-`
-mapped to `~` as nfpm does (`0.2.9~beta` < `0.2.10~beta` < `1.0.0`). If the new version isn't
-higher, it logs "skipping" and pushes nothing. The job runs in the `publish-brew` concurrency
+**Version guard.** A stable tag that is lower than what the tap serves (say a `v1.0.5` hotfix
+tagged after `v1.1.0`) would make `brew upgrade` downgrade users. The job reads the cask's current
+`version` and compares it with `dpkg --compare-versions`, with `-` mapped to `~` as nfpm does. If
+the new version isn't higher, it logs "skipping" and pushes nothing. The job runs in the `publish-brew` concurrency
 group, so two releases never push at once.
 
 **One-time setup.**
@@ -71,21 +80,20 @@ Homebrew still installs it.
 
 ## apt repository
 
-After each release, the `publish-apt` job rebuilds the apt repo at
+After each stable release, the `publish-apt` job rebuilds the apt repo at
 [alankk.github.io/everythingx](https://alankk.github.io/everythingx) and deploys it to GitHub
-Pages. It downloads the `.deb` assets of the 20 newest releases and runs
+Pages. It downloads the `.deb` assets of the 20 newest non-pre-releases and runs
 `package/apt/build-repo.sh site dl/*/*.deb`, which:
 
-- reads each deb's version and arch from the package (`0.2.9~beta`, not the tag's `0.2.9-beta`)
+- reads each deb's version and arch from the package (`1.2.0~rc.1`, not the tag's `1.2.0-rc.1`)
 - keeps the 5 highest versions per arch (`dpkg --compare-versions`) in `pool/main/e/everythingx/`
 - writes `dists/stable/main/binary-{amd64,arm64}/Packages{,.gz}` and `dists/stable/Release` with
   `apt-ftparchive`, and signs them as `InRelease` and `Release.gpg`
 - exports the public key to `everythingx.gpg` and writes a small `index.html`
 
 Nothing is committed to git. Every run rebuilds the whole repo from Releases, so a run skipped by
-the `publish-apt` concurrency group loses nothing. Because the highest versions win, a
-`0.2.N-beta` built after a manual `v1.0.0` never becomes the candidate, and `apt upgrade` never
-downgrades.
+the `publish-apt` concurrency group loses nothing. Because the highest versions win, an older
+hotfix tag never becomes the candidate, and `apt upgrade` never downgrades.
 
 To build it locally (needs `apt-utils` and a secret key in your gpg keyring; set
 `APT_GPG_KEY_ID` to pick one):
@@ -112,9 +120,9 @@ cd site && python3 -m http.server
 To re-test a published release on clean runners:
 
 ```bash
-gh workflow run "Test Published Release" -f tag=v1.0-beta-1
+gh workflow run "Test Published Release" -f tag=v1.1.0
 ```
 
 `test-brew` and `test-apt` install from the tap and the apt repo. They fail if those serve a
 different version from the tag under test, which is expected when the tag isn't the highest
-version (the brew version guard skipped it, or apt prefers a higher one).
+version (the brew version guard skipped it, apt prefers a higher one, or it's a pre-release).

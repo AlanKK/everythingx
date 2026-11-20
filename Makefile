@@ -135,4 +135,9 @@ rpm: build
 	GOARCH=$(GOARCH) $(NFPM) pkg --packager rpm --target $(BIN_DIR)/
 endif
 
-.PHONY: build test deps lint install clean uninstall zip package app pkg deb rpm
+# Cut a release by pushing a version tag: make release TAG=v1.1.0
+release:
+	@test -n "$(TAG)" || { echo "usage: make release TAG=vX.Y.Z[-pre]"; exit 1; }
+	./package/release.sh $(TAG)
+
+.PHONY: build test deps lint install clean uninstall zip package app pkg deb rpm release

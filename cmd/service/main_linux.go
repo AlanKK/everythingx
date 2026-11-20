@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/signal"
@@ -76,7 +77,12 @@ func resolvePathFromFD(fd int32) string {
 // overflowed reports whether the kernel signaled FAN_Q_OVERFLOW, meaning events
 // were dropped before we ever read them, so the index can no longer be trusted
 // to be complete and a rescan is required.
-func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*shared.EventRecord, overflowed bool) {
+//
+// movedInDirs lists directories that appeared through a rename or move
+// (FAN_MOVED_TO with FAN_ONDIR). fanotify reports only the directory itself,
+// not its contents, and the old path is deleted from the index together with
+// everything under it, so the caller must index the contents again.
+func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*shared.EventRecord, movedInDirs []string, overflowed bool) {
 	n := len(buf)
 
 	for offset := 0; offset+int(sizeofEventMetadata) <= n; {
@@ -122,23 +128,55 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 			continue
 		}
 
-		objType := objectTypeFromStat(path)
-		// objectTypeFromStat returns ItemIsFile when the item is already gone.
-		// Use the FAN_ONDIR flag to correctly identify directory delete events.
-		if isDelete && mask&unix.FAN_ONDIR != 0 {
+		// For a pure delete the path is either gone or already taken by a new
+		// object, so lstat says nothing about what was removed; FAN_ONDIR
+		// below is the only reliable signal. Otherwise a file replaced by a
+		// directory of the same name would be deleted as a directory.
+		objType := shared.ItemIsFile
+		if !(isDelete && !isCreate) {
+			objType = objectTypeFromStat(path)
+		}
+		// objectTypeFromStat returns ItemIsFile when the item is already gone
+		// (deleted, or renamed again before we got here). FAN_ONDIR is set by
+		// the kernel for any directory event, so trust it over lstat.
+		if mask&unix.FAN_ONDIR != 0 {
 			objType = shared.ItemIsDir
 		}
 
-		rec := &shared.EventRecord{
-			Filename:   filepath.Base(path),
-			Path:       path,
-			ObjectType: objType,
-			EventID:    0,
-			EventTime:  time.Now().UnixNano(),
+		if mask&unix.FAN_MOVED_TO != 0 && mask&unix.FAN_ONDIR != 0 {
+			movedInDirs = append(movedInDirs, path)
 		}
-		records = append(records, rec)
+
+		newRecord := func(isDelete bool) *shared.EventRecord {
+			recType := objType
+			if isDelete && mask&unix.FAN_ONDIR == 0 {
+				// As for a pure delete, lstat describes whatever is at the
+				// path now, not what was removed.
+				recType = shared.ItemIsFile
+			}
+			return &shared.EventRecord{
+				Filename:   filepath.Base(path),
+				Path:       path,
+				ObjectType: recType,
+				EventID:    0,
+				EventTime:  time.Now().UnixNano(),
+				IsDelete:   isDelete,
+			}
+		}
+		if isDelete && isCreate {
+			// The kernel merged a create and a delete of the same name, made
+			// by the same process, that were still queued (for example a
+			// program that removes and recreates a folder). Emit a
+			// delete followed by an existence-checked record: whichever came
+			// first, the old object's rows are removed and the path ends up
+			// indexed only if something exists there at flush time.
+			records = append(records, newRecord(true))
+		}
+		// A create, or the second half of a merged event, is left to the
+		// existence check at flush time.
+		records = append(records, newRecord(isDelete && !isCreate))
 	}
-	return records, overflowed
+	return records, movedInDirs, overflowed
 }
 
 // dfidNameInfo is the decoded content of a DFID_NAME info record: the parent
@@ -455,6 +493,153 @@ var (
 	rescanAgain   bool
 )
 
+// Renamed or moved folders waiting for indexMovedDir. Paths go into a
+// deduplicated set instead of a bounded channel, so the fanotify reader never
+// blocks or drops a folder while the walker is busy, and a burst of renames
+// does not turn into a full rescan per dropped folder. Only if the set grows
+// past maxPendingMovedDirs is it cleared and a single rescan requested.
+const (
+	maxPendingMovedDirs = 100000
+	movedDirChunkSize   = 1000
+)
+
+type movedDirSet struct {
+	mu      sync.Mutex
+	pending map[string]struct{}
+	order   []string
+	wake    chan struct{}
+}
+
+func newMovedDirSet() *movedDirSet {
+	return &movedDirSet{pending: map[string]struct{}{}, wake: make(chan struct{}, 1)}
+}
+
+// add queues dir and reports false if the set was full and has been cleared.
+func (m *movedDirSet) add(dir string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.pending[dir]; ok {
+		return true
+	}
+	if len(m.pending) >= maxPendingMovedDirs {
+		m.clearLocked()
+		return false
+	}
+	m.pending[dir] = struct{}{}
+	m.order = append(m.order, dir)
+	select {
+	case m.wake <- struct{}{}:
+	default:
+	}
+	return true
+}
+
+// next returns the oldest queued folder, or false if none is queued.
+func (m *movedDirSet) next() (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.order) == 0 {
+		return "", false
+	}
+	dir := m.order[0]
+	m.order[0] = ""
+	m.order = m.order[1:]
+	delete(m.pending, dir)
+	if len(m.order) == 0 {
+		m.order = nil
+	}
+	return dir, true
+}
+
+func (m *movedDirSet) clear() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clearLocked()
+}
+
+func (m *movedDirSet) clearLocked() {
+	m.pending = map[string]struct{}{}
+	m.order = nil
+}
+
+func (m *movedDirSet) len() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.order)
+}
+
+var movedDirs = newMovedDirSet()
+
+// requestRescan is triggerRescan, swappable in tests.
+var requestRescan = triggerRescan
+
+func startMovedDirIndexer() {
+	go func() {
+		for range movedDirs.wake {
+			for {
+				dir, ok := movedDirs.next()
+				if !ok {
+					break
+				}
+				indexMovedDir(dir)
+			}
+		}
+	}()
+}
+
+func queueMovedDir(dir string) {
+	if !movedDirs.add(dir) {
+		requestRescan("too many renamed or moved folders to index one by one")
+	}
+}
+
+// indexMovedDir walks a directory that was renamed or moved into place and
+// sends everything under it to the database writer in chunks on walkChannel.
+// Records are not marked FoundOnScan, so anything that disappears again
+// before the next flush is dropped there. A directory that no longer exists
+// (renamed again) is skipped; the later rename event covers it.
+//
+// The writer only takes walk chunks when dbChannel is empty, so during a full
+// rescan (which keeps dbChannel busy) the walk waits until the scan is done.
+// That is harmless: the rescan covers the folder anyway.
+func indexMovedDir(root string) {
+	count := 0
+	chunk := make([]shared.EventRecord, 0, movedDirChunkSize)
+	send := func() {
+		if len(chunk) == 0 {
+			return
+		}
+		walkChannel <- chunk
+		chunk = make([]shared.EventRecord, 0, movedDirChunkSize)
+	}
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || path == root {
+			return nil
+		}
+		if shouldIgnorePath(path) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		chunk = append(chunk, shared.EventRecord{
+			Filename:   d.Name(),
+			Path:       path,
+			ObjectType: objectTypeFromDirEntry(d),
+			EventTime:  time.Now().UnixNano(),
+		})
+		count++
+		if len(chunk) >= movedDirChunkSize {
+			send()
+		}
+		return nil
+	})
+	send()
+	if verbose {
+		log.Printf("Indexed %d entries under moved folder %s", count, root)
+	}
+}
+
 func triggerRescan(reason string) {
 	rescanMu.Lock()
 	if rescanRunning {
@@ -467,6 +652,14 @@ func triggerRescan(reason string) {
 
 	go func() {
 		for {
+			// Folders still waiting to be walked exist on disk now, so the
+			// scan below finds their contents; walking them too is redundant.
+			if n := movedDirs.len(); n > 0 {
+				movedDirs.clear()
+				if verbose {
+					log.Printf("Dropped %d queued folder walks covered by the rescan", n)
+				}
+			}
 			log.Printf("%s, starting full rescan to recover", reason)
 			scanPrioritizingHome(config.MonitorPath)
 			deleteMissing(config.MonitorPath)
@@ -498,6 +691,7 @@ func main() {
 	}()
 
 	dbChannel = make(chan *shared.EventRecord, 5000)
+	walkChannel = make(chan []shared.EventRecord, 4)
 	go databaseWriter(db, config.NoCache)
 
 	if dbIsNew {
@@ -520,6 +714,7 @@ func main() {
 	fh := &fanotifyHandle{fd: fd, mountFDMap: mountFDMap}
 
 	setupSignalHandlers(db, fh)
+	startMovedDirIndexer()
 
 	// Event reader goroutine. Uses blocking reads (no FAN_NONBLOCK),
 	// so the goroutine parks with zero CPU until events arrive. On a fatal
@@ -560,14 +755,14 @@ func main() {
 				log.Printf("fanotify read: %d bytes", n)
 			}
 
-			records, overflowed := parseFanotifyEvents(buf[:n], curMountFDMap)
+			records, movedInDirs, overflowed := parseFanotifyEvents(buf[:n], curMountFDMap)
 			if overflowed {
 				triggerRescan("fanotify event queue overflowed, some filesystem events were lost")
 			}
 			if verbose && len(records) <= 5 {
 				for _, rec := range records {
 					action := "created"
-					if !shared.FileExists(rec.Path) {
+					if rec.IsDelete || !shared.FileExists(rec.Path) {
 						action = "deleted"
 					}
 					log.Printf("Event: %s %s", action, rec.Path)
@@ -575,6 +770,9 @@ func main() {
 			}
 			for _, rec := range records {
 				dbChannel <- rec
+			}
+			for _, dir := range movedInDirs {
+				queueMovedDir(dir)
 			}
 		}
 	}()

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -125,4 +128,40 @@ func TestDeleteMissing(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDatabaseWriterStoresWalkChunks checks that the writer stores both event
+// records and folder-walk chunks, with caching off as with --nocache.
+func TestDatabaseWriterStoresWalkChunks(t *testing.T) {
+	setupTest()
+	defer teardownTest()
+	originalWalkChannel := walkChannel
+	defer func() { walkChannel = originalWalkChannel }()
+
+	dir := t.TempDir()
+	db, err := ffdb.CreateDB(filepath.Join(dir, "test.db"))
+	assert.NoError(t, err)
+	defer db.Close()
+
+	files := filepath.Join(dir, "files")
+	assert.NoError(t, os.Mkdir(files, 0o755))
+	var chunk []shared.EventRecord
+	for i := 0; i < 1500; i++ {
+		p := filepath.Join(files, fmt.Sprintf("f%04d", i))
+		assert.NoError(t, os.WriteFile(p, nil, 0o644))
+		chunk = append(chunk, shared.EventRecord{Filename: filepath.Base(p), Path: p})
+	}
+
+	dbChannel = make(chan *shared.EventRecord, 10)
+	walkChannel = make(chan []shared.EventRecord, 1)
+	walkChannel <- chunk
+	dbChannel <- &shared.EventRecord{Filename: "files", Path: files, ObjectType: shared.ItemIsDir}
+
+	go databaseWriter(db, true)
+	defer close(dbChannel)
+
+	assert.Eventually(t, func() bool {
+		n, err := ffdb.RecordCount(db)
+		return err == nil && n == 1501
+	}, 5*time.Second, 20*time.Millisecond)
 }

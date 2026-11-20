@@ -6,6 +6,14 @@ It started as an attempt to get [Everything by Voidtools](https://www.voidtools.
 
 Compared to Spotlight, `locate` and `find`, it's quicker to index, it picks up changes as they happen, it stays light on CPU and memory, and it starts instantly.
 
+### GUI app
+
+<img src="assets/demos/everythingx-demo.gif" alt="EverythingX GUI demo" width="70%">
+
+### Command line
+
+<img src="assets/demos/ev-demo.gif" alt="EverythingX command-line demo" width="70%">
+
 There are three binaries:
 
 - `everythingxd`: the background daemon that watches for file changes
@@ -147,7 +155,7 @@ bin/everythingx
 ## Building from source
 
 ### Prerequisites
-- Go 1.27.3+
+- Go 1.27.4+
 - CGO toolchain (Xcode CLT on macOS; `gcc` on Linux)
 - **Linux GUI**: `sudo apt-get install libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev` (the Wayland headers are needed even on X11-only or headless systems; the daemon and CLI build without any of these)
 - **macOS app bundle**: `go install fyne.io/fyne/v2/cmd/fyne@latest`

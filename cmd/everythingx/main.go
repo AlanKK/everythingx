@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
@@ -12,6 +13,21 @@ import (
 // TODO: need to ask for full disk access on macOS to get all files under /Users/username
 func main() {
 	dbFile, searchTerm, verbose := getCommandLineArgs()
+
+	// GUI mode: if another instance is already running, ask it to show its
+	// window and exit instead of opening a second one.
+	var instanceLn net.Listener
+	if searchTerm == "" {
+		ln, primary, err := acquireInstance(instanceDir())
+		switch {
+		case err != nil:
+			fmt.Println("Single-instance check failed, starting anyway:", err)
+		case !primary:
+			os.Exit(0)
+		default:
+			instanceLn = ln
+		}
+	}
 
 	if !shared.FileExists(dbFile) {
 		fmt.Println("Database does not exist ", dbFile)
@@ -43,7 +59,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	loadUI(db)
+	loadUI(db, instanceLn)
 }
 
 func getCommandLineArgs() (string, string, bool) {
