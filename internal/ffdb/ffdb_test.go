@@ -31,15 +31,15 @@ func TestCreateDB(t *testing.T) {
 		t.Fatalf("Expected table name to be 'files', got %s", tableName)
 	}
 
-	// Check if the filename index exists
-	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_filename'")
+	// Check if the filename search index exists
+	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_filename_search'")
 	var indexName string
 	err = row.Scan(&indexName)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if indexName != "idx_filename" {
-		t.Fatalf("Expected index name to be 'idx_filename', got %s", indexName)
+	if indexName != "idx_filename_search" {
+		t.Fatalf("Expected index name to be 'idx_filename_search', got %s", indexName)
 	}
 }
 
@@ -60,7 +60,7 @@ func TestGetRecord(t *testing.T) {
 			Fullpath:   fmt.Sprintf("/path/to/testfile%02d.txt", i),
 			ObjectType: shared.ItemIsFile,
 		}
-		_, err = db.Exec("INSERT INTO files (filename, fullpath, object_type) VALUES (?, ?, ?)", filepath.Base(result.Fullpath), result.Fullpath, result.ObjectType)
+		_, err = db.Exec("INSERT INTO files (filename, fullpath, object_type, search_name) VALUES (?, ?, ?, ?)", filepath.Base(result.Fullpath), result.Fullpath, result.ObjectType, SearchName(filepath.Base(result.Fullpath)))
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
