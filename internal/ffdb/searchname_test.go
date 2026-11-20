@@ -349,3 +349,107 @@ func TestSearch_PrefixPlanIsCovering(t *testing.T) {
 		}
 	}
 }
+
+// oldRenameDirSQL is the directory rename of builds before search_name: it
+// updates filename but leaves search_name as it was.
+const oldRenameDirSQL = "UPDATE files SET fullpath = ? || SUBSTR(fullpath, LENGTH(?) + 1), filename = CASE WHEN fullpath = ? THEN ? ELSE filename END WHERE fullpath = ? OR (fullpath > ? AND fullpath < ?)"
+
+// A directory renamed by an older binary after a rollback keeps the
+// search_name of its old filename; the next start corrects it (#132).
+func TestMigrateSearchName_RepairsRenameByOlderBinary(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "rename.db")
+	db, err := CreateDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldDir, newDir := filepath.Join(root, "old"), filepath.Join(root, "new")
+	scan := []shared.EventRecord{
+		{Filename: "old", Path: oldDir, ObjectType: shared.ItemIsDir, FoundOnScan: true},
+		{Filename: "child.txt", Path: oldDir + "/child.txt", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+	}
+	if err = BulkStoreEvents(db, &scan); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	// The older binary renames old to new.
+	raw, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = raw.Exec(oldRenameDirSQL, newDir, oldDir, oldDir, "new", oldDir, oldDir+"/", oldDir+"0"); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+
+	db, err = OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	assertNames(t, "new", "new")
+	assertNames(t, "old")
+	assertNames(t, "child.txt", "child.txt")
+	var fullpath string
+	if err = db.QueryRow("SELECT fullpath FROM files WHERE search_name = 'new'").Scan(&fullpath); err != nil || fullpath != newDir {
+		t.Fatalf("renamed dir fullpath = %q (%v), want %q", fullpath, err, newDir)
+	}
+	assertFTSIntact(t, db)
+}
+
+// Rows whose search_name is correct but differs from filename (names NFKC
+// changes) are checked on every start but not rewritten.
+func TestMigrateSearchName_DoesNotRewriteCorrectRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "n.db")
+	db, err := CreateDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = InsertRecord(db, nameHalfComma, "/x/"+nameHalfComma, 0, shared.ItemIsFile); err != nil {
+		t.Fatal(err)
+	}
+	if err = InsertRecord(db, "plain.zip", "/x/plain.zip", 0, shared.ItemIsFile); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	n, err := fillSearchName(tx, staleSearchNameWhere)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("fillSearchName rewrote %d correct rows", n)
+	}
+	db.Close()
+}
+
+// The stale-row filter must stay a scan of the covering index, not the table.
+func TestStaleSearchNameWhere_UsesCoveringIndex(t *testing.T) {
+	db, err := CreateDB(filepath.Join(t.TempDir(), "p.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	rows, err := db.Query("EXPLAIN QUERY PLAN SELECT rowid, filename, search_name FROM files " + staleSearchNameWhere)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if !strings.Contains(strings.Join(plan, "\n"), "COVERING INDEX idx_filename_search") {
+		t.Fatalf("plan does not use the covering index: %q", plan)
+	}
+}
