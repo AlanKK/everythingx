@@ -78,3 +78,7 @@ contents:
 scripts:
   postinstall: package/scripts/postinstall-linux.sh
   preremove: package/scripts/preremove-linux.sh
+
+rpm:
+  scripts:
+    posttrans: package/scripts/posttrans-rpm.sh
