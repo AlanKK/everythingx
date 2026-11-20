@@ -112,7 +112,13 @@ func migrateSearchName(db *sql.DB) {
 			log.Fatal(err)
 		}
 	}
-	n, err := fillSearchName(tx, "")
+	// NFKC leaves ASCII unchanged, so copy filename for every row in SQL and
+	// normalize only the names with a character outside printable ASCII in
+	// Go. That keeps the migration from loading every row into memory.
+	if _, err = tx.Exec("UPDATE files SET search_name = filename"); err != nil {
+		log.Fatal(err)
+	}
+	n, err := fillSearchName(tx, "WHERE filename GLOB '*[^ -~]*'")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -125,7 +131,14 @@ func migrateSearchName(db *sql.DB) {
 	if err = tx.Commit(); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Migration done: %d rows indexed by normalized name", n)
+	// The migration rewrote every row, so the WAL has grown to about the
+	// size of the table. The daemon keeps the database open, and a
+	// checkpoint only rewinds the WAL, so truncate it now or the space
+	// stays allocated until the daemon exits.
+	if _, err = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		log.Printf("Warning: could not truncate WAL after migration: %v", err)
+	}
+	log.Printf("Migration done: %d names normalized", n)
 }
 
 // staleSearchNameWhere selects the rows whose search_name may not match their
