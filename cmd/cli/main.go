@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -21,6 +22,7 @@ type Options struct {
 	DBPath     string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/everythingx/files.db"`
 	Verbose    bool   `short:"v" long:"verbose" description:"Enable verbose logging"`
 	Version    bool   `long:"version" description:"Show version information"`
+	Highlight  bool   `short:"b" long:"highlight" description:"Highlight (bold) search term in results for readability"`
 	UserHome   bool   `short:"u" long:"user" description:"Show only results in the current user's home directory"`
 	Executable bool   `short:"x" long:"executable" description:"Show only executable files"`
 }
@@ -112,6 +114,29 @@ func guessPattern(names []string) string {
 	return prefix + "*" + suffix
 }
 
+// highlightPath bolds the part of fullpath that matched term. A glob
+// highlights its literal parts within the file name; a literal term
+// highlights its first occurrence.
+func highlightPath(fullpath, term string) string {
+	const bold, reset = "\033[1m", "\033[0m"
+	base := filepath.Base(fullpath)
+	if spans := ffdb.HighlightSpans(base, term); spans != nil {
+		dir := fullpath[:len(fullpath)-len(base)]
+		var b strings.Builder
+		b.WriteString(dir)
+		for i, part := range ffdb.SplitBySpans(base, spans) {
+			if i%2 == 1 {
+				b.WriteString(bold + part + reset)
+			} else {
+				b.WriteString(part)
+			}
+		}
+		return b.String()
+	}
+	before, match, after := shared.SplitFileName(fullpath, term)
+	return before + bold + match + reset + after
+}
+
 func main() {
 	var opts Options
 	parser := flags.NewParser(&opts, flags.Default|flags.PrintErrors|flags.HelpFlag)
@@ -179,8 +204,14 @@ func main() {
 			return results[i].Fullpath < results[j].Fullpath
 		})
 
-		for _, r := range results {
-			fmt.Println(r.Fullpath)
+		if opts.Highlight {
+			for _, r := range results {
+				fmt.Println(highlightPath(r.Fullpath, opts.Args.SearchTerm))
+			}
+		} else {
+			for _, r := range results {
+				fmt.Println(r.Fullpath)
+			}
 		}
 		os.Exit(0)
 	}
