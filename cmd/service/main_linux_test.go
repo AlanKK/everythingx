@@ -4,9 +4,13 @@ package main
 
 import (
 	"encoding/binary"
+	"os"
+	"path/filepath"
+	"sort"
 	"testing"
 	"unsafe"
 
+	"github.com/AlanKK/everythingx/internal/shared"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sys/unix"
 )
@@ -51,10 +55,11 @@ func TestParseFanotifyEventsOverflow(t *testing.T) {
 	}
 	buf := unsafe.Slice((*byte)(unsafe.Pointer(&event)), int(unsafe.Sizeof(event)))
 
-	records, overflowed := parseFanotifyEvents(buf, nil)
+	records, movedInDirs, overflowed := parseFanotifyEvents(buf, nil)
 
 	assert.True(t, overflowed, "expected overflowed=true for a FAN_Q_OVERFLOW event")
 	assert.Empty(t, records, "an overflow marker alone should not produce file records")
+	assert.Empty(t, movedInDirs, "an overflow marker alone should not report moved folders")
 }
 
 // dfidNameRecord builds a synthetic DFID_NAME info record for the given handle
@@ -107,4 +112,53 @@ func TestParseDFIDNameInfoRejectsTruncatedRecord(t *testing.T) {
 	_, ok := parseDFIDNameInfo(info)
 
 	assert.False(t, ok, "a record whose handle runs past its end must be rejected")
+}
+
+// TestIndexMovedDirSendsContents covers the folder-rename fix: fanotify only
+// reports the renamed folder itself, and the old path is deleted from the
+// index together with everything under it, so every entry below the new path
+// must be sent to the database writer again.
+func TestIndexMovedDirSendsContents(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "renamed")
+	for _, p := range []string{"sub/deeper"} {
+		assert.NoError(t, os.MkdirAll(filepath.Join(root, p), 0o755))
+	}
+	for _, f := range []string{"a.zip", "sub/b.zip", "sub/deeper/c.zip"} {
+		assert.NoError(t, os.WriteFile(filepath.Join(root, f), nil, 0o644))
+	}
+
+	originalDbChannel := dbChannel
+	dbChannel = make(chan *shared.EventRecord, 100)
+	defer func() { dbChannel = originalDbChannel }()
+
+	indexMovedDir(root)
+	close(dbChannel)
+
+	var got []string
+	types := map[string]shared.ObjectType{}
+	for rec := range dbChannel {
+		rel, err := filepath.Rel(root, rec.Path)
+		assert.NoError(t, err)
+		got = append(got, rel)
+		types[rel] = rec.ObjectType
+		assert.Equal(t, filepath.Base(rec.Path), rec.Filename)
+		assert.False(t, rec.FoundOnScan, "records must be re-checked for existence at flush time")
+	}
+	sort.Strings(got)
+
+	// The folder itself is already recorded by its FAN_MOVED_TO event.
+	assert.Equal(t, []string{"a.zip", "sub", "sub/b.zip", "sub/deeper", "sub/deeper/c.zip"}, got)
+	assert.Equal(t, shared.ItemIsDir, types["sub/deeper"])
+	assert.Equal(t, shared.ItemIsFile, types["sub/deeper/c.zip"])
+}
+
+// TestIndexMovedDirMissingFolder checks that a folder renamed again before it
+// could be walked is skipped quietly; the later rename event covers it.
+func TestIndexMovedDirMissingFolder(t *testing.T) {
+	originalDbChannel := dbChannel
+	dbChannel = make(chan *shared.EventRecord, 10)
+	defer func() { dbChannel = originalDbChannel }()
+
+	indexMovedDir(filepath.Join(t.TempDir(), "gone"))
+	assert.Empty(t, dbChannel)
 }
