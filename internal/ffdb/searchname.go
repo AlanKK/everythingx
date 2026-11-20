@@ -24,7 +24,9 @@ func SearchName(s string) string {
 // migrated it) the raw filename is searched as before.
 var searchNameEnabled bool
 
-func hasSearchNameColumn(db *sql.DB) bool {
+func hasSearchNameColumn(db interface {
+	Query(string, ...any) (*sql.Rows, error)
+}) bool {
 	rows, err := db.Query("SELECT search_name FROM files LIMIT 0")
 	if err != nil {
 		return false
@@ -41,14 +43,18 @@ func ftsUsesSearchName(db *sql.DB) bool {
 
 // createSearchIndex creates the FTS index over search_name, the triggers
 // that keep it in sync, and the B-tree index used for short (prefix) terms.
-// The update trigger only fires when search_name is assigned, so updates
-// that only rewrite fullpath (the children of a renamed directory) do not
-// re-tokenize the name.
+// The prefix search scans that index in filename order and filters on
+// search_name, so the index carries both to stay covering; it replaces the
+// older idx_filename, whose queries it also covers. The update trigger only
+// re-tokenizes a row whose search_name changed, so a directory rename
+// re-indexes the directory itself but not its children, whose search_name
+// the rename assigns unchanged.
 func createSearchIndex(execer interface {
 	Exec(string, ...any) (sql.Result, error)
 }) error {
 	stmts := []string{
-		"CREATE INDEX IF NOT EXISTS idx_search_name ON files(search_name, fullpath, object_type)",
+		"DROP INDEX IF EXISTS idx_filename",
+		"CREATE INDEX IF NOT EXISTS idx_filename_search ON files(filename COLLATE BINARY, search_name, fullpath, object_type)",
 		"CREATE VIRTUAL TABLE files_fts USING fts5(search_name, content='files', content_rowid='rowid', tokenize='trigram')",
 		`CREATE TRIGGER files_ai AFTER INSERT ON files BEGIN
 			INSERT INTO files_fts(rowid, search_name) VALUES (new.rowid, new.search_name);
@@ -56,7 +62,8 @@ func createSearchIndex(execer interface {
 		`CREATE TRIGGER files_ad AFTER DELETE ON files BEGIN
 			INSERT INTO files_fts(files_fts, rowid, search_name) VALUES('delete', old.rowid, old.search_name);
 		END`,
-		`CREATE TRIGGER files_au AFTER UPDATE OF search_name ON files BEGIN
+		`CREATE TRIGGER files_au AFTER UPDATE OF search_name ON files
+		WHEN old.search_name IS NOT new.search_name BEGIN
 			INSERT INTO files_fts(files_fts, rowid, search_name) VALUES('delete', old.rowid, old.search_name);
 			INSERT INTO files_fts(rowid, search_name) VALUES (new.rowid, new.search_name);
 		END`,
@@ -89,7 +96,7 @@ func migrateSearchName(db *sql.DB) {
 	}
 	defer tx.Rollback()
 
-	if !hasSearchNameColumn(db) {
+	if !hasSearchNameColumn(tx) {
 		if _, err = tx.Exec("ALTER TABLE files ADD COLUMN search_name TEXT NOT NULL DEFAULT ''"); err != nil {
 			log.Fatal(err)
 		}

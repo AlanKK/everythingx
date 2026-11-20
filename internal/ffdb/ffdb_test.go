@@ -31,15 +31,15 @@ func TestCreateDB(t *testing.T) {
 		t.Fatalf("Expected table name to be 'files', got %s", tableName)
 	}
 
-	// Check if the filename index exists
-	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_filename'")
+	// Check if the filename search index exists
+	row = db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_filename_search'")
 	var indexName string
 	err = row.Scan(&indexName)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if indexName != "idx_filename" {
-		t.Fatalf("Expected index name to be 'idx_filename', got %s", indexName)
+	if indexName != "idx_filename_search" {
+		t.Fatalf("Expected index name to be 'idx_filename_search', got %s", indexName)
 	}
 }
 

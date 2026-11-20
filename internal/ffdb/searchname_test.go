@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/AlanKK/everythingx/internal/shared"
@@ -227,4 +228,124 @@ func TestMigrateSearchName_BackfillsEmptyRows(t *testing.T) {
 	defer db.Close()
 	assertNames(t, "春の庭、小さな", nameHalfComma)
 	assertFTSIntact(t, db)
+}
+
+// A reader that opened the database before the daemon migrated it must start
+// normalizing terms once the migration lands, without restarting.
+func TestSearch_ReaderPicksUpMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "live.db")
+	const full, ascii = "Ｒｅｐｏｒｔ ２０２６.pdf", "Report 2026.pdf"
+	createPreviousSchema(t, path, full, ascii)
+
+	ro, err := OpenDBReadOnly(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ro.Close()
+	assertNames(t, "Ｒｅｐｏｒｔ", full)
+
+	// The daemon migrates through its own handle. It must not touch the
+	// package's prepared statements, as a separate process would not.
+	daemon, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrateSearchName(daemon)
+	daemon.Close()
+
+	assertNames(t, "Ｒｅｐｏｒｔ", full, ascii) // trigram path
+	assertNames(t, "Ｒｅ", full, ascii)     // prefix path
+	if !searchNameEnabled {
+		t.Fatal("search_name not enabled after the schema changed")
+	}
+}
+
+// Trigram needs 3 characters; a 2-character CJK term (6 bytes) must take the
+// prefix path.
+func TestSearch_TwoCharacterCJKTerm(t *testing.T) {
+	db, err := CreateDB(filepath.Join(t.TempDir(), "cjk.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, n := range []string{"カタカナ.zip", "ｶﾀｶﾅ.txt", "ひらがな.zip"} {
+		if err = InsertRecord(db, n, "/x/"+n, 0, shared.ItemIsFile); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertNames(t, "カタ", "カタカナ.zip", "ｶﾀｶﾅ.txt")
+	assertNames(t, "ｶﾀ", "カタカナ.zip", "ｶﾀｶﾅ.txt")
+}
+
+// LIKE wildcards in a short term, including fullwidth ones that NFKC turns
+// into ASCII, match literally.
+func TestSearch_ShortTermEscapesWildcards(t *testing.T) {
+	db, err := CreateDB(filepath.Join(t.TempDir(), "esc.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, n := range []string{"_a.txt", "ba.txt", "%x.txt", "yx.txt", `\z.txt`} {
+		if err = InsertRecord(db, n, "/x/"+n, 0, shared.ItemIsFile); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertNames(t, "_a", "_a.txt")
+	assertNames(t, "＿a", "_a.txt")
+	assertNames(t, "％", "%x.txt")
+	assertNames(t, `\`, `\z.txt`)
+}
+
+// The short-term search must stay a covering scan of the filename-ordered
+// index, on a new database and on a migrated one alike.
+func TestSearch_PrefixPlanIsCovering(t *testing.T) {
+	dir := t.TempDir()
+	fresh, err := CreateDB(filepath.Join(dir, "fresh.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fresh.Close()
+	oldPath := filepath.Join(dir, "old.db")
+	createPreviousSchema(t, oldPath, "a.txt")
+	migrated, err := OpenDB(oldPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer migrated.Close()
+
+	for name, db := range map[string]*sql.DB{"fresh": fresh, "migrated": migrated} {
+		for _, col := range []string{"search_name", "filename"} {
+			rows, err := db.Query("EXPLAIN QUERY PLAN "+prefixSearchSQL(col), "a%", 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var plan string
+			for rows.Next() {
+				var id, parent, unused int
+				var detail string
+				if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+					t.Fatal(err)
+				}
+				plan += detail + "; "
+			}
+			rows.Close()
+			if !strings.Contains(plan, "COVERING INDEX idx_filename_search") {
+				t.Errorf("%s db, %s: plan %q is not a covering scan of idx_filename_search", name, col, plan)
+			}
+		}
+		var indexes []string
+		rows, err := db.Query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'files' AND sql IS NOT NULL ORDER BY name")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var n string
+			rows.Scan(&n)
+			indexes = append(indexes, n)
+		}
+		rows.Close()
+		if strings.Join(indexes, ",") != "idx_filename_search" {
+			t.Errorf("%s db indexes = %v, want [idx_filename_search]", name, indexes)
+		}
+	}
 }
