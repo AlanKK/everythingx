@@ -44,6 +44,30 @@ ev bashrc
 /home/alan/.bashrc
 ```
 
+### Search syntax
+A plain term matches anywhere in the file name, ignoring case: `ev bashrc` finds `.bashrc` and `bashrc_Apple_Terminal`.
+
+A term with `*` or `?` is a shell-style pattern, as in `ls`, and must match the **whole** name, ignoring case:
+
+| Pattern | Matches |
+|---|---|
+| `*` | any characters, including none |
+| `?` | exactly one character |
+| `[abc]`, `[a-z]` | one character from the set |
+| `[!a]`, `[^a]` | one character not in the set |
+| `\*`, `\?`, `\[`, `\\` | the character itself |
+
+```
+ev 'mypackage*.bb'
+/home/alan/poky/meta-mine/recipes/mypackage/mypackage_1.0.bb
+```
+
+- Because the whole name must match, `*.bb` doesn't find `x.bbappend`. Use `*foo*` to match `foo` anywhere.
+- Square brackets alone don't make a pattern, so `ev 'Movie [1080p].mkv'` is still a plain search. Backslash escapes apply only inside a pattern: `ev 'a\**'` finds names starting with `a*`, but `ev 'a\*b'`, which has no unescaped wildcard, is a plain search for `a\*b`.
+- Quote patterns so the shell doesn't expand them against the current directory. When it does, `ev` gets extra arguments, ignores them and prints a hint. If the shell expands a pattern into a single file name, `ev` can't tell, so quote patterns every time.
+- Patterns are fast when they contain 3 or more literal characters in a row (`lib*.so`, `mypackage*.bb`). Patterns without that, such as `*.c` or `a?b*`, check every name in the index and take a second or two on a large index.
+- The GUI search box accepts the same patterns.
+
 ## GUI app
 `everythingx` shows full paths and file details as you type. Columns sort and resize, and right-clicking a result lets you reveal it or copy its name, path or folder.
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/AlanKK/everythingx/internal/shared"
@@ -75,5 +76,29 @@ func TestFilterExecutable(t *testing.T) {
 	got := paths(filterExecutable(results))
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("filterExecutable() = %v, want %v", got, want)
+	}
+}
+
+func TestShellExpansionHint(t *testing.T) {
+	if got := shellExpansionHint(nil); got != "" {
+		t.Errorf("no extra args: hint %q, want none", got)
+	}
+	got := shellExpansionHint([]string{"b.go", "c.go"})
+	if !strings.Contains(got, "2 extra") || !strings.Contains(got, "'mypackage*.bb'") {
+		t.Errorf("hint = %q, want the count and a quoted example", got)
+	}
+}
+
+func TestHighlightPath(t *testing.T) {
+	const b, r = "\033[1m", "\033[0m"
+	cases := []struct{ path, term, want string }{
+		{"/src/mypackage/mypackage_1.0.bb", "mypackage*.bb", "/src/mypackage/" + b + "mypackage" + r + "_1.0" + b + ".bb" + r},
+		{"/home/a/.bashrc", "bash", "/home/a/." + b + "bash" + r + "rc"},
+		{"/x/anything", "*", "/x/anything"},
+	}
+	for _, c := range cases {
+		if got := highlightPath(c.path, c.term); got != c.want {
+			t.Errorf("highlightPath(%q, %q) = %q, want %q", c.path, c.term, got, c.want)
+		}
 	}
 }

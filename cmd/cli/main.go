@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -16,7 +17,7 @@ import (
 // Options struct to hold the command-line options
 type Options struct {
 	Args struct {
-		SearchTerm string `positional-arg-name:"searchTerm" description:"Search term, full or partial filename"`
+		SearchTerm string `positional-arg-name:"searchTerm" description:"Search term: a full or partial filename, or a pattern where *, ? and [...] match the whole name (quote it: 'mypackage*.bb')"`
 	} `positional-args:"yes"`
 	DBPath     string `short:"d" long:"db_path" description:"Path to the database file" default:"/var/lib/everythingx/files.db"`
 	Verbose    bool   `short:"v" long:"verbose" description:"Enable verbose logging"`
@@ -61,11 +62,44 @@ func isExecutable(path string) bool {
 	return info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0
 }
 
+// shellExpansionHint explains extra positional arguments, which usually mean
+// the shell expanded an unquoted pattern such as mypackage*.bb into the
+// matching files in the current directory. It returns "" when there are none.
+func shellExpansionHint(rest []string) string {
+	if len(rest) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("hint: ignoring %d extra argument(s); quote wildcard patterns so the shell doesn't expand them: ev 'mypackage*.bb'", len(rest))
+}
+
+// highlightPath bolds the part of fullpath that matched term. A glob
+// highlights its literal parts within the file name; a literal term
+// highlights its first occurrence.
+func highlightPath(fullpath, term string) string {
+	const bold, reset = "\033[1m", "\033[0m"
+	base := filepath.Base(fullpath)
+	if spans := ffdb.HighlightSpans(base, term); spans != nil {
+		dir := fullpath[:len(fullpath)-len(base)]
+		var b strings.Builder
+		b.WriteString(dir)
+		for i, part := range ffdb.SplitBySpans(base, spans) {
+			if i%2 == 1 {
+				b.WriteString(bold + part + reset)
+			} else {
+				b.WriteString(part)
+			}
+		}
+		return b.String()
+	}
+	before, match, after := shared.SplitFileName(fullpath, term)
+	return before + bold + match + reset + after
+}
+
 func main() {
 	var opts Options
 	parser := flags.NewParser(&opts, flags.Default|flags.PrintErrors|flags.HelpFlag)
 
-	_, err := parser.Parse()
+	rest, err := parser.Parse()
 	if err != nil {
 		if flagsErr, ok := err.(*flags.Error); ok && flagsErr.Type == flags.ErrHelp {
 			os.Exit(0)
@@ -77,6 +111,10 @@ func main() {
 	if opts.Version {
 		fmt.Println(version.Info())
 		os.Exit(0)
+	}
+
+	if hint := shellExpansionHint(rest); hint != "" {
+		fmt.Fprintln(os.Stderr, hint)
 	}
 
 	if opts.Args.SearchTerm == "" {
@@ -126,8 +164,7 @@ func main() {
 
 		if opts.Highlight {
 			for _, r := range results {
-				before, term, after := shared.SplitFileName(r.Fullpath, opts.Args.SearchTerm)
-				fmt.Printf("%s\033[1m%s\033[0m%s\n", before, term, after)
+				fmt.Println(highlightPath(r.Fullpath, opts.Args.SearchTerm))
 			}
 		} else {
 			for _, r := range results {

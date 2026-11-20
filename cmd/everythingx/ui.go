@@ -38,7 +38,7 @@ const maxSearchResults int = 1000
 const searchDebounce = 120 * time.Millisecond
 
 type RowData struct {
-	Name         []string // before/match/after, for highlighting the search term
+	Name         []string // alternating plain and matched parts (odd indexes are matches), for highlighting
 	Base         string   // the whole file name, for sorting
 	Path         string
 	Size         string
@@ -164,7 +164,8 @@ func homeResults(dir string) ([]*shared.SearchResult, error) {
 }
 
 // buildRows stats each result and splits its name around searchText for
-// highlighting. An empty searchText highlights nothing. Does file I/O, so run
+// highlighting: around each literal part of a glob, or the first occurrence of
+// a literal term. An empty searchText highlights nothing. Does file I/O, so run
 // it off the UI thread.
 func buildRows(results []*shared.SearchResult, searchText string) []RowData {
 	rows := make([]RowData, 0, len(results))
@@ -174,17 +175,30 @@ func buildRows(results []*shared.SearchResult, searchText string) []RowData {
 		dir := filepath.Dir(fullpath) + "/"
 		size, modified, sizeBytes, modTime := shared.GetFileSizeMod(fullpath)
 
+		// A glob matches the whole name, so take its spans before the
+		// trailing slash a directory row gets.
+		var name []string
+		if spans := ffdb.HighlightSpans(base, searchText); spans != nil {
+			name = ffdb.SplitBySpans(base, spans)
+		}
+
 		if r.ObjectType == shared.ItemIsDir {
 			base += "/"
 			fullpath += "/"
 			size = "--"
 			sizeBytes = -1
+			if name != nil {
+				name[len(name)-1] += "/"
+			}
 		}
 
-		beforeTerm, searchTerm, afterTerm := shared.SplitFileName(base, searchText)
+		if name == nil {
+			beforeTerm, searchTerm, afterTerm := shared.SplitFileName(base, searchText)
+			name = []string{beforeTerm, searchTerm, afterTerm}
+		}
 
 		rows = append(rows, RowData{
-			Name:         []string{beforeTerm, searchTerm, afterTerm},
+			Name:         name,
 			Base:         base,
 			Path:         dir,
 			Size:         size,
@@ -637,6 +651,34 @@ func inlineNameSegment(text string, highlight bool) *widget.TextSegment {
 	return &widget.TextSegment{Text: text, Style: style}
 }
 
+// nameSegments renders a row's name parts (see RowData.Name), highlighting the
+// odd-indexed ones.
+func nameSegments(parts []string) []widget.RichTextSegment {
+	// lastEnd is where the last non-empty highlighted part ends.
+	lastEnd, pos := 0, 0
+	for i, p := range parts {
+		pos += len(p)
+		if i%2 == 1 && p != "" {
+			lastEnd = pos
+		}
+	}
+	if lastEnd == 0 || lastEnd > nameHighlightMaxChars {
+		// No match, or the highlighting reaches too far right to fit before
+		// the column edge. Render the whole name as a single trailing segment
+		// so RichText truncates it with an ellipsis; its ellipsis only applies
+		// to the last segment, so a long leading segment would otherwise
+		// overflow into the Path column.
+		return []widget.RichTextSegment{plainNameSegment(strings.Join(parts, ""))}
+	}
+	var segments []widget.RichTextSegment
+	for i, p := range parts {
+		if p != "" {
+			segments = append(segments, inlineNameSegment(p, i%2 == 1))
+		}
+	}
+	return segments
+}
+
 func makeTable() *widget.Table {
 	tableData = make([]RowData, 0, maxSearchResults)
 
@@ -702,26 +744,7 @@ func makeTable() *widget.Table {
 
 			switch id.Col {
 			case 0:
-				before, term, after := row.Name[0], row.Name[1], row.Name[2]
-				var segments []widget.RichTextSegment
-				if term == "" || len(before)+len(term) > nameHighlightMaxChars {
-					// No match, or the highlighted term sits too far right to
-					// fit before the column edge. Render the whole name as a
-					// single trailing segment so RichText truncates it with an
-					// ellipsis; its ellipsis only applies to the last segment,
-					// so a long leading segment would otherwise overflow into
-					// the Path column.
-					segments = []widget.RichTextSegment{plainNameSegment(before + term + after)}
-				} else {
-					if before != "" {
-						segments = append(segments, inlineNameSegment(before, false))
-					}
-					segments = append(segments, inlineNameSegment(term, true))
-					if after != "" {
-						segments = append(segments, inlineNameSegment(after, false))
-					}
-				}
-				richText.Segments = segments
+				richText.Segments = nameSegments(row.Name)
 			case 1:
 				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
 					Text: row.Path,
