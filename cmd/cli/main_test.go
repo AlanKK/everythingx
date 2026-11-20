@@ -80,12 +80,36 @@ func TestFilterExecutable(t *testing.T) {
 }
 
 func TestShellExpansionHint(t *testing.T) {
-	if got := shellExpansionHint(nil); got != "" {
+	if got := shellExpansionHint("a", nil); got != "" {
 		t.Errorf("no extra args: hint %q, want none", got)
 	}
-	got := shellExpansionHint([]string{"b.go", "c.go"})
-	if !strings.Contains(got, "2 extra") || !strings.Contains(got, "'mypackage*.bb'") {
-		t.Errorf("hint = %q, want the count and a quoted example", got)
+	got := shellExpansionHint("uninstall-old.sh", []string{"uninstall.sh"})
+	for _, want := range []string{"2 file names", `searched for "uninstall-old.sh"`, `ignored "uninstall.sh"`, "ev 'uninstall*.sh'", "README"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("hint %q does not contain %q", got, want)
+		}
+	}
+	got = shellExpansionHint("a.go", []string{"b.go", "c.go", "d.go", "e.go"})
+	if !strings.Contains(got, "and 1 more") {
+		t.Errorf("hint %q should shorten a long list", got)
+	}
+}
+
+func TestGuessPattern(t *testing.T) {
+	cases := []struct {
+		names []string
+		want  string
+	}{
+		{[]string{"uninstall-old.sh", "uninstall.sh"}, "uninstall*.sh"},
+		{[]string{"a.go", "main.go"}, "*.go"},
+		{[]string{"lib1", "lib22"}, "lib*"},
+		{[]string{"aa", "aaa"}, "aa*"}, // prefix and suffix must not overlap
+		{[]string{"x.c", "y.h"}, ""},
+	}
+	for _, c := range cases {
+		if got := guessPattern(c.names); got != c.want {
+			t.Errorf("guessPattern(%q) = %q, want %q", c.names, got, c.want)
+		}
 	}
 }
 

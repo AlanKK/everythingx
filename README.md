@@ -65,8 +65,29 @@ ev 'mypackage*.bb'
 
 - Because the whole name must match, `*.bb` doesn't find `x.bbappend`. Use `*foo*` to match `foo` anywhere.
 - Square brackets alone don't make a pattern, so `ev 'Movie [1080p].mkv'` is still a plain search. Backslash escapes apply only inside a pattern: `ev 'a\**'` finds names starting with `a*`, but `ev 'a\*b'`, which has no unescaped wildcard, is a plain search for `a\*b`.
-- Quote patterns so the shell doesn't expand them against the current directory. When it does, `ev` gets extra arguments, ignores them and prints a hint. If the shell expands a pattern into a single file name, `ev` can't tell, so quote patterns every time.
+- Quote patterns, or set up your shell as described below. Otherwise the shell expands an unquoted pattern against the current directory before `ev` runs. If it expands to several file names, `ev` searches the first, ignores the rest and prints a hint. If it expands to a single name, `ev` can't tell and silently searches for that name.
 - Patterns are fast when they contain 3 or more literal characters in a row (`lib*.so`, `mypackage*.bb`). Patterns without that, such as `*.c` or `a?b*`, check every name in the index and take a second or two on a large index.
+
+### Typing patterns without quotes
+`ls *.sh` works unquoted because `ls` only ever sees the file names the shell expanded the pattern into. `ev` searches the whole index, so it needs the pattern itself. A small shell setting stops the shell expanding `ev`'s arguments, so `ev uninstall*sh` works without quotes.
+
+**bash**: add to `~/.bashrc`:
+```bash
+# Pass wildcard patterns to ev unexpanded: ev uninstall*sh
+_ev() { command ev "$@"; local rc=$?; set +f; return $rc; }
+alias ev='set -f; _ev'
+PROMPT_COMMAND="set +f${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+```
+The alias turns globbing off (`set -f`) before bash expands the arguments, and the function turns it back on afterwards. The `PROMPT_COMMAND` line turns it back on at the next prompt in the two cases the function misses: `ev` is interrupted with Ctrl-C, or `ev` runs in a pipeline (`ev x | head`), where bash runs the function in a subshell. In those cases, globbing stays off for the rest of that command line.
+
+**zsh** (the macOS default): add to `~/.zshrc`:
+```zsh
+alias ev='noglob ev'
+```
+
+**fish** has no equivalent, so quote patterns there.
+
+These only apply when you type `ev` at the prompt. Scripts, `sudo ev …` and `$(ev …)` still need quotes.
 
 ## GUI app
 `everythingx` shows full paths and file details as you type. The search box takes the same terms and patterns as `ev`. Columns sort and resize, and right-clicking a result lets you reveal it or copy its name, path or folder.

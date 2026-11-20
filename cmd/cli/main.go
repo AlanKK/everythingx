@@ -63,13 +63,55 @@ func isExecutable(path string) bool {
 }
 
 // shellExpansionHint explains extra positional arguments, which usually mean
-// the shell expanded an unquoted pattern such as mypackage*.bb into the
-// matching files in the current directory. It returns "" when there are none.
-func shellExpansionHint(rest []string) string {
+// the shell expanded an unquoted pattern such as uninstall*sh into the
+// matching files in the current directory before ev ran. term is what ev
+// searched for, and rest the arguments it ignored. It returns "" when there
+// are none.
+func shellExpansionHint(term string, rest []string) string {
 	if len(rest) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("hint: ignoring %d extra argument(s); quote wildcard patterns so the shell doesn't expand them: ev 'mypackage*.bb'", len(rest))
+	quoted := make([]string, len(rest))
+	for i, r := range rest {
+		quoted[i] = fmt.Sprintf("%q", r)
+	}
+	ignored := strings.Join(quoted, ", ")
+	if len(quoted) > 3 {
+		ignored = strings.Join(quoted[:3], ", ") + fmt.Sprintf(" and %d more", len(quoted)-3)
+	}
+	example := "'name*.ext'"
+	if guess := guessPattern(append([]string{term}, rest...)); guess != "" {
+		example = "'" + guess + "'"
+	}
+	return fmt.Sprintf("hint: the shell expanded a wildcard pattern into %d file names before ev saw it,\n"+
+		"  so ev searched for %q and ignored %s.\n"+
+		"  Quote the pattern, for example: ev %s\n"+
+		"  To stop the shell expanding ev's arguments, see \"Typing patterns without quotes\" in the README.",
+		len(rest)+1, term, ignored, example)
+}
+
+// guessPattern reconstructs a likely pattern from the names a shell expanded
+// it into: their common prefix and suffix around a "*". It returns "" when
+// the names share neither.
+func guessPattern(names []string) string {
+	prefix, suffix := names[0], names[0]
+	shortest := len(names[0])
+	for _, n := range names[1:] {
+		for !strings.HasPrefix(n, prefix) {
+			prefix = prefix[:len(prefix)-1]
+		}
+		for !strings.HasSuffix(n, suffix) {
+			suffix = suffix[1:]
+		}
+		shortest = min(shortest, len(n))
+	}
+	if len(prefix)+len(suffix) > shortest {
+		suffix = suffix[len(prefix)+len(suffix)-shortest:]
+	}
+	if prefix == "" && suffix == "" {
+		return ""
+	}
+	return prefix + "*" + suffix
 }
 
 // highlightPath bolds the part of fullpath that matched term. A glob
@@ -113,7 +155,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	if hint := shellExpansionHint(rest); hint != "" {
+	if hint := shellExpansionHint(opts.Args.SearchTerm, rest); hint != "" {
 		fmt.Fprintln(os.Stderr, hint)
 	}
 
