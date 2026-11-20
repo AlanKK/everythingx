@@ -25,10 +25,9 @@ There are three binaries:
 
 ### Usage
 ```
-ev search_term [-b] [-u] [-x]
+ev search_term [-u] [-x]
 
 search_term is part of a file name, or a pattern such as 'mypackage*.bb' (see Search syntax below).
--b bold search term in the result (for a pattern, its literal parts). This option helps readability of the output but interferes with piping results to another command.
 -u show only results in the current user's home directory ($HOME).
 -x show only executable files (regular files, or symlinks to them, with any execute bit set). Each result is checked on disk, so this is slower for terms with many matches.
 ```
@@ -191,7 +190,7 @@ make build
 sudo bin/everythingxd
 
 # Search from CLI
-bin/ev -b filename
+bin/ev filename
 
 # Launch GUI
 bin/everythingx
