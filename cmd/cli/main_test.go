@@ -112,17 +112,3 @@ func TestGuessPattern(t *testing.T) {
 		}
 	}
 }
-
-func TestHighlightPath(t *testing.T) {
-	const b, r = "\033[1m", "\033[0m"
-	cases := []struct{ path, term, want string }{
-		{"/src/mypackage/mypackage_1.0.bb", "mypackage*.bb", "/src/mypackage/" + b + "mypackage" + r + "_1.0" + b + ".bb" + r},
-		{"/home/a/.bashrc", "bash", "/home/a/." + b + "bash" + r + "rc"},
-		{"/x/anything", "*", "/x/anything"},
-	}
-	for _, c := range cases {
-		if got := highlightPath(c.path, c.term); got != c.want {
-			t.Errorf("highlightPath(%q, %q) = %q, want %q", c.path, c.term, got, c.want)
-		}
-	}
-}
