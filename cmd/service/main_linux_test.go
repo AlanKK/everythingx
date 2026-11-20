@@ -13,6 +13,7 @@ import (
 
 	"github.com/AlanKK/everythingx/internal/shared"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
 
@@ -239,9 +240,9 @@ func TestQueueMovedDirOverflowRescansOnce(t *testing.T) {
 func TestParseFanotifyEventsDeleteIgnoresNewObject(t *testing.T) {
 	dir := t.TempDir() // stands in for the new directory at the reused path
 	f, err := os.Open(dir)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	fd, err := unix.Dup(int(f.Fd())) // parseFanotifyEvents closes the fd it is given
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	f.Close()
 
 	event := fanotifyEventMetadata{
@@ -260,4 +261,36 @@ func TestParseFanotifyEventsDeleteIgnoresNewObject(t *testing.T) {
 		assert.Equal(t, shared.ItemIsFile, records[0].ObjectType, "a delete without FAN_ONDIR must not be typed from the new object")
 		assert.True(t, records[0].IsDelete)
 	}
+}
+
+// TestParseFanotifyEventsMergedCreateDelete covers a create and a delete of the
+// same name that the kernel merged into one event (rm -r X; mkdir X from one
+// process before the reader caught up): it must produce a delete, so the old
+// folder's rows are cascaded away, followed by an existence-checked record.
+func TestParseFanotifyEventsMergedCreateDelete(t *testing.T) {
+	dir := t.TempDir() // stands in for the new folder at the reused path
+	f, err := os.Open(dir)
+	require.NoError(t, err)
+	fd, err := unix.Dup(int(f.Fd())) // parseFanotifyEvents closes the fd it is given
+	require.NoError(t, err)
+	f.Close()
+
+	event := fanotifyEventMetadata{
+		EventLen:    sizeofEventMetadata,
+		Vers:        fanotifyMetadataVersion,
+		MetadataLen: uint16(sizeofEventMetadata),
+		Mask:        unix.FAN_DELETE | unix.FAN_CREATE | unix.FAN_ONDIR,
+		Fd:          int32(fd),
+	}
+	buf := unsafe.Slice((*byte)(unsafe.Pointer(&event)), int(unsafe.Sizeof(event)))
+
+	records, _, _ := parseFanotifyEvents(buf, nil)
+
+	require.Len(t, records, 2)
+	for _, rec := range records {
+		assert.Equal(t, dir, rec.Path)
+		assert.Equal(t, shared.ItemIsDir, rec.ObjectType)
+	}
+	assert.True(t, records[0].IsDelete, "the delete half must come first and be applied unconditionally")
+	assert.False(t, records[1].IsDelete, "the create half must be left to the existence check")
 }
