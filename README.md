@@ -27,7 +27,8 @@ There are three binaries:
 ```
 ev search_term [-b] [-u] [-x]
 
--b bold search term in the result. This option helps readability of the output but interferes with piping results to another command.
+search_term is part of a file name, or a pattern such as 'mypackage*.bb' (see Search syntax below).
+-b bold search term in the result (for a pattern, its literal parts). This option helps readability of the output but interferes with piping results to another command.
 -u show only results in the current user's home directory ($HOME).
 -x show only executable files (regular files, or symlinks to them, with any execute bit set). Each result is checked on disk, so this is slower for terms with many matches.
 ```
@@ -66,10 +67,9 @@ ev 'mypackage*.bb'
 - Square brackets alone don't make a pattern, so `ev 'Movie [1080p].mkv'` is still a plain search. Backslash escapes apply only inside a pattern: `ev 'a\**'` finds names starting with `a*`, but `ev 'a\*b'`, which has no unescaped wildcard, is a plain search for `a\*b`.
 - Quote patterns so the shell doesn't expand them against the current directory. When it does, `ev` gets extra arguments, ignores them and prints a hint. If the shell expands a pattern into a single file name, `ev` can't tell, so quote patterns every time.
 - Patterns are fast when they contain 3 or more literal characters in a row (`lib*.so`, `mypackage*.bb`). Patterns without that, such as `*.c` or `a?b*`, check every name in the index and take a second or two on a large index.
-- The GUI search box accepts the same patterns.
 
 ## GUI app
-`everythingx` shows full paths and file details as you type. Columns sort and resize, and right-clicking a result lets you reveal it or copy its name, path or folder.
+`everythingx` shows full paths and file details as you type. The search box takes the same terms and patterns as `ev`. Columns sort and resize, and right-clicking a result lets you reveal it or copy its name, path or folder.
 
 ## Background service
 `everythingxd` gets file change events from the kernel: FSEvents on macOS, and fanotify on Linux (needs root and kernel 5.9+). It also does an occasional full scan to catch anything it missed.
