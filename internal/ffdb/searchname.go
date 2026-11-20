@@ -79,11 +79,12 @@ func createSearchIndex(execer interface {
 // migrateSearchName brings a database to the search_name schema: it adds the
 // column, fills it for every row, and rebuilds the FTS index over it. It runs
 // in one transaction, so an interrupted migration leaves the old schema. On a
-// database that is already migrated it only fills rows whose search_name is
-// still empty (rows written by an older binary after a rollback).
+// database that is already migrated it repairs rows an older binary wrote
+// after a rollback: rows it inserted have an empty search_name, and rows it
+// renamed keep the search_name of their old filename (see staleSearchNameWhere).
 func migrateSearchName(db *sql.DB) {
 	if ftsUsesSearchName(db) {
-		if err := backfillSearchName(db, "WHERE search_name = ''"); err != nil {
+		if err := backfillSearchName(db, staleSearchNameWhere); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -127,6 +128,14 @@ func migrateSearchName(db *sql.DB) {
 	log.Printf("Migration done: %d rows indexed by normalized name", n)
 }
 
+// staleSearchNameWhere selects the rows whose search_name may not match their
+// filename. A correct search_name is NFKC(filename) and NFKC is idempotent, so
+// a non-empty search_name equal to filename is always correct; any other row
+// is a candidate that fillSearchName checks in Go. The filter reads only
+// columns of idx_filename_search, so it is one covering index scan, and the
+// candidates are the few names NFKC changes plus the stale rows.
+const staleSearchNameWhere = "WHERE search_name = '' OR search_name <> filename"
+
 func backfillSearchName(db *sql.DB, where string) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -144,24 +153,28 @@ func backfillSearchName(db *sql.DB, where string) error {
 }
 
 // fillSearchName sets search_name from filename for the rows selected by
-// where (all rows when empty) and returns how many it wrote.
+// where (all rows when empty) whose search_name differs from it, and returns
+// how many it wrote. Rows that are already correct are not rewritten.
 func fillSearchName(tx *sql.Tx, where string) (int, error) {
-	rows, err := tx.Query("SELECT rowid, filename FROM files " + where)
+	rows, err := tx.Query("SELECT rowid, filename, search_name FROM files " + where)
 	if err != nil {
 		return 0, err
 	}
 	type row struct {
-		id   int64
-		name string
+		id         int64
+		searchName string
 	}
 	var todo []row
 	for rows.Next() {
-		var r row
-		if err := rows.Scan(&r.id, &r.name); err != nil {
+		var id int64
+		var name, cur string
+		if err := rows.Scan(&id, &name, &cur); err != nil {
 			rows.Close()
 			return 0, err
 		}
-		todo = append(todo, r)
+		if want := SearchName(name); want != cur {
+			todo = append(todo, row{id, want})
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -174,7 +187,7 @@ func fillSearchName(tx *sql.Tx, where string) (int, error) {
 	}
 	defer upd.Close()
 	for _, r := range todo {
-		if _, err := upd.Exec(SearchName(r.name), r.id); err != nil {
+		if _, err := upd.Exec(r.searchName, r.id); err != nil {
 			return 0, err
 		}
 	}
