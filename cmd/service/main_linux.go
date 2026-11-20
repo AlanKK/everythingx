@@ -147,17 +147,34 @@ func parseFanotifyEvents(buf []byte, mountFDMap map[[2]int32]int) (records []*sh
 			movedInDirs = append(movedInDirs, path)
 		}
 
-		rec := &shared.EventRecord{
-			Filename:   filepath.Base(path),
-			Path:       path,
-			ObjectType: objType,
-			EventID:    0,
-			EventTime:  time.Now().UnixNano(),
-			// A merged event with both create and delete bits is ambiguous;
-			// leave it to the existence check at flush time.
-			IsDelete: isDelete && !isCreate,
+		newRecord := func(isDelete bool) *shared.EventRecord {
+			recType := objType
+			if isDelete && mask&unix.FAN_ONDIR == 0 {
+				// As for a pure delete, lstat describes whatever is at the
+				// path now, not what was removed.
+				recType = shared.ItemIsFile
+			}
+			return &shared.EventRecord{
+				Filename:   filepath.Base(path),
+				Path:       path,
+				ObjectType: recType,
+				EventID:    0,
+				EventTime:  time.Now().UnixNano(),
+				IsDelete:   isDelete,
+			}
 		}
-		records = append(records, rec)
+		if isDelete && isCreate {
+			// The kernel merged a create and a delete of the same name, made
+			// by the same process, that were still queued (for example a
+			// program that removes and recreates a folder). Emit a
+			// delete followed by an existence-checked record: whichever came
+			// first, the old object's rows are removed and the path ends up
+			// indexed only if something exists there at flush time.
+			records = append(records, newRecord(true))
+		}
+		// A create, or the second half of a merged event, is left to the
+		// existence check at flush time.
+		records = append(records, newRecord(isDelete && !isCreate))
 	}
 	return records, movedInDirs, overflowed
 }
@@ -745,7 +762,7 @@ func main() {
 			if verbose && len(records) <= 5 {
 				for _, rec := range records {
 					action := "created"
-					if !shared.FileExists(rec.Path) {
+					if rec.IsDelete || !shared.FileExists(rec.Path) {
 						action = "deleted"
 					}
 					log.Printf("Event: %s %s", action, rec.Path)
