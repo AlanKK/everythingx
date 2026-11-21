@@ -27,7 +27,8 @@ There are three binaries:
 ```
 ev search_term [-b] [-u] [-x]
 
--b bold search term in the result. This option helps readability of the output but interferes with piping results to another command.
+search_term is part of a file name, or a pattern such as 'mypackage*.bb' (see Search syntax below).
+-b bold search term in the result (for a pattern, its literal parts). This option helps readability of the output but interferes with piping results to another command.
 -u show only results in the current user's home directory ($HOME).
 -x show only executable files (regular files, or symlinks to them, with any execute bit set). Each result is checked on disk, so this is slower for terms with many matches.
 ```
@@ -44,8 +45,52 @@ ev bashrc
 /home/alan/.bashrc
 ```
 
+### Search syntax
+A plain term matches anywhere in the file name, ignoring case: `ev bashrc` finds `.bashrc` and `bashrc_Apple_Terminal`.
+
+A term with `*` or `?` is a shell-style pattern, as in `ls`, and must match the **whole** name, ignoring case:
+
+| Pattern | Matches |
+|---|---|
+| `*` | any characters, including none |
+| `?` | exactly one character |
+| `[abc]`, `[a-z]` | one character from the set |
+| `[!a]`, `[^a]` | one character not in the set |
+| `\*`, `\?`, `\[`, `\\` | the character itself |
+
+```
+ev 'mypackage*.bb'
+/home/alan/poky/meta-mine/recipes/mypackage/mypackage_1.0.bb
+```
+
+- Because the whole name must match, `*.bb` doesn't find `x.bbappend`. Use `*foo*` to match `foo` anywhere.
+- Square brackets alone don't make a pattern, so `ev 'Movie [1080p].mkv'` is still a plain search. Backslash escapes apply only inside a pattern: `ev 'a\**'` finds names starting with `a*`, but `ev 'a\*b'`, which has no unescaped wildcard, is a plain search for `a\*b`.
+- Quote patterns, or set up your shell as described below. Otherwise the shell expands an unquoted pattern against the current directory before `ev` runs. If it expands to several file names, `ev` searches the first, ignores the rest and prints a hint. If it expands to a single name, `ev` can't tell and silently searches for that name.
+- Patterns are fast when they contain 3 or more literal characters in a row (`lib*.so`, `mypackage*.bb`). Patterns without that, such as `*.c` or `a?b*`, check every name in the index and take a second or two on a large index.
+
+### Typing patterns without quotes
+`ls *.sh` works unquoted because `ls` only ever sees the file names the shell expanded the pattern into. `ev` searches the whole index, so it needs the pattern itself. A small shell setting stops the shell expanding `ev`'s arguments, so `ev uninstall*sh` works without quotes.
+
+**bash**: add to `~/.bashrc`:
+```bash
+# Pass wildcard patterns to ev unexpanded: ev uninstall*sh
+_ev() { command ev "$@"; local rc=$?; set +f; return $rc; }
+alias ev='set -f; _ev'
+PROMPT_COMMAND="set +f${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+```
+The alias turns globbing off (`set -f`) before bash expands the arguments, and the function turns it back on afterwards. The `PROMPT_COMMAND` line turns it back on at the next prompt in the two cases the function misses: `ev` is interrupted with Ctrl-C, or `ev` runs in a pipeline (`ev x | head`), where bash runs the function in a subshell. In those cases, globbing stays off for the rest of that command line.
+
+**zsh** (the macOS default): add to `~/.zshrc`:
+```zsh
+alias ev='noglob ev'
+```
+
+**fish** has no equivalent, so quote patterns there.
+
+These only apply when you type `ev` at the prompt. Scripts, `sudo ev …` and `$(ev …)` still need quotes.
+
 ## GUI app
-`everythingx` shows full paths and file details as you type. Columns sort and resize, and right-clicking a result lets you reveal it or copy its name, path or folder.
+`everythingx` shows full paths and file details as you type. The search box takes the same terms and patterns as `ev`. Columns sort and resize, and right-clicking a result lets you reveal it or copy its name, path or folder.
 
 ## Background service
 `everythingxd` gets file change events from the kernel: FSEvents on macOS, and fanotify on Linux (needs root and kernel 5.9+). It also does an occasional full scan to catch anything it missed.

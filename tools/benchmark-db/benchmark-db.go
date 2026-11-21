@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/AlanKK/everythingx/internal/ffdb"
@@ -24,11 +25,14 @@ const (
 )
 
 var (
-	searchPrefixes = []string{"a", "al", "ala", "alan", "alank", "alanke", "alankeister"}
-	numSearches    int
-	noDB           bool
-	baseline       bool
-	baselineStmt   *sql.Stmt
+	searchPrefixes = []string{"a", "al", "ala", "alan", "alank", "alanke", "alankeister",
+		// Globs (#109): FTS-backed (a run of 3+ literal characters), then
+		// scans of the filename index. Skipped in -baseline mode.
+		"alan*", "lib*.so", "*.go", "*.c", "a?a*"}
+	numSearches  int
+	noDB         bool
+	baseline     bool
+	baselineStmt *sql.Stmt
 )
 
 func main() {
@@ -77,6 +81,15 @@ func main() {
 	defer targetDB.Close()
 
 	if baseline {
+		// The baseline query has no glob support.
+		literal := searchPrefixes[:0]
+		for _, p := range searchPrefixes {
+			if !strings.ContainsAny(p, "*?") {
+				literal = append(literal, p)
+			}
+		}
+		searchPrefixes = literal
+
 		var err error
 		baselineStmt, err = targetDB.Prepare("SELECT fullpath, object_type FROM files WHERE filename LIKE ? COLLATE BINARY ORDER BY filename ASC LIMIT ?")
 		if err != nil {

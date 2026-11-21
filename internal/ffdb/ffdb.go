@@ -23,6 +23,8 @@ var records []struct {
 
 var prefixSearchStmt *sql.Stmt
 var trigramSearchStmt *sql.Stmt
+var globFTSStmt *sql.Stmt
+var globScanStmt *sql.Stmt
 var insertStmt *sql.Stmt
 var deleteStmt *sql.Stmt
 var deleteDirStmt *sql.Stmt
@@ -175,21 +177,38 @@ func prepareReadStatementsLocked(db *sql.DB) error {
 		trigram = nil
 	}
 
-	fullPathLike, err := db.Prepare("SELECT fullpath FROM files where fullpath like ?")
-	if err != nil {
-		prefix.Close()
-		if trigram != nil {
-			trigram.Close()
+	var globFTS *sql.Stmt
+	if trigram != nil {
+		globFTS, err = db.Prepare(globFTSSQL(nameCol))
+		if err != nil {
+			log.Printf("Warning: could not prepare FTS glob search statement: %v", err)
+			globFTS = nil
 		}
+	}
+
+	closeAll := func(stmts ...*sql.Stmt) {
+		for _, st := range stmts {
+			if st != nil {
+				st.Close()
+			}
+		}
+	}
+
+	globScan, err := db.Prepare(globScanSQL(nameCol))
+	if err != nil {
+		closeAll(prefix, trigram, globFTS)
 		return err
 	}
 
-	for _, st := range []*sql.Stmt{prefixSearchStmt, trigramSearchStmt, fullPathLikeStmt} {
-		if st != nil {
-			st.Close()
-		}
+	fullPathLike, err := db.Prepare("SELECT fullpath FROM files where fullpath like ?")
+	if err != nil {
+		closeAll(prefix, trigram, globFTS, globScan)
+		return err
 	}
+
+	closeAll(prefixSearchStmt, trigramSearchStmt, globFTSStmt, globScanStmt, fullPathLikeStmt)
 	prefixSearchStmt, trigramSearchStmt, fullPathLikeStmt = prefix, trigram, fullPathLike
+	globFTSStmt, globScanStmt = globFTS, globScan
 	searchNameEnabled = enabled
 	readDB, readSchemaVersion = db, version
 	return nil
@@ -200,6 +219,24 @@ func prepareReadStatementsLocked(db *sql.DB) error {
 // filename order; the term is LIKE-escaped (see likeEscaper).
 func prefixSearchSQL(nameCol string) string {
 	return "SELECT fullpath, object_type FROM files WHERE " + nameCol + ` LIKE ? ESCAPE '\' ORDER BY filename ASC LIMIT ?`
+}
+
+// globFTSSQL selects the candidates for a glob whose LIKE pattern has a run
+// of 3 or more literal characters, which the FTS5 trigram index can look up.
+// It has no LIMIT: the rows are filtered with the glob's regexp afterwards.
+func globFTSSQL(nameCol string) string {
+	return "SELECT f.fullpath, f.object_type, f." + nameCol + " FROM files_fts fts JOIN files f ON f.rowid = fts.rowid WHERE fts." + nameCol + " LIKE ? ORDER BY f.filename ASC"
+}
+
+// globScanSQL selects the candidates for any other glob. It is a covering
+// scan of idx_filename_search in filename order, so a search that stops after
+// its limit reads only as far as it needs to.
+//
+// The plain-table LIKE folds only ASCII case, while the glob's regexp folds
+// Unicode case, so a non-ASCII name whose case differs from the pattern can
+// be missed here. Short literal searches (prefixSearchSQL) behave the same.
+func globScanSQL(nameCol string) string {
+	return "SELECT fullpath, object_type, " + nameCol + " FROM files WHERE " + nameCol + " LIKE ? ORDER BY filename ASC"
 }
 
 // refreshReadStatements re-prepares the read statements when the schema has
@@ -258,10 +295,45 @@ func prepareWriteStatements(db *sql.DB) {
 
 }
 
+// globSearch returns up to limit names that match g, in filename order (all
+// of them when limit is negative). The caller holds readMu.
+func globSearch(g *glob, limit int) ([]*shared.SearchResult, error) {
+	if limit == 0 {
+		return nil, nil
+	}
+	stmt := globScanStmt
+	if g.longestLiteral >= 3 && globFTSStmt != nil {
+		stmt = globFTSStmt
+	}
+	rows, err := stmt.Query(g.like)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []*shared.SearchResult
+	var name string
+	for rows.Next() {
+		result := &shared.SearchResult{}
+		if err := rows.Scan(&result.Fullpath, &result.ObjectType, &name); err != nil {
+			return nil, err
+		}
+		if !g.re.MatchString(name) {
+			continue
+		}
+		results = append(results, result)
+		if len(results) == limit {
+			break
+		}
+	}
+	return results, rows.Err()
+}
+
 // Performs a substring search for filenames containing the given term.
 // For terms of 3 or more characters, uses the FTS5 trigram index for fast
 // lookup. For shorter terms, which trigram cannot match, uses a prefix
-// search ordered by the filename index.
+// search ordered by the filename index. A term with an unescaped "*" or "?"
+// is a glob matched against the whole name instead (see parseGlob).
 func PrefixSearch(prefix string, limit int) ([]*shared.SearchResult, error) {
 	var rows *sql.Rows
 	var err error
@@ -272,6 +344,9 @@ func PrefixSearch(prefix string, limit int) ([]*shared.SearchResult, error) {
 
 	if searchNameEnabled {
 		prefix = SearchName(prefix)
+	}
+	if g, ok := parseGlob(prefix); ok {
+		return globSearch(g, limit)
 	}
 	// Trigram needs 3 characters, not bytes: a 2-character CJK term is 6 bytes.
 	if utf8.RuneCountInString(prefix) >= 3 && trigramSearchStmt != nil {

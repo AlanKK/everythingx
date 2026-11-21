@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -665,5 +667,51 @@ func TestFormatCount(t *testing.T) {
 		if got := formatCount(n); got != want {
 			t.Errorf("formatCount(%d) = %q, want %q", n, got, want)
 		}
+	}
+}
+
+func TestBuildRowsHighlightsGlobParts(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "mypackage_1.0.bb")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rows := buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "mypackage*.bb")
+	want := []string{"", "mypackage", "_1.0", ".bb", ""}
+	if !reflect.DeepEqual(rows[0].Name, want) {
+		t.Errorf("glob row name = %q, want %q", rows[0].Name, want)
+	}
+	rows = buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "1.0")
+	if want := []string{"mypackage_", "1.0", ".bb"}; !reflect.DeepEqual(rows[0].Name, want) {
+		t.Errorf("literal row name = %q, want %q", rows[0].Name, want)
+	}
+
+	// A directory row's trailing slash must not stop the anchored glob matching.
+	src := filepath.Join(dir, "mysrc")
+	if err := os.Mkdir(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rows = buildRows([]*shared.SearchResult{{Fullpath: src, ObjectType: shared.ItemIsDir}}, "*src")
+	if want := []string{"my", "src", "/"}; !reflect.DeepEqual(rows[0].Name, want) {
+		t.Errorf("glob dir row name = %q, want %q", rows[0].Name, want)
+	}
+}
+
+func TestNameSegments(t *testing.T) {
+	segs := nameSegments([]string{"", "mypackage", "_1.0", ".bb", ""})
+	var got []string
+	for _, s := range segs {
+		ts := s.(*widget.TextSegment)
+		got = append(got, fmt.Sprintf("%s:%v", ts.Text, ts.Style.TextStyle.Bold))
+	}
+	if want := []string{"mypackage:true", "_1.0:false", ".bb:true"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("segments = %q, want %q", got, want)
+	}
+	if segs := nameSegments([]string{"anything"}); len(segs) != 1 || segs[0].(*widget.TextSegment).Style.Inline {
+		t.Errorf("unhighlighted name should be one plain segment, got %v", segs)
+	}
+	long := strings.Repeat("x", nameHighlightMaxChars)
+	if segs := nameSegments([]string{long, "hit", ""}); len(segs) != 1 {
+		t.Errorf("highlight past the column edge should render plain, got %d segments", len(segs))
 	}
 }

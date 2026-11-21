@@ -161,6 +161,33 @@ prefixSearchStmt.Query("%"+prefix+"%", resultLimit)
 - Min latency dropped to **1 ms** (from 10–14 ms).  
 - Wildcard placement optimized index usage, reducing scan overhead.
 
+## Glob Patterns (#109)
+
+Measured on 2026-11-20 against a live index of 7.9M names (Linux, WSL2; unmigrated schema, so names are matched in `filename`), opened read-only, with a warm cache. Each term ran 5 times; the times are in ms. A limit of 1000 is what the GUI uses; `ev` has no limit.
+
+- A glob whose LIKE prefilter has a run of 3+ literal characters is answered by the FTS5 trigram index: `alan*`, `lib*.so`, `*bashrc*`, and `*.go` (because `.go` is 3 characters).
+- Any other glob (`*.c`, `a?a*`) scans `idx_filename_search` in filename order and stops once it has `limit` matches.
+- Either way, the candidates are filtered with the exact (whole-name, case-insensitive) regexp.
+
+| Limit | Term | Results | Min | Median |
+|-------|------|---------|-----|--------|
+| 1000 | `alan` (literal, for comparison) | 1000 | 4 | 4 |
+| 1000 | `alan*` | 102 | 3 | 3 |
+| 1000 | `lib*.so` | 1000 | 13 | 13 |
+| 1000 | `*bashrc*` | 174 | 0 | 0 |
+| 1000 | `*.go` | 1000 | 55 | 57 |
+| 1000 | `*.c` | 1000 | 203 | 204 |
+| 1000 | `a?a*` | 1000 | 41 | 42 |
+| none | `alan` (literal, for comparison) | 1646 | 4 | 4 |
+| none | `alan*` | 102 | 3 | 3 |
+| none | `lib*.so` | 3215 | 15 | 15 |
+| none | `*bashrc*` | 174 | 0 | 0 |
+| none | `*.go` | 83351 | 113 | 114 |
+| none | `*.c` | 10982 | 630 | 632 |
+| none | `a?a*` | 13333 | 542 | 543 |
+
+The first `bin/ev '*.c'` with a cold cache took 2.3 s. `tools/benchmark-db` now includes glob terms as well.
+
 ## Conclusion
 
 The most significant performance improvements were achieved by:
