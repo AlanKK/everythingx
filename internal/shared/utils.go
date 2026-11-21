@@ -33,8 +33,9 @@ func FileExists(filename string) bool {
 
 // GetFileInfo returns a compact, aligned key/value summary of a file's
 // metadata, suitable for display in a tooltip. Labels are left-aligned in a
-// fixed column so values line up under a monospace font.
-func GetFileInfo(path string) (string, error) {
+// fixed column so values line up under a monospace font. Sizes are written in
+// units of decimal (1000) or binary (1024) bytes; see HumanizeSizeUnits.
+func GetFileInfo(path string, decimal bool) (string, error) {
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return "", err
@@ -43,7 +44,7 @@ func GetFileInfo(path string) (string, error) {
 	owner, group := fileOwnerGroup(fileInfo)
 
 	rows := [][2]string{
-		{"Size", HumanizeSize(fileInfo.Size())},
+		{"Size", HumanizeSizeUnits(fileInfo.Size(), decimal)},
 		{"Last Modified", fileInfo.ModTime().Format("Jan 2 2006 15:04")},
 		{"Mode", fileInfo.Mode().String()},
 		{"Owner", owner},
@@ -81,26 +82,33 @@ func fileOwnerGroup(fileInfo os.FileInfo) (owner, group string) {
 	return owner, group
 }
 
-// HumanizeSize formats a byte count as a short human-readable string.
+// HumanizeSize formats a byte count as a short human-readable string in
+// binary units, e.g. "1.5K" for 1536 bytes.
 func HumanizeSize(size int64) string {
-	const (
-		kb = 1024
-		mb = kb * 1024
-		gb = mb * 1024
-		tb = gb * 1024
-	)
-	switch {
-	case size >= tb:
-		return fmt.Sprintf("%.1fT", float64(size)/tb)
-	case size >= gb:
-		return fmt.Sprintf("%.1fG", float64(size)/gb)
-	case size >= mb:
-		return fmt.Sprintf("%.1fM", float64(size)/mb)
-	case size >= kb:
-		return fmt.Sprintf("%.1fK", float64(size)/kb)
-	default:
-		return fmt.Sprintf("%dB", size)
+	return HumanizeSizeUnits(size, false)
+}
+
+// HumanizeSizeUnits formats a byte count as a short human-readable string.
+// Binary units count in 1024s and write "1.5K"; decimal units count in 1000s
+// and write "1.5kB", so the two can't be mistaken for each other.
+func HumanizeSizeUnits(size int64, decimal bool) string {
+	base := float64(1024)
+	suffixes := []string{"K", "M", "G", "T"}
+	byteSuffix := "B"
+	if decimal {
+		base = 1000
+		suffixes = []string{"kB", "MB", "GB", "TB"}
 	}
+	if float64(size) < base {
+		return fmt.Sprintf("%d%s", size, byteSuffix)
+	}
+	value := float64(size)
+	unit := -1
+	for value >= base && unit < len(suffixes)-1 {
+		value /= base
+		unit++
+	}
+	return fmt.Sprintf("%.1f%s", value, suffixes[unit])
 }
 
 // GetFileSizeMod returns the size and modification time of a file both

@@ -170,7 +170,7 @@ func prepareReadStatementsLocked(db *sql.DB) error {
 		return err
 	}
 
-	trigram, err := db.Prepare("SELECT f.fullpath, f.object_type FROM files_fts fts JOIN files f ON f.rowid = fts.rowid WHERE files_fts MATCH ? ORDER BY f.filename ASC LIMIT ?")
+	trigram, err := db.Prepare("SELECT f.fullpath, f.object_type FROM files_fts fts JOIN files f ON f.rowid = fts.rowid WHERE files_fts MATCH ? AND " + hiddenFilterSQL("f.fullpath") + " ORDER BY f.filename ASC LIMIT ?")
 	if err != nil {
 		// FTS table may not exist in older databases opened read-only
 		log.Printf("Warning: could not prepare trigram search statement: %v", err)
@@ -218,7 +218,28 @@ func prepareReadStatementsLocked(db *sql.DB) error {
 // filename on an unmigrated database). It scans idx_filename_search in
 // filename order; the term is LIKE-escaped (see likeEscaper).
 func prefixSearchSQL(nameCol string) string {
-	return "SELECT fullpath, object_type FROM files WHERE " + nameCol + ` LIKE ? ESCAPE '\' ORDER BY filename ASC LIMIT ?`
+	return "SELECT fullpath, object_type FROM files WHERE " + nameCol + ` LIKE ? ESCAPE '\' AND ` + hiddenFilterSQL("fullpath") + " ORDER BY filename ASC LIMIT ?"
+}
+
+// hiddenFilterSQL is a condition that takes one boolean argument: true keeps
+// every row, false drops hidden ones (see IsHiddenPath). Filtering in SQL
+// rather than afterwards keeps LIMIT counting only the rows that are shown.
+func hiddenFilterSQL(pathCol string) string {
+	return "(? OR " + pathCol + " NOT LIKE '%/.%')"
+}
+
+// IsHiddenPath reports whether path is hidden: its name, or the name of any
+// folder above it, starts with a dot. It matches hiddenFilterSQL.
+func IsHiddenPath(path string) bool {
+	return strings.Contains(path, "/.")
+}
+
+// SearchOptions changes how Search filters its results. The zero value
+// matches PrefixSearch.
+type SearchOptions struct {
+	// HideHidden drops hidden files and folders, and everything inside a
+	// hidden folder (see IsHiddenPath).
+	HideHidden bool
 }
 
 // globFTSSQL selects the candidates for a glob whose LIKE pattern has a run
@@ -297,7 +318,7 @@ func prepareWriteStatements(db *sql.DB) {
 
 // globSearch returns up to limit names that match g, in filename order (all
 // of them when limit is negative). The caller holds readMu.
-func globSearch(g *glob, limit int) ([]*shared.SearchResult, error) {
+func globSearch(g *glob, limit int, opts SearchOptions) ([]*shared.SearchResult, error) {
 	if limit == 0 {
 		return nil, nil
 	}
@@ -318,7 +339,7 @@ func globSearch(g *glob, limit int) ([]*shared.SearchResult, error) {
 		if err := rows.Scan(&result.Fullpath, &result.ObjectType, &name); err != nil {
 			return nil, err
 		}
-		if !g.re.MatchString(name) {
+		if !g.re.MatchString(name) || (opts.HideHidden && IsHiddenPath(result.Fullpath)) {
 			continue
 		}
 		results = append(results, result)
@@ -335,6 +356,11 @@ func globSearch(g *glob, limit int) ([]*shared.SearchResult, error) {
 // search ordered by the filename index. A term with an unescaped "*" or "?"
 // is a glob matched against the whole name instead (see parseGlob).
 func PrefixSearch(prefix string, limit int) ([]*shared.SearchResult, error) {
+	return Search(prefix, limit, SearchOptions{})
+}
+
+// Search is PrefixSearch with options.
+func Search(prefix string, limit int, opts SearchOptions) ([]*shared.SearchResult, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -346,16 +372,17 @@ func PrefixSearch(prefix string, limit int) ([]*shared.SearchResult, error) {
 		prefix = SearchName(prefix)
 	}
 	if g, ok := parseGlob(prefix); ok {
-		return globSearch(g, limit)
+		return globSearch(g, limit, opts)
 	}
+	showHidden := !opts.HideHidden
 	// Trigram needs 3 characters, not bytes: a 2-character CJK term is 6 bytes.
 	if utf8.RuneCountInString(prefix) >= 3 && trigramSearchStmt != nil {
 		// Wrap in double quotes so FTS5 treats the term as a literal phrase,
 		// preventing characters like "." from causing syntax errors.
 		quoted := `"` + strings.ReplaceAll(prefix, `"`, `""`) + `"`
-		rows, err = trigramSearchStmt.Query(quoted, limit)
+		rows, err = trigramSearchStmt.Query(quoted, showHidden, limit)
 	} else {
-		rows, err = prefixSearchStmt.Query(likeEscaper.Replace(prefix)+"%", limit)
+		rows, err = prefixSearchStmt.Query(likeEscaper.Replace(prefix)+"%", showHidden, limit)
 	}
 	if err != nil {
 		return nil, err

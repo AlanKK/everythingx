@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,8 +31,6 @@ import (
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
-
-const maxSearchResults int = 1000
 
 // searchDebounce is how long to wait after the last keystroke before running a
 // search, so fast typing doesn't spawn a search (and DB query) per character.
@@ -115,15 +114,16 @@ func defaultStatus(items int) string {
 // Must run on the UI thread.
 func showDefaultView(t *widget.Table, statusBar *widget.Label) {
 	myID := searchCounter.Add(1) // invalidate any in-flight search
+	opts := prefs.searchOptions()
 
 	go func() {
 		var rows []RowData
 		if home, err := os.UserHomeDir(); err == nil {
-			results, err := homeResults(home)
+			results, err := homeResults(home, opts.showHidden)
 			if err != nil {
 				fmt.Println("Error listing home directory:", err)
 			}
-			rows = buildRows(results, "")
+			rows = buildRows(results, "", opts.decimalSizes)
 		}
 
 		fyne.Do(func() {
@@ -133,9 +133,9 @@ func showDefaultView(t *widget.Table, statusBar *widget.Label) {
 }
 
 // homeResults lists the files directly in dir, not recursively, as search
-// results sorted by name ignoring case, dotfiles included. Directories and
-// symlinks to directories are skipped.
-func homeResults(dir string) ([]*shared.SearchResult, error) {
+// results sorted by name ignoring case. Dotfiles are included only when
+// showHidden is set. Directories and symlinks to directories are skipped.
+func homeResults(dir string, showHidden bool) ([]*shared.SearchResult, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -143,7 +143,7 @@ func homeResults(dir string) ([]*shared.SearchResult, error) {
 
 	results := make([]*shared.SearchResult, 0, len(entries))
 	for _, e := range entries {
-		if e.IsDir() {
+		if e.IsDir() || (!showHidden && strings.HasPrefix(e.Name(), ".")) {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
@@ -165,15 +165,19 @@ func homeResults(dir string) ([]*shared.SearchResult, error) {
 
 // buildRows stats each result and splits its name around searchText for
 // highlighting: around each literal part of a glob, or the first occurrence of
-// a literal term. An empty searchText highlights nothing. Does file I/O, so run
-// it off the UI thread.
-func buildRows(results []*shared.SearchResult, searchText string) []RowData {
+// a literal term. An empty searchText highlights nothing. Sizes are written in
+// decimal units when decimalSizes is set, else binary. Does file I/O, so run it
+// off the UI thread.
+func buildRows(results []*shared.SearchResult, searchText string, decimalSizes bool) []RowData {
 	rows := make([]RowData, 0, len(results))
 	for _, r := range results {
 		fullpath := r.Fullpath
 		base := filepath.Base(r.Fullpath)
 		dir := filepath.Dir(fullpath) + "/"
 		size, modified, sizeBytes, modTime := shared.GetFileSizeMod(fullpath)
+		if size != "" {
+			size = shared.HumanizeSizeUnits(sizeBytes, decimalSizes)
+		}
 
 		// A glob matches the whole name, so take its spans before the
 		// trailing slash a directory row gets.
@@ -294,8 +298,9 @@ func formatCount(n int) string {
 
 // handleAutoCompleteEntryChanged runs the search off the UI thread so that
 // scrolling and other interactions remain responsive while the DB query and
-// per-file stat calls execute.
-func handleAutoCompleteEntryChanged(searchText string, t *widget.Table, statusBar *widget.Label) {
+// per-file stat calls execute. opts are the preferences at the time of the
+// keystroke, taken on the UI thread.
+func handleAutoCompleteEntryChanged(searchText string, opts searchOptions, t *widget.Table, statusBar *widget.Label) {
 	if len(searchText) == 0 {
 		fyne.Do(func() { showDefaultView(t, statusBar) })
 		return
@@ -307,7 +312,7 @@ func handleAutoCompleteEntryChanged(searchText string, t *widget.Table, statusBa
 		start := time.Now()
 
 		searchStart := time.Now()
-		results, err := ffdb.PrefixSearch(searchText, maxSearchResults)
+		results, err := ffdb.Search(searchText, opts.limit, ffdb.SearchOptions{HideHidden: !opts.showHidden})
 		if err != nil {
 			fmt.Println("Error:", err)
 			return
@@ -318,15 +323,15 @@ func handleAutoCompleteEntryChanged(searchText string, t *widget.Table, statusBa
 			return
 		}
 
-		newData := buildRows(results, searchText)
+		newData := buildRows(results, searchText, opts.decimalSizes)
 
 		if searchCounter.Load() != myID {
 			return
 		}
 
 		var resultText string
-		if len(results) == maxSearchResults {
-			resultText = fmt.Sprintf("Showing first %d objects", maxSearchResults)
+		if len(results) == opts.limit {
+			resultText = fmt.Sprintf("Showing first %s objects", formatCount(opts.limit))
 		} else {
 			resultText = fmt.Sprintf("%d objects", len(results))
 		}
@@ -375,8 +380,9 @@ func (c *tooltipCell) MouseIn(e *desktop.MouseEvent) {
 	setHoveredRow(c.row)
 	path := c.path
 	maxChars := tooltipMaxChars() // read window width on the UI thread
+	decimalSizes := prefs.DecimalSizes
 	go func() {
-		tip := getToolTipForFile(path, maxChars)
+		tip := getToolTipForFile(path, maxChars, decimalSizes)
 		fyne.Do(func() {
 			if !c.hovered || c.path != path {
 				return
@@ -616,13 +622,10 @@ func iconForRow(r *shared.SearchResult) fyne.Resource {
 	return theme.FileIcon()
 }
 
-// nameColWidth is the initial width of the Name column in pixels.
-const nameColWidth = 400
-
 // nameHighlightMaxChars is roughly how many monospace characters fit in the
 // Name column. When the matched term sits beyond this, the Name cell renders as
 // a single truncating segment instead of highlighted inline segments, so it
-// never overflows into the Path column. Recomputed in makeTable.
+// never overflows into the Path column. Recomputed by updateNameBudget.
 var nameHighlightMaxChars = 47
 
 // plainNameSegment builds a non-inline monospace segment. RichText truncates a
@@ -638,7 +641,8 @@ func plainNameSegment(text string) *widget.TextSegment {
 }
 
 // inlineNameSegment builds an inline segment for the highlighted-name path.
-// Highlighted segments are bold and use the warning (accent) color.
+// Highlighted segments are bold and use the match color, which the user picks
+// on the Appearance tab.
 func inlineNameSegment(text string, highlight bool) *widget.TextSegment {
 	style := widget.RichTextStyle{
 		Inline:    true,
@@ -646,7 +650,7 @@ func inlineNameSegment(text string, highlight bool) *widget.TextSegment {
 	}
 	if highlight {
 		style.TextStyle.Bold = true
-		style.ColorName = theme.ColorNameWarning
+		style.ColorName = colorNameMatch
 	}
 	return &widget.TextSegment{Text: text, Style: style}
 }
@@ -680,7 +684,7 @@ func nameSegments(parts []string) []widget.RichTextSegment {
 }
 
 func makeTable() *widget.Table {
-	tableData = make([]RowData, 0, maxSearchResults)
+	tableData = make([]RowData, 0, prefs.ResultLimit)
 
 	t = widget.NewTableWithHeaders(
 		// Length()
@@ -795,18 +799,7 @@ func makeTable() *widget.Table {
 		},
 	)
 
-	t.SetColumnWidth(0, nameColWidth) // Name
-	t.SetColumnWidth(1, 600)          // Path
-	t.SetColumnWidth(2, 70)           // Size
-	t.SetColumnWidth(3, 190)          // Last modified
-
-	// Derive how many monospace characters fit in the Name column so the
-	// highlighted-name path can fall back to plain truncation when the match
-	// is too far right (see UpdateCell, case 0). The file-type icon and its
-	// padding take width off the text, so the budget is what is left.
-	if charW := fyne.MeasureText("M", theme.TextSize(), fyne.TextStyle{Monospace: true}).Width; charW > 0 {
-		nameHighlightMaxChars = int((nameColWidth - theme.IconInlineSize() - theme.Padding()) / charW)
-	}
+	applyColumnWidths()
 
 	// Define custom headers
 	t.CreateHeader = func() fyne.CanvasObject {
@@ -857,6 +850,7 @@ func (h *sortHeader) Tapped(_ *fyne.PointEvent) {
 		sortCol = h.col
 		sortAsc = true
 	}
+	saveLayout()
 
 	sortRows(tableData)
 	// row indexes no longer point at the same files
@@ -866,8 +860,8 @@ func (h *sortHeader) Tapped(_ *fyne.PointEvent) {
 	t.ScrollToTop()
 }
 
-func getToolTipForFile(path string, maxChars int) string {
-	info, err := shared.GetFileInfo(path)
+func getToolTipForFile(path string, maxChars int, decimalSizes bool) string {
+	info, err := shared.GetFileInfo(path, decimalSizes)
 	if err != nil {
 		return "No access"
 	}
@@ -941,12 +935,7 @@ More info on [Github](` + GithubURL + `)
 Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 `)
 
-	var img *canvas.Image
-	if fyne.CurrentApp().Settings().ThemeVariant() == theme.VariantDark {
-		img = canvas.NewImageFromResource(resourceFolderWhiteOrange5122xPng) // Orange white 512
-	} else {
-		img = canvas.NewImageFromResource(resourceFolderOrangeBlack5122xPng) // orange black 512
-	}
+	img := canvas.NewImageFromResource(logoResource())
 	img.SetMinSize(fyne.NewSize(128, 128))
 	imgContainer := container.NewCenter(img)
 
@@ -964,15 +953,24 @@ Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 
 var statusBar *widget.Label
 
+// logoResource is the app logo that reads on the current background: white
+// and orange on dark, orange and black on light.
+func logoResource() fyne.Resource {
+	if appTheme.Variant() == theme.VariantDark {
+		return resourceFolderWhiteOrange5122xPng
+	}
+	return resourceFolderOrangeBlack5122xPng
+}
+
+// emptyLogo is the logo on the empty state. It is swapped when the theme
+// changes between light and dark (see loadUI).
+var emptyLogo *canvas.Image
+
 // makeEmptyState builds the logo and prompt shown when there is nothing to
 // list, so the window never opens blank. Hidden until updateEmptyState decides.
 func makeEmptyState() *fyne.Container {
-	var img *canvas.Image
-	if fyne.CurrentApp().Settings().ThemeVariant() == theme.VariantDark {
-		img = canvas.NewImageFromResource(resourceFolderWhiteOrange5122xPng)
-	} else {
-		img = canvas.NewImageFromResource(resourceFolderOrangeBlack5122xPng)
-	}
+	img := canvas.NewImageFromResource(logoResource())
+	emptyLogo = img
 	img.FillMode = canvas.ImageFillContain
 	img.SetMinSize(fyne.NewSize(128, 128))
 
@@ -1006,7 +1004,13 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	// when there is none. Metadata compiled by "fyne package -executable" does
 	// not carry one, so set it here.
 	a.SetIcon(resourceFolderWhiteOrange5122xPng)
-	a.Settings().SetTheme(&everythingxTheme{})
+	prefs = loadPrefs(a.Preferences())
+	sortCol, sortAsc = -1, true
+	if prefs.RememberLayout {
+		sortCol, sortAsc = prefs.SortCol, prefs.SortAsc
+	}
+	appTheme.setPrefs(prefs)
+	a.Settings().SetTheme(appTheme)
 	w := a.NewWindow(AppName)
 	mainWindow = w
 
@@ -1015,24 +1019,40 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 			fyne.NewMenuItem("Show EverythingX", func() {
 				w.Show()
 			}),
+			fyne.NewMenuItem(preferencesLabel, showPreferences),
 			fyne.NewMenuItem("About...", func() {
 				showAbout()
 			}))
 		desk.SetSystemTrayMenu(m)
 	}
 
-	w.SetCloseIntercept(func() {
+	// Hiding the window is the last chance to store column widths when the
+	// app is then ended from outside (logout, kill), which runs no OnStopped.
+	hideWindow := func() {
+		saveLayout()
 		w.Hide()
-	})
+	}
+	w.SetCloseIntercept(hideWindow)
 
+	prefsItem := fyne.NewMenuItem(preferencesLabel, showPreferences)
+	prefsItem.Shortcut = preferencesShortcut
 	w.SetMainMenu(fyne.NewMainMenu(
-		fyne.NewMenu("File", fyne.NewMenuItem("Close Window", w.Hide)),
+		fyne.NewMenu("File",
+			prefsItem,
+			fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem("Close Window", hideWindow)),
 		fyne.NewMenu("Help", fyne.NewMenuItem("About EverythingX", showAbout)),
 	))
+	// The macOS menu bar handles its own shortcuts; elsewhere, menu shortcuts
+	// are only drawn in the menu, so the window has to listen for it too.
+	if runtime.GOOS != "darwin" {
+		w.Canvas().AddShortcut(preferencesShortcut, func(fyne.Shortcut) { showPreferences() })
+	}
 
 	table := makeTable()
 
 	entry := newSearchEntry()
+	searchBox = entry
 
 	statusBar = widget.NewLabel("")
 	statusBar.TextStyle = fyne.TextStyle{Bold: true}
@@ -1049,8 +1069,9 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 			showDefaultView(table, statusBar)
 			return
 		}
+		opts := prefs.searchOptions()
 		searchDebounceTimer = time.AfterFunc(searchDebounce, func() {
-			handleAutoCompleteEntryChanged(s, table, statusBar)
+			handleAutoCompleteEntryChanged(s, opts, table, statusBar)
 		})
 	}
 
@@ -1081,8 +1102,24 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	// over the single-instance socket.
 	if instanceLn != nil {
 		serveInstance(instanceLn, showWindow)
-		a.Lifecycle().SetOnStopped(func() { instanceLn.Close() })
 	}
+	a.Lifecycle().SetOnStopped(func() {
+		saveLayout()
+		if instanceLn != nil {
+			instanceLn.Close()
+		}
+	})
+
+	// A switch between light and dark, from the Appearance tab or the
+	// desktop, needs the logo that reads on the new background.
+	a.Settings().AddListener(func(fyne.Settings) {
+		fyne.Do(func() {
+			if res := logoResource(); emptyLogo != nil && emptyLogo.Resource != res {
+				emptyLogo.Resource = res
+				emptyLogo.Refresh()
+			}
+		})
+	})
 	// Reopening the macOS .app doesn't start a second process; see watchReopen.
 	a.Lifecycle().SetOnStarted(func() { watchReopen(showWindow) })
 

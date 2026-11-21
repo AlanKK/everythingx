@@ -50,7 +50,7 @@ func TestGetFileInfo(t *testing.T) {
 	tmpFile.Close()
 
 	// Get file info
-	info, err := GetFileInfo(tmpFile.Name())
+	info, err := GetFileInfo(tmpFile.Name(), false)
 	if err != nil {
 		t.Errorf("getFileInfo(%q) returned error: %v", tmpFile.Name(), err)
 	}
@@ -121,5 +121,32 @@ func TestGUnZipFile(t *testing.T) {
 	expectedContent := "Hello, World!"
 	if string(content) != expectedContent {
 		t.Errorf("GUnZipFile(%q, %q) = %q; want %q", sourceFile.Name(), targetFile.Name(), string(content), expectedContent)
+	}
+}
+
+func TestHumanizeSizeUnits(t *testing.T) {
+	tests := []struct {
+		size    int64
+		decimal bool
+		want    string
+	}{
+		{0, false, "0B"},
+		{1023, false, "1023B"},
+		{1536, false, "1.5K"},
+		{5 * 1024 * 1024, false, "5.0M"},
+		{3 << 40, false, "3.0T"},
+		{999, true, "999B"},
+		{1500, true, "1.5kB"},
+		{1536, true, "1.5kB"},
+		{2_500_000_000, true, "2.5GB"},
+		{7_000_000_000_000_000, true, "7000.0TB"},
+	}
+	for _, tt := range tests {
+		if got := HumanizeSizeUnits(tt.size, tt.decimal); got != tt.want {
+			t.Errorf("HumanizeSizeUnits(%d, %v) = %q, want %q", tt.size, tt.decimal, got, tt.want)
+		}
+	}
+	if HumanizeSize(1536) != HumanizeSizeUnits(1536, false) {
+		t.Error("HumanizeSize should use binary units")
 	}
 }
