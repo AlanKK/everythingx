@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -315,7 +316,7 @@ func TestSearch_PrefixPlanIsCovering(t *testing.T) {
 
 	for name, db := range map[string]*sql.DB{"fresh": fresh, "migrated": migrated} {
 		for _, col := range []string{"search_name", "filename"} {
-			rows, err := db.Query("EXPLAIN QUERY PLAN "+prefixSearchSQL(col), "a%", 10)
+			rows, err := db.Query("EXPLAIN QUERY PLAN "+prefixSearchSQL(col), "a%", false, 10)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -451,5 +452,77 @@ func TestStaleSearchNameWhere_UsesCoveringIndex(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(plan, "\n"), "COVERING INDEX idx_filename_search") {
 		t.Fatalf("plan does not use the covering index: %q", plan)
+	}
+}
+
+// HideHidden drops dotfiles and everything under a dot folder on every search
+// path: the short-term prefix scan, the trigram lookup, and both glob queries.
+// It filters before LIMIT, so hidden rows don't use up the result count.
+func TestSearch_HideHidden(t *testing.T) {
+	db, err := CreateDB(filepath.Join(t.TempDir(), "hidden.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	paths := []string{
+		"/x/.d/abc1.txt", "/x/.d/abc2.txt", "/x/.d/abc3.txt",
+		"/x/.e/f/abc4.txt", // deep inside a hidden folder
+		"/x/abc5.txt",
+		"/x/y.z/abc6.txt", // a dot inside a folder name doesn't hide it
+	}
+	for _, p := range paths {
+		if err = InsertRecord(db, filepath.Base(p), p, 0, shared.ItemIsFile); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	search := func(term string, limit int, opts SearchOptions) []string {
+		t.Helper()
+		results, err := Search(term, limit, opts)
+		if err != nil {
+			t.Fatalf("search %q: %v", term, err)
+		}
+		var got []string
+		for _, r := range results {
+			got = append(got, r.Fullpath)
+		}
+		sort.Strings(got)
+		return got
+	}
+
+	visible := []string{"/x/abc5.txt", "/x/y.z/abc6.txt"}
+	for _, term := range []string{"ab", "abc", "abc*", "a*"} {
+		if got := search(term, 2, SearchOptions{HideHidden: true}); !reflect.DeepEqual(got, visible) {
+			t.Errorf("search %q hiding hidden, limit 2: got %q, want %q", term, got, visible)
+		}
+		if got := search(term, 100, SearchOptions{}); len(got) != len(paths) {
+			t.Errorf("search %q showing hidden: got %d results %q, want %d", term, len(got), got, len(paths))
+		}
+	}
+
+	// A dotfile's own name is hidden too. Only a substring search can match
+	// past the leading dot.
+	if err = InsertRecord(db, ".abc7.txt", "/x/.abc7.txt", 0, shared.ItemIsFile); err != nil {
+		t.Fatal(err)
+	}
+	if got := search("abc7", 10, SearchOptions{HideHidden: true}); got != nil {
+		t.Errorf("search abc7 hiding hidden: got %q, want none", got)
+	}
+	if got := search("abc7", 10, SearchOptions{}); len(got) != 1 {
+		t.Errorf("search abc7 showing hidden: got %q, want the dotfile", got)
+	}
+}
+
+func TestIsHiddenPath(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/home/a/.bashrc":        true,
+		"/home/a/.cache/x/y.txt": true,
+		"/.snapshots":            true,
+		"/home/a/notes.txt":      false,
+		"/home/a/v1.2/notes.txt": false,
+	} {
+		if got := IsHiddenPath(path); got != want {
+			t.Errorf("IsHiddenPath(%q) = %v, want %v", path, got, want)
+		}
 	}
 }

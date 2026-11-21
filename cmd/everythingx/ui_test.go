@@ -573,7 +573,7 @@ func TestHomeResultsListsFilesOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := homeResults(dir)
+	results, err := homeResults(dir, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,6 +592,19 @@ func TestHomeResultsListsFilesOnly(t *testing.T) {
 	if results[3].ObjectType != shared.ItemIsSymlink {
 		t.Errorf("link type = %v, want symlink", results[4].ObjectType)
 	}
+
+	// With hidden files off, the dotfile goes and the rest stay.
+	results, err = homeResults(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = nil
+	for _, r := range results {
+		got = append(got, filepath.Base(r.Fullpath))
+	}
+	if want := []string{"B.txt", "c.txt", "link"}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("homeResults hiding hidden = %v, want %v", got, want)
+	}
 }
 
 func TestBuildRowsWithoutTermHighlightsNothing(t *testing.T) {
@@ -604,7 +617,7 @@ func TestBuildRowsWithoutTermHighlightsNothing(t *testing.T) {
 	rows := buildRows([]*shared.SearchResult{
 		{Fullpath: dir, ObjectType: shared.ItemIsDir},
 		{Fullpath: file, ObjectType: shared.ItemIsFile},
-	}, "")
+	}, "", false)
 
 	if rows[0].Base != filepath.Base(dir)+"/" || rows[0].Size != "--" || rows[0].SizeBytes != -1 {
 		t.Errorf("dir row = %+v, want trailing slash and no size", rows[0])
@@ -676,12 +689,12 @@ func TestBuildRowsHighlightsGlobParts(t *testing.T) {
 	if err := os.WriteFile(file, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rows := buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "mypackage*.bb")
+	rows := buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "mypackage*.bb", false)
 	want := []string{"", "mypackage", "_1.0", ".bb", ""}
 	if !reflect.DeepEqual(rows[0].Name, want) {
 		t.Errorf("glob row name = %q, want %q", rows[0].Name, want)
 	}
-	rows = buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "1.0")
+	rows = buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "1.0", false)
 	if want := []string{"mypackage_", "1.0", ".bb"}; !reflect.DeepEqual(rows[0].Name, want) {
 		t.Errorf("literal row name = %q, want %q", rows[0].Name, want)
 	}
@@ -691,7 +704,7 @@ func TestBuildRowsHighlightsGlobParts(t *testing.T) {
 	if err := os.Mkdir(src, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	rows = buildRows([]*shared.SearchResult{{Fullpath: src, ObjectType: shared.ItemIsDir}}, "*src")
+	rows = buildRows([]*shared.SearchResult{{Fullpath: src, ObjectType: shared.ItemIsDir}}, "*src", false)
 	if want := []string{"my", "src", "/"}; !reflect.DeepEqual(rows[0].Name, want) {
 		t.Errorf("glob dir row name = %q, want %q", rows[0].Name, want)
 	}
