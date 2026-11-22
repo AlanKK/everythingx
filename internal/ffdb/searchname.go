@@ -73,7 +73,46 @@ func createSearchIndex(execer interface {
 			return err
 		}
 	}
+	return createStaleTracking(execer)
+}
+
+// staleTrackingStmts record in search_name_stale the rowid of every row that
+// is written with a search_name that may not match its filename. A binary
+// from before search_name writes two such rows: an INSERT that leaves
+// search_name empty, and a directory rename that changes
+// filename but not search_name. Older binaries never drop triggers on an
+// existing database, so these keep firing after a rollback, and the next
+// start repairs only the recorded rows instead of scanning the whole table.
+// This binary always sets search_name with filename, so it records nothing,
+// except a rename between names NFKC folds together, which the repair checks
+// and leaves alone.
+var staleTrackingStmts = []string{
+	"CREATE TABLE IF NOT EXISTS search_name_stale(id INTEGER PRIMARY KEY)",
+	`CREATE TRIGGER IF NOT EXISTS search_name_stale_ai AFTER INSERT ON files
+	WHEN new.search_name = '' BEGIN
+		INSERT OR IGNORE INTO search_name_stale(id) VALUES (new.rowid);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS search_name_stale_au AFTER UPDATE OF filename ON files
+	WHEN old.filename IS NOT new.filename AND old.search_name IS new.search_name BEGIN
+		INSERT OR IGNORE INTO search_name_stale(id) VALUES (new.rowid);
+	END`,
+}
+
+func createStaleTracking(execer interface {
+	Exec(string, ...any) (sql.Result, error)
+}) error {
+	for _, s := range staleTrackingStmts {
+		if _, err := execer.Exec(s); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func hasStaleTracking(db *sql.DB) bool {
+	var n int
+	err := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name IN ('search_name_stale_ai', 'search_name_stale_au')").Scan(&n)
+	return err == nil && n == 2
 }
 
 // migrateSearchName brings a database to the search_name schema: it adds the
@@ -81,10 +120,13 @@ func createSearchIndex(execer interface {
 // in one transaction, so an interrupted migration leaves the old schema. On a
 // database that is already migrated it repairs rows an older binary wrote
 // after a rollback: rows it inserted have an empty search_name, and rows it
-// renamed keep the search_name of their old filename (see staleSearchNameWhere).
+// renamed keep the search_name of their old filename. The repair reads only
+// the rows the search_name_stale triggers recorded; a database migrated before
+// those triggers existed gets one full scan (see staleSearchNameWhere) while
+// they are installed.
 func migrateSearchName(db *sql.DB) {
 	if ftsUsesSearchName(db) {
-		if err := backfillSearchName(db, staleSearchNameWhere); err != nil {
+		if err := repairSearchName(db); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -149,14 +191,35 @@ func migrateSearchName(db *sql.DB) {
 // candidates are the few names NFKC changes plus the stale rows.
 const staleSearchNameWhere = "WHERE search_name = '' OR search_name <> filename"
 
-func backfillSearchName(db *sql.DB, where string) error {
+// staleTrackedWhere selects the rows the search_name_stale triggers recorded.
+const staleTrackedWhere = "WHERE rowid IN (SELECT id FROM search_name_stale)"
+
+// repairSearchName fixes the rows an older binary wrote. With the tracking
+// triggers in place it checks only the recorded rows and clears the record.
+// Without them (a database migrated by an earlier 1.1 build) it scans every
+// candidate row once and installs the triggers in the same transaction, so no
+// write can fall between the scan and the tracking.
+func repairSearchName(db *sql.DB) error {
+	tracked := hasStaleTracking(db)
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+
+	where := staleTrackedWhere
+	if !tracked {
+		log.Println("Checking normalized search names (one-time)")
+		if err = createStaleTracking(tx); err != nil {
+			return err
+		}
+		where = staleSearchNameWhere
+	}
 	n, err := fillSearchName(tx, where)
 	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec("DELETE FROM search_name_stale"); err != nil {
 		return err
 	}
 	if n > 0 {

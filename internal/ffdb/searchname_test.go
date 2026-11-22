@@ -526,3 +526,147 @@ func TestIsHiddenPath(t *testing.T) {
 		}
 	}
 }
+
+func staleCount(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow("SELECT count(*) FROM search_name_stale").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// This binary's own inserts and renames set search_name, so they leave
+// nothing for the next start to repair.
+func TestStaleTracking_IgnoresCurrentWrites(t *testing.T) {
+	root := t.TempDir()
+	db, err := CreateDB(filepath.Join(root, "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	oldDir, newDir := filepath.Join(root, "old"), filepath.Join(root, "new")
+	scan := []shared.EventRecord{
+		{Filename: "old", Path: oldDir, ObjectType: shared.ItemIsDir, FoundOnScan: true},
+		{Filename: "child.txt", Path: oldDir + "/child.txt", ObjectType: shared.ItemIsFile, FoundOnScan: true},
+	}
+	if err = BulkStoreEvents(db, &scan); err != nil {
+		t.Fatal(err)
+	}
+	if err = InsertRecord(db, nameHalfComma, "/x/"+nameHalfComma, 0, shared.ItemIsFile); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Mkdir(newDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rename := []shared.EventRecord{
+		{Filename: "old", Path: oldDir, ObjectType: shared.ItemIsDir, IsRename: true},
+		{Filename: "new", Path: newDir, ObjectType: shared.ItemIsDir, IsRename: true},
+	}
+	if err = BulkStoreEvents(db, &rename); err != nil {
+		t.Fatal(err)
+	}
+	if n := staleCount(t, db); n != 0 {
+		t.Fatalf("current writes recorded %d stale rows", n)
+	}
+}
+
+// Once tracking is in place, a start checks only the recorded rows: a row
+// that is wrong but was never recorded is not found by a full scan, and the
+// record is cleared after the repair.
+func TestRepairSearchName_ChecksOnlyTrackedRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "k.db")
+	db, err := CreateDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = InsertRecord(db, "untracked.zip", "/x/untracked.zip", 0, shared.ItemIsFile); err != nil {
+		t.Fatal(err)
+	}
+	// UPDATE OF search_name is not a write the triggers record.
+	if _, err = db.Exec("UPDATE files SET search_name = 'wrong' WHERE filename = 'untracked.zip'"); err != nil {
+		t.Fatal(err)
+	}
+	// An older binary's insert is recorded.
+	if _, err = db.Exec("INSERT INTO files (filename, fullpath, object_type) VALUES (?, ?, 0)", nameHalfComma, "/x/"+nameHalfComma); err != nil {
+		t.Fatal(err)
+	}
+	if n := staleCount(t, db); n != 1 {
+		t.Fatalf("stale rows recorded = %d, want 1", n)
+	}
+	db.Close()
+
+	db, err = OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	assertNames(t, "春の庭、小さな", nameHalfComma)
+	var sn string
+	if err = db.QueryRow("SELECT search_name FROM files WHERE filename = 'untracked.zip'").Scan(&sn); err != nil || sn != "wrong" {
+		t.Fatalf("untracked row search_name = %q (%v); a full scan ran", sn, err)
+	}
+	if n := staleCount(t, db); n != 0 {
+		t.Fatalf("stale record not cleared: %d rows", n)
+	}
+	assertFTSIntact(t, db)
+}
+
+// A database migrated before tracking existed gets one full scan, which also
+// installs the triggers; rows an older binary writes after that are tracked.
+func TestRepairSearchName_InstallsTrackingOnce(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "u.db")
+	db, err := CreateDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{
+		"DROP TRIGGER search_name_stale_ai",
+		"DROP TRIGGER search_name_stale_au",
+		"DROP TABLE search_name_stale",
+	} {
+		if _, err = db.Exec(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = db.Exec("INSERT INTO files (filename, fullpath, object_type) VALUES (?, ?, 0)", nameHalfComma, "/x/"+nameHalfComma); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	db, err = OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasStaleTracking(db) {
+		t.Fatal("tracking triggers not installed")
+	}
+	assertNames(t, "春の庭、小さな", nameHalfComma)
+	assertFTSIntact(t, db)
+	db.Close()
+
+	// After a rollback, the older binary renames a directory.
+	oldDir, newDir := filepath.Join(root, "old"), filepath.Join(root, "new")
+	raw, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = raw.Exec("INSERT INTO files (filename, fullpath, object_type, search_name) VALUES ('old', ?, 1, 'old')", oldDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = raw.Exec(oldRenameDirSQL, newDir, oldDir, oldDir, "new", oldDir, oldDir+"/", oldDir+"0"); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+
+	db, err = OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	assertNames(t, "new", "new")
+	assertNames(t, "old")
+	assertFTSIntact(t, db)
+}
