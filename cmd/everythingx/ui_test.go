@@ -796,7 +796,7 @@ func TestContextMenuItems(t *testing.T) {
 		}
 		got = append(got, item.Label)
 	}
-	want := []string{"Open", revealLabel, "---", "Copy Name", "Copy Full Path", "Copy Containing Folder"}
+	want := []string{"Open", revealLabel, "---", "Copy Name", "Copy Full Path", "Copy Directory Path"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("menu = %q, want %q", got, want)
 	}
@@ -831,5 +831,34 @@ func TestNameIconForwardsToCell(t *testing.T) {
 	}
 
 	icon.DoubleTapped(&fyne.PointEvent{})
+	expectLaunch(t, calls, "open", path)
+}
+
+// A single click on the name opens the item, like a link. Elsewhere in the row
+// a click only selects.
+func TestTapOpensOnlyFromNameColumn(t *testing.T) {
+	calls := stubLaunchers(t)
+	table := makeTable()
+	defer func() { tableData, selectedRow = nil, -1 }()
+
+	path := tempFile(t, "clip.mp4")
+	tableData = oneRow(path)
+
+	for col := 1; col < 4; col++ {
+		text, _ := cellParts(table, col)
+		text.Tapped(&fyne.PointEvent{})
+		if text.Cursor() != desktop.DefaultCursor {
+			t.Errorf("column %d shows a pointer cursor but a click doesn't open", col)
+		}
+	}
+	expectNoLaunch(t, calls)
+
+	text, icon := cellParts(table, nameColumn)
+	if text.Cursor() != desktop.PointerCursor || icon.Cursor() != desktop.PointerCursor {
+		t.Error("Name column doesn't show a pointer cursor")
+	}
+	text.Tapped(&fyne.PointEvent{})
+	expectLaunch(t, calls, "open", path)
+	icon.Tapped(&fyne.PointEvent{})
 	expectLaunch(t, calls, "open", path)
 }

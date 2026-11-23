@@ -440,8 +440,29 @@ func (c *tooltipCell) MouseDown(e *desktop.MouseEvent) {
 
 func (c *tooltipCell) MouseUp(_ *desktop.MouseEvent) {}
 
-// pathColumn is the table column holding the containing folder.
-const pathColumn = 1
+// nameColumn and pathColumn are the table columns holding the file name and
+// the containing folder.
+const (
+	nameColumn = 0
+	pathColumn = 1
+)
+
+// Tapped on the Name column opens the item, like a link. Fyne only delivers it
+// once the double-click interval passes with no second click, so a double-click
+// opens the item once, through DoubleTapped.
+func (c *tooltipCell) Tapped(_ *fyne.PointEvent) {
+	if c.col == nameColumn {
+		openFile(c.path)
+	}
+}
+
+// Cursor shows a pointing hand over the Name column, where a click opens.
+func (c *tooltipCell) Cursor() desktop.Cursor {
+	if c.col == nameColumn {
+		return desktop.PointerCursor
+	}
+	return desktop.DefaultCursor
+}
 
 // DoubleTapped on the Path column shows the item selected in its folder, which
 // is what that column is about. Anywhere else it opens the item itself.
@@ -476,7 +497,7 @@ func contextMenu(path string) *fyne.Menu {
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Copy Name", func() { copyToClipboard(filepath.Base(path)) }),
 		fyne.NewMenuItem("Copy Full Path", func() { copyToClipboard(path) }),
-		fyne.NewMenuItem("Copy Containing Folder", func() { copyToClipboard(filepath.Dir(path)) }),
+		fyne.NewMenuItem("Copy Directory Path", func() { copyToClipboard(filepath.Dir(path)) }),
 	)
 }
 
@@ -496,6 +517,8 @@ func newCellIcon(cell *tooltipCell) *cellIcon {
 
 func (i *cellIcon) MouseDown(e *desktop.MouseEvent)    { i.cell.MouseDown(e) }
 func (i *cellIcon) MouseUp(e *desktop.MouseEvent)      { i.cell.MouseUp(e) }
+func (i *cellIcon) Tapped(e *fyne.PointEvent)          { i.cell.Tapped(e) }
+func (i *cellIcon) Cursor() desktop.Cursor             { return i.cell.Cursor() }
 func (i *cellIcon) DoubleTapped(e *fyne.PointEvent)    { i.cell.DoubleTapped(e) }
 func (i *cellIcon) TappedSecondary(e *fyne.PointEvent) { i.cell.TappedSecondary(e) }
 
