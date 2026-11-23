@@ -9,8 +9,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// shortTempDir is a temp dir with a short path. t.TempDir includes the test
+// name, and under macOS's /var/folders temp dir the socket path then runs past
+// the 104-byte limit for Unix socket paths, so bind fails.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "evx")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 func TestAcquireInstanceSecondLaunchSignalsPrimary(t *testing.T) {
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 
 	ln, primary, err := acquireInstance(dir)
 	require.NoError(t, err)
@@ -33,7 +44,7 @@ func TestAcquireInstanceSecondLaunchSignalsPrimary(t *testing.T) {
 }
 
 func TestAcquireInstanceReplacesStaleSocket(t *testing.T) {
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	sock, _ := instancePaths(dir)
 
 	stale, err := net.Listen("unix", sock)
@@ -50,7 +61,7 @@ func TestAcquireInstanceReplacesStaleSocket(t *testing.T) {
 }
 
 func TestAcquireInstanceAfterPrimaryExits(t *testing.T) {
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 
 	ln, primary, err := acquireInstance(dir)
 	require.NoError(t, err)
