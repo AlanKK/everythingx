@@ -363,6 +363,10 @@ type resultCell struct {
 	path string
 	col  int
 	row  int
+
+	// pressedCloses is windowCloses when the cell was last pressed, so a
+	// click that lands after the window closed can be told apart.
+	pressedCloses int
 }
 
 func newResultCell() *resultCell {
@@ -445,6 +449,7 @@ func copyToClipboard(text string) {
 // the system double-click interval has passed, to see if a second click lands.
 func (c *resultCell) MouseDown(e *desktop.MouseEvent) {
 	c.cancelToolTip() // a click means the pointer is busy; don't pop up over it
+	c.pressedCloses = windowCloses
 	if e.Button == desktop.MouseButtonPrimary {
 		c.selectRow()
 	}
@@ -463,9 +468,18 @@ const (
 // once the double-click interval passes with no second click, so a double-click
 // opens the item once, through DoubleTapped.
 func (c *resultCell) Tapped(_ *fyne.PointEvent) {
-	if c.col == nameColumn {
+	if c.col == nameColumn && !c.closedSincePress() {
 		openFile(c.path)
 	}
+}
+
+// closedSincePress reports whether the main window was closed after the cell
+// was pressed. Fyne holds back Tapped and DoubleTapped until the double-click
+// interval has passed, which on macOS is the system setting and can run to
+// seconds. Closing the window in that time, with Escape say, means the user
+// is done; opening the item anyway would surprise them.
+func (c *resultCell) closedSincePress() bool {
+	return c.pressedCloses != windowCloses
 }
 
 // Cursor shows a pointing hand over the Name column, where a click opens.
@@ -479,6 +493,9 @@ func (c *resultCell) Cursor() desktop.Cursor {
 // DoubleTapped on the Path column shows the item selected in its folder, which
 // is what that column is about. Anywhere else it opens the item itself.
 func (c *resultCell) DoubleTapped(_ *fyne.PointEvent) {
+	if c.closedSincePress() {
+		return
+	}
 	if c.col == pathColumn {
 		revealFile(c.path)
 		return
@@ -561,6 +578,10 @@ var mainWindow fyne.Window
 // closeMainWindow is what closing the main window does: quit when the user
 // wants that, else hide it to the tray. Nil until loadUI sets it.
 var closeMainWindow func()
+
+// windowCloses counts the times the main window has been closed (see
+// resultCell.closedSincePress). UI thread only.
+var windowCloses int
 
 // escapeClosesWindow closes the main window, as closing it would, when the
 // user wants Escape to do that, and reports whether it did. UI thread only.
@@ -1246,6 +1267,7 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	// Hiding the window is the last chance to store column widths when the
 	// app is then ended from outside (logout, kill), which runs no OnStopped.
 	closeWindow := func() {
+		windowCloses++
 		saveLayout()
 		if prefs.ExitOnClose {
 			a.Quit() // OnStopped saves the layout again; that's harmless

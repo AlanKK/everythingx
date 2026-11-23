@@ -860,3 +860,28 @@ func TestMouseInSetsToolTipOnlyWhenTruncated(t *testing.T) {
 	}
 	c.MouseOut()
 }
+
+// Fyne delivers a click on a cell only after the double-click interval. If
+// the window closes in that time, as with Escape, the click is dropped.
+func TestClickAfterWindowClosedDoesNothing(t *testing.T) {
+	calls := stubLaunchers(t)
+	table := makeTable()
+	defer func() { tableData, selectedRow = nil, -1 }()
+
+	path := tempFile(t, "notes.txt")
+	tableData = oneRow(path)
+	press := &desktop.MouseEvent{Button: desktop.MouseButtonPrimary}
+
+	text, icon := cellParts(table, nameColumn)
+	text.MouseDown(press)
+	windowCloses++
+	text.Tapped(&fyne.PointEvent{})
+	text.DoubleTapped(&fyne.PointEvent{})
+	icon.Tapped(&fyne.PointEvent{})
+	expectNoLaunch(t, calls)
+
+	// The next click, once the window is back, opens as usual.
+	text.MouseDown(press)
+	text.Tapped(&fyne.PointEvent{})
+	expectLaunch(t, calls, "open", path)
+}
