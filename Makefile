@@ -36,6 +36,28 @@ BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-X github.com/AlanKK/everythingx/internal/version.Version=$(VERSION) -X github.com/AlanKK/everythingx/internal/version.Commit=$(COMMIT) -X github.com/AlanKK/everythingx/internal/version.BuildDate=$(BUILD_DATE)"
 TAGS := -tags fts5
 
+.DEFAULT_GOAL := help
+
+help:
+	@echo "Available targets:"
+	@echo "  Build and test:"
+	@echo "    build       Build everythingxd, everythingx and ev into bin/"
+	@echo "    test        Run the unit tests"
+	@echo "    e2e         Build and run the end-to-end test (sudo on Linux)"
+	@echo "    clean       Remove built binaries, packages and test output"
+	@echo ""
+	@echo "  Install:"
+	@echo "    install     Build and install locally, including the background service"
+	@echo "    uninstall   Remove a local install"
+	@echo ""
+	@echo "  Packaging:"
+	@echo "    app         Package the GUI with fyne for this OS"
+	@echo "    zip         Archive the binaries and install scripts"
+	@echo "    pkg         macOS only: build the .pkg installer"
+	@echo "    deb         Linux only: build a .deb into bin/"
+	@echo "    rpm         Linux only: build an .rpm into bin/"
+	@echo "    release     Tag and push a release (TAG=vX.Y.Z[-pre])"
+
 # Build targets
 build: $(SERVICE_BIN) $(APP_BIN) $(CLI_BIN)
 
@@ -140,4 +162,4 @@ release:
 	@test -n "$(TAG)" || { echo "usage: make release TAG=vX.Y.Z[-pre]"; exit 1; }
 	./package/release.sh $(TAG)
 
-.PHONY: build test deps lint install clean uninstall zip package app pkg deb rpm release
+.PHONY: help build test deps lint install clean uninstall zip package app pkg deb rpm release
