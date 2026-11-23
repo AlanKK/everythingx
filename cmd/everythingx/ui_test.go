@@ -789,33 +789,34 @@ func TestNameIconForwardsToCell(t *testing.T) {
 	expectLaunch(t, calls, "open", path)
 }
 
-// A single click on the name opens the item, like a link. Elsewhere in the row
-// a click only selects.
-func TestTapOpensOnlyFromNameColumn(t *testing.T) {
+// A single click anywhere in the row only selects it; opening takes a
+// double-click.
+func TestSingleClickOnlySelects(t *testing.T) {
 	calls := stubLaunchers(t)
 	table := makeTable()
 	defer func() { tableData, selectedRow = nil, -1 }()
 
 	path := tempFile(t, "clip.mp4")
 	tableData = oneRow(path)
+	press := &desktop.MouseEvent{Button: desktop.MouseButtonPrimary}
 
-	for col := 1; col < 4; col++ {
+	for col := 0; col < 4; col++ {
+		selectedRow = -1
 		text, _ := cellParts(table, col)
-		text.Tapped(&fyne.PointEvent{})
-		if text.Cursor() != desktop.DefaultCursor {
-			t.Errorf("column %d shows a pointer cursor but a click doesn't open", col)
+		text.MouseDown(press)
+		text.MouseUp(press)
+		if selectedRow != 0 {
+			t.Errorf("column %d: selected row = %d after a click, want 0", col, selectedRow)
+		}
+		if _, ok := fyne.CanvasObject(text).(fyne.Tappable); ok {
+			t.Errorf("column %d: cell handles single taps", col)
 		}
 	}
-	expectNoLaunch(t, calls)
-
-	text, icon := cellParts(table, nameColumn)
-	if text.Cursor() != desktop.PointerCursor || icon.Cursor() != desktop.PointerCursor {
-		t.Error("Name column doesn't show a pointer cursor")
+	_, icon := cellParts(table, nameColumn)
+	if _, ok := fyne.CanvasObject(icon).(fyne.Tappable); ok {
+		t.Error("name icon handles single taps")
 	}
-	text.Tapped(&fyne.PointEvent{})
-	expectLaunch(t, calls, "open", path)
-	icon.Tapped(&fyne.PointEvent{})
-	expectLaunch(t, calls, "open", path)
+	expectNoLaunch(t, calls)
 }
 
 // A cell whose text fits shows no tool tip; one cut short shows all of it,
@@ -861,8 +862,8 @@ func TestMouseInSetsToolTipOnlyWhenTruncated(t *testing.T) {
 	c.MouseOut()
 }
 
-// Fyne delivers a click on a cell only after the double-click interval. If
-// the window closes in that time, as with Escape, the click is dropped.
+// A double-click whose second click is delivered after the window closed, as
+// with Escape, is dropped.
 func TestClickAfterWindowClosedDoesNothing(t *testing.T) {
 	calls := stubLaunchers(t)
 	table := makeTable()
@@ -875,13 +876,12 @@ func TestClickAfterWindowClosedDoesNothing(t *testing.T) {
 	text, icon := cellParts(table, nameColumn)
 	text.MouseDown(press)
 	windowCloses++
-	text.Tapped(&fyne.PointEvent{})
 	text.DoubleTapped(&fyne.PointEvent{})
-	icon.Tapped(&fyne.PointEvent{})
+	icon.DoubleTapped(&fyne.PointEvent{})
 	expectNoLaunch(t, calls)
 
-	// The next click, once the window is back, opens as usual.
+	// The next double-click, once the window is back, opens as usual.
 	text.MouseDown(press)
-	text.Tapped(&fyne.PointEvent{})
+	text.DoubleTapped(&fyne.PointEvent{})
 	expectLaunch(t, calls, "open", path)
 }

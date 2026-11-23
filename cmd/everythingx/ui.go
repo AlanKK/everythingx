@@ -464,34 +464,17 @@ const (
 	pathColumn = 1
 )
 
-// Tapped on the Name column opens the item, like a link. Fyne only delivers it
-// once the double-click interval passes with no second click, so a double-click
-// opens the item once, through DoubleTapped.
-func (c *resultCell) Tapped(_ *fyne.PointEvent) {
-	if c.col == nameColumn && !c.closedSincePress() {
-		openFile(c.path)
-	}
-}
-
 // closedSincePress reports whether the main window was closed after the cell
-// was pressed. Fyne holds back Tapped and DoubleTapped until the double-click
-// interval has passed, which on macOS is the system setting and can run to
-// seconds. Closing the window in that time, with Escape say, means the user
-// is done; opening the item anyway would surprise them.
+// was pressed. A double-click whose second click is delivered after the window
+// closed, with Escape say, comes after the user is done; opening the item
+// anyway would surprise them.
 func (c *resultCell) closedSincePress() bool {
 	return c.pressedCloses != windowCloses
 }
 
-// Cursor shows a pointing hand over the Name column, where a click opens.
-func (c *resultCell) Cursor() desktop.Cursor {
-	if c.col == nameColumn {
-		return desktop.PointerCursor
-	}
-	return desktop.DefaultCursor
-}
-
 // DoubleTapped on the Path column shows the item selected in its folder, which
-// is what that column is about. Anywhere else it opens the item itself.
+// is what that column is about. Anywhere else it opens the item itself. A
+// single click only selects the row, in MouseDown.
 func (c *resultCell) DoubleTapped(_ *fyne.PointEvent) {
 	if c.closedSincePress() {
 		return
@@ -559,8 +542,6 @@ func newCellIcon(cell *resultCell) *cellIcon {
 
 func (i *cellIcon) MouseDown(e *desktop.MouseEvent)    { i.cell.MouseDown(e) }
 func (i *cellIcon) MouseUp(e *desktop.MouseEvent)      { i.cell.MouseUp(e) }
-func (i *cellIcon) Tapped(e *fyne.PointEvent)          { i.cell.Tapped(e) }
-func (i *cellIcon) Cursor() desktop.Cursor             { return i.cell.Cursor() }
 func (i *cellIcon) DoubleTapped(e *fyne.PointEvent)    { i.cell.DoubleTapped(e) }
 func (i *cellIcon) TappedSecondary(e *fyne.PointEvent) { i.cell.TappedSecondary(e) }
 
