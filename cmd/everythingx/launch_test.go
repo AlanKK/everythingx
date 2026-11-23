@@ -40,15 +40,23 @@ type launchCall struct {
 	action, path string
 }
 
-// stubLaunchers replaces openPath and revealPath with stubs that report on the
-// returned channel, restoring the real ones when the test ends.
+// stubLaunchers replaces the launchers with stubs that report on the returned
+// channel, restoring the real ones when the test ends. Open With lists no apps
+// unless the test sets appsForPath, so no test reads the host's app database.
 func stubLaunchers(t *testing.T) <-chan launchCall {
 	t.Helper()
 	calls := make(chan launchCall, 4)
 	origOpen, origReveal := openPath, revealPath
+	origApps, origOpenWith, origChoose := appsForPath, openWithPath, chooseAppPath
 	openPath = func(p string) error { calls <- launchCall{"open", p}; return nil }
 	revealPath = func(p string) error { calls <- launchCall{"reveal", p}; return nil }
-	t.Cleanup(func() { openPath, revealPath = origOpen, origReveal })
+	appsForPath = func(string) ([]appChoice, error) { return nil, nil }
+	openWithPath = func(a appChoice, p string) error { calls <- launchCall{"open with " + a.ID, p}; return nil }
+	chooseAppPath = func(p string) error { calls <- launchCall{"choose app", p}; return nil }
+	t.Cleanup(func() {
+		openPath, revealPath = origOpen, origReveal
+		appsForPath, openWithPath, chooseAppPath = origApps, origOpenWith, origChoose
+	})
 	return calls
 }
 

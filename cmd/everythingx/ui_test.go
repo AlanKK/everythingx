@@ -460,6 +460,7 @@ func TestCellSelectsOnMouseDown(t *testing.T) {
 // covers. A tip left armed when the menu opens fires with nowhere to draw and
 // logs "no tool tip layer created for current overlay".
 func TestContextMenuCancelsPendingToolTip(t *testing.T) {
+	stubLaunchers(t)
 	table := makeTable()
 	mainWindow = test.NewWindow(nil)
 	defer func() { tableData, selectedRow, mainWindow = nil, -1, nil }()
@@ -787,6 +788,7 @@ func TestEnterOpensSelectedRow(t *testing.T) {
 }
 
 func TestContextMenuItems(t *testing.T) {
+	stubLaunchers(t)
 	menu := contextMenu("/tmp/a.txt")
 	var got []string
 	for _, item := range menu.Items {
@@ -796,7 +798,7 @@ func TestContextMenuItems(t *testing.T) {
 		}
 		got = append(got, item.Label)
 	}
-	want := []string{"Open", revealLabel, "---", "Copy Name", "Copy Full Path", "Copy Directory Path"}
+	want := []string{"Open", openWithLabel, revealLabel, "---", "Copy Name", "Copy Full Path", "Copy Directory Path"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("menu = %q, want %q", got, want)
 	}
@@ -809,7 +811,7 @@ func TestContextMenuOpenAndReveal(t *testing.T) {
 
 	menu.Items[0].Action()
 	expectLaunch(t, calls, "open", path)
-	menu.Items[1].Action()
+	menu.Items[2].Action()
 	expectLaunch(t, calls, "reveal", path)
 }
 

@@ -493,6 +493,7 @@ func (c *tooltipCell) TappedSecondary(e *fyne.PointEvent) {
 func contextMenu(path string) *fyne.Menu {
 	return fyne.NewMenu("",
 		fyne.NewMenuItem("Open", func() { openFile(path) }),
+		openWithMenuItem(path),
 		fyne.NewMenuItem(revealLabel, func() { revealFile(path) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Copy Name", func() { copyToClipboard(filepath.Base(path)) }),

@@ -94,6 +94,8 @@ These only apply when you type `ev` at the prompt. Scripts, `sudo ev …` and `$
 - Click or double-click a name, or press Enter, to open the file in its default app or the folder in your file manager.
 - Double-click the path to open the containing folder with the item selected.
 - Right-click a result to open it, reveal it, or copy its name, full path or directory path.
+- Right-click > Open With lists the apps registered for the item's type, default first, as Finder or
+  your file manager would. Other… lets you pick any app (on Linux, through the desktop's app chooser).
 
 ## Background service
 `everythingxd` gets file change events from the kernel: FSEvents on macOS, and fanotify on Linux (needs root and kernel 5.9+). It also does an occasional full scan to catch anything it missed.
