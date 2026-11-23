@@ -113,12 +113,37 @@ func appearanceTab() fyne.CanvasObject {
 		}
 	}
 
+	font := widget.NewSelect(fontLabels, nil)
+	font.Selected = fontLabels[max(slices.Index(fontChoices, prefs.Font), 0)]
+	font.OnChanged = func(label string) {
+		if i := slices.Index(fontLabels, label); i >= 0 && fontChoices[i] != prefs.Font {
+			prefs.Font = fontChoices[i]
+			appearanceChanged()
+		}
+	}
+
+	densityLabels := []string{"Compact", "Comfortable"}
+	densities := []string{densityCompact, densityComfortable}
+	density := widget.NewRadioGroup(densityLabels, nil)
+	density.Horizontal = true
+	density.Required = true
+	density.Selected = densityLabels[max(slices.Index(densities, prefs.Density), 0)]
+	density.OnChanged = func(label string) {
+		if i := slices.Index(densityLabels, label); i >= 0 {
+			prefs.Density = densities[i]
+			appearanceChanged()
+		}
+	}
+
 	return container.NewVScroll(widget.NewForm(
 		widget.NewFormItem("Theme", themes),
 		widget.NewFormItem("Accent color", accent),
 		&widget.FormItem{Text: "Match color", Widget: match,
 			HintText: "The part of a name that matches the search"},
+		&widget.FormItem{Text: "Font", Widget: container.NewHBox(font),
+			HintText: "System uses your desktop's interface font"},
 		widget.NewFormItem("Text size", container.NewHBox(textSize)),
+		widget.NewFormItem("Density", density),
 	))
 }
 
@@ -155,6 +180,18 @@ func resultsTab() fyne.CanvasObject {
 		resultsChanged()
 	}
 
+	dateLabels := []string{"Nov 23 2026 14:23", "2026-11-23 14:23"}
+	dates := widget.NewRadioGroup(dateLabels, nil)
+	dates.Required = true
+	dates.Selected = dateLabels[0]
+	if prefs.ISODates {
+		dates.Selected = dateLabels[1]
+	}
+	dates.OnChanged = func(label string) {
+		prefs.ISODates = label == dateLabels[1]
+		resultsChanged()
+	}
+
 	layoutCheck := widget.NewCheck("Remember column widths and sort order", nil)
 	layoutCheck.Checked = prefs.RememberLayout
 	layoutCheck.OnChanged = func(on bool) {
@@ -175,6 +212,7 @@ func resultsTab() fyne.CanvasObject {
 		&widget.FormItem{Text: "Hidden files", Widget: hidden,
 			HintText: "Names starting with a dot, and everything inside such folders"},
 		widget.NewFormItem("Size units", units),
+		widget.NewFormItem("Dates", dates),
 		widget.NewFormItem("Columns", layoutCheck),
 	))
 }
@@ -347,11 +385,11 @@ func tableColumnWidths(table *widget.Table) map[int]float32 {
 	return widths
 }
 
-// updateNameBudget works out how many monospace characters fit in the Name
-// column, so a highlighted name can fall back to plain truncation when the
-// match is too far right (see nameSegments). The file-type icon and its
-// padding take width off the text, so the budget is what is left. Run it
-// whenever the text size or the Name column's width is set.
+// updateNameBudget works out how wide the Name column's text can be, so a
+// highlighted name can fall back to plain truncation when the match is too far
+// right (see nameSegments). The file-type icon, the space beside it and the
+// text's own inset take width off the column. Run it whenever the text size,
+// font, density or the Name column's width is set.
 func updateNameBudget() {
 	width := defaultColumnWidths[0]
 	if t != nil {
@@ -359,9 +397,7 @@ func updateNameBudget() {
 			width = w
 		}
 	}
-	if charW := fyne.MeasureText("M", theme.TextSize(), fyne.TextStyle{Monospace: true}).Width; charW > 0 {
-		nameHighlightMaxChars = int((width - theme.IconInlineSize() - theme.Padding()) / charW)
-	}
+	nameHighlightMaxWidth = width - theme.IconInlineSize() - theme.Padding() - 2*theme.InnerPadding()
 }
 
 // newSwatchRow is a row of colour swatches with the chosen colour's name

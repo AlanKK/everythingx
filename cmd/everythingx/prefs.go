@@ -13,6 +13,12 @@ const (
 	themeDark   = "dark"
 )
 
+// Densities: how tightly rows and controls are packed.
+const (
+	densityCompact     = "compact"
+	densityComfortable = "comfortable"
+)
+
 // resultLimits are the choices for the maximum number of results. Every
 // result is stat'ed to fill in its size and date, so the top end is kept to
 // what that can do while typing.
@@ -47,10 +53,13 @@ type appPrefs struct {
 	Accent     string // a name from accentColors, or "" for Fyne's default
 	MatchColor string // a name from accentColors, or "" for the default orange
 	TextScale  float64
+	Font       string // fontSystem, fontFyne or fontMono
+	Density    string // densityCompact or densityComfortable
 
 	ResultLimit  int
 	ShowHidden   bool
 	DecimalSizes bool
+	ISODates     bool // "2026-11-23 14:23" rather than "Nov 23 2026 14:23"
 
 	// RememberLayout keeps the column widths and sort order across launches.
 	RememberLayout bool
@@ -63,6 +72,8 @@ func defaultPrefs() appPrefs {
 	return appPrefs{
 		Theme:          themeSystem,
 		TextScale:      1,
+		Font:           fontSystem,
+		Density:        densityCompact,
 		ResultLimit:    1000,
 		ShowHidden:     true,
 		RememberLayout: true,
@@ -80,6 +91,9 @@ const (
 	keyAccent         = "accentColor"
 	keyMatchColor     = "matchColor"
 	keyTextScale      = "textScale"
+	keyFont           = "font"
+	keyDensity        = "density"
+	keyISODates       = "isoDates"
 	keyResultLimit    = "resultLimit"
 	keyShowHidden     = "showHidden"
 	keyDecimalSizes   = "decimalSizes"
@@ -98,9 +112,12 @@ func loadPrefs(store fyne.Preferences) appPrefs {
 		Accent:         store.StringWithFallback(keyAccent, d.Accent),
 		MatchColor:     store.StringWithFallback(keyMatchColor, d.MatchColor),
 		TextScale:      store.FloatWithFallback(keyTextScale, d.TextScale),
+		Font:           store.StringWithFallback(keyFont, d.Font),
+		Density:        store.StringWithFallback(keyDensity, d.Density),
 		ResultLimit:    store.IntWithFallback(keyResultLimit, d.ResultLimit),
 		ShowHidden:     store.BoolWithFallback(keyShowHidden, d.ShowHidden),
 		DecimalSizes:   store.BoolWithFallback(keyDecimalSizes, d.DecimalSizes),
+		ISODates:       store.BoolWithFallback(keyISODates, d.ISODates),
 		RememberLayout: store.BoolWithFallback(keyRememberLayout, d.RememberLayout),
 		SortCol:        store.IntWithFallback(keySortCol, d.SortCol),
 		SortAsc:        store.BoolWithFallback(keySortAsc, d.SortAsc),
@@ -117,6 +134,12 @@ func loadPrefs(store fyne.Preferences) appPrefs {
 	}
 	if !slices.ContainsFunc(textScales, func(s textScale) bool { return s.scale == p.TextScale }) {
 		p.TextScale = d.TextScale
+	}
+	if !slices.Contains(fontChoices, p.Font) {
+		p.Font = d.Font
+	}
+	if p.Density != densityComfortable {
+		p.Density = densityCompact
 	}
 	if !slices.Contains(resultLimits, p.ResultLimit) {
 		p.ResultLimit = d.ResultLimit
@@ -138,9 +161,12 @@ func (p appPrefs) save(store fyne.Preferences) {
 	store.SetString(keyAccent, p.Accent)
 	store.SetString(keyMatchColor, p.MatchColor)
 	store.SetFloat(keyTextScale, p.TextScale)
+	store.SetString(keyFont, p.Font)
+	store.SetString(keyDensity, p.Density)
 	store.SetInt(keyResultLimit, p.ResultLimit)
 	store.SetBool(keyShowHidden, p.ShowHidden)
 	store.SetBool(keyDecimalSizes, p.DecimalSizes)
+	store.SetBool(keyISODates, p.ISODates)
 	store.SetBool(keyRememberLayout, p.RememberLayout)
 	widths := make([]float64, numColumns)
 	for i, w := range p.ColumnWidths {
@@ -187,6 +213,7 @@ type searchOptions struct {
 	limit        int
 	showHidden   bool
 	decimalSizes bool
+	isoDates     bool
 }
 
 func (p appPrefs) searchOptions() searchOptions {
@@ -194,6 +221,7 @@ func (p appPrefs) searchOptions() searchOptions {
 		limit:        p.ResultLimit,
 		showHidden:   p.ShowHidden,
 		decimalSizes: p.DecimalSizes,
+		isoDates:     p.ISODates,
 	}
 }
 

@@ -318,7 +318,7 @@ func TestSelectionWinsOverHover(t *testing.T) {
 	cell := table.CreateCell()
 	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
 
-	if got := cell.(*fyne.Container).Objects[0].(*canvas.Rectangle).FillColor; got != theme.Color(theme.ColorNameSelection) {
+	if got := cell.(*fyne.Container).Objects[0].(*canvas.Rectangle).FillColor; got != theme.Color(theme.ColorNamePrimary) {
 		t.Error("hover overrode the selection colour on the selected row")
 	}
 }
@@ -618,7 +618,7 @@ func TestBuildRowsWithoutTermHighlightsNothing(t *testing.T) {
 	rows := buildRows([]*shared.SearchResult{
 		{Fullpath: dir, ObjectType: shared.ItemIsDir},
 		{Fullpath: file, ObjectType: shared.ItemIsFile},
-	}, "", false)
+	}, "", searchOptions{})
 
 	if rows[0].Base != filepath.Base(dir)+"/" || rows[0].Size != "--" || rows[0].SizeBytes != -1 {
 		t.Errorf("dir row = %+v, want trailing slash and no size", rows[0])
@@ -690,12 +690,12 @@ func TestBuildRowsHighlightsGlobParts(t *testing.T) {
 	if err := os.WriteFile(file, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rows := buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "mypackage*.bb", false)
+	rows := buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "mypackage*.bb", searchOptions{})
 	want := []string{"", "mypackage", "_1.0", ".bb", ""}
 	if !reflect.DeepEqual(rows[0].Name, want) {
 		t.Errorf("glob row name = %q, want %q", rows[0].Name, want)
 	}
-	rows = buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "1.0", false)
+	rows = buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "1.0", searchOptions{})
 	if want := []string{"mypackage_", "1.0", ".bb"}; !reflect.DeepEqual(rows[0].Name, want) {
 		t.Errorf("literal row name = %q, want %q", rows[0].Name, want)
 	}
@@ -705,14 +705,14 @@ func TestBuildRowsHighlightsGlobParts(t *testing.T) {
 	if err := os.Mkdir(src, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	rows = buildRows([]*shared.SearchResult{{Fullpath: src, ObjectType: shared.ItemIsDir}}, "*src", false)
+	rows = buildRows([]*shared.SearchResult{{Fullpath: src, ObjectType: shared.ItemIsDir}}, "*src", searchOptions{})
 	if want := []string{"my", "src", "/"}; !reflect.DeepEqual(rows[0].Name, want) {
 		t.Errorf("glob dir row name = %q, want %q", rows[0].Name, want)
 	}
 }
 
 func TestNameSegments(t *testing.T) {
-	segs := nameSegments([]string{"", "mypackage", "_1.0", ".bb", ""})
+	segs := nameSegments([]string{"", "mypackage", "_1.0", ".bb", ""}, false)
 	var got []string
 	for _, s := range segs {
 		ts := s.(*widget.TextSegment)
@@ -721,11 +721,11 @@ func TestNameSegments(t *testing.T) {
 	if want := []string{"mypackage:true", "_1.0:false", ".bb:true"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("segments = %q, want %q", got, want)
 	}
-	if segs := nameSegments([]string{"anything"}); len(segs) != 1 || segs[0].(*widget.TextSegment).Style.Inline {
+	if segs := nameSegments([]string{"anything"}, false); len(segs) != 1 || segs[0].(*widget.TextSegment).Style.Inline {
 		t.Errorf("unhighlighted name should be one plain segment, got %v", segs)
 	}
-	long := strings.Repeat("x", nameHighlightMaxChars)
-	if segs := nameSegments([]string{long, "hit", ""}); len(segs) != 1 {
+	long := strings.Repeat("x", int(nameHighlightMaxWidth))
+	if segs := nameSegments([]string{long, "hit", ""}, false); len(segs) != 1 {
 		t.Errorf("highlight past the column edge should render plain, got %d segments", len(segs))
 	}
 }

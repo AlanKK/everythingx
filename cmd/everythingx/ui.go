@@ -99,13 +99,10 @@ var indexedText string
 // directory's files) rather than search results. UI thread only.
 var showingDefault bool
 
-// defaultStatus is the status bar text for the default view.
+// defaultStatus is the status bar text for the default view. The index size
+// has its own place at the other end of the bar (indexStatus).
 func defaultStatus(items int) string {
-	text := fmt.Sprintf("%d files in ~", items)
-	if indexedText != "" {
-		text += " · " + indexedText
-	}
-	return text
+	return fmt.Sprintf("%d files in ~", items)
 }
 
 // showDefaultView lists the files directly in the home directory, which is what the
@@ -123,7 +120,7 @@ func showDefaultView(t *widget.Table, statusBar *widget.Label) {
 			if err != nil {
 				fmt.Println("Error listing home directory:", err)
 			}
-			rows = buildRows(results, "", opts.decimalSizes)
+			rows = buildRows(results, "", opts)
 		}
 
 		fyne.Do(func() {
@@ -163,12 +160,15 @@ func homeResults(dir string, showHidden bool) ([]*shared.SearchResult, error) {
 	return results, nil
 }
 
+// isoDateLayout is the ISO date format the Results tab offers, as file
+// managers on Linux write dates.
+const isoDateLayout = "2006-01-02 15:04"
+
 // buildRows stats each result and splits its name around searchText for
 // highlighting: around each literal part of a glob, or the first occurrence of
-// a literal term. An empty searchText highlights nothing. Sizes are written in
-// decimal units when decimalSizes is set, else binary. Does file I/O, so run it
-// off the UI thread.
-func buildRows(results []*shared.SearchResult, searchText string, decimalSizes bool) []RowData {
+// a literal term. An empty searchText highlights nothing. Sizes and dates are
+// written as opts says. Does file I/O, so run it off the UI thread.
+func buildRows(results []*shared.SearchResult, searchText string, opts searchOptions) []RowData {
 	rows := make([]RowData, 0, len(results))
 	for _, r := range results {
 		fullpath := r.Fullpath
@@ -176,7 +176,10 @@ func buildRows(results []*shared.SearchResult, searchText string, decimalSizes b
 		dir := filepath.Dir(fullpath) + "/"
 		size, modified, sizeBytes, modTime := shared.GetFileSizeMod(fullpath)
 		if size != "" {
-			size = shared.HumanizeSizeUnits(sizeBytes, decimalSizes)
+			size = shared.HumanizeSizeUnits(sizeBytes, opts.decimalSizes)
+		}
+		if opts.isoDates && modified != "" {
+			modified = modTime.Format(isoDateLayout)
 		}
 
 		// A glob matches the whole name, so take its spans before the
@@ -272,9 +275,8 @@ func loadIndexCount(db *sql.DB) {
 				indexedText = formatCount(count) + " files indexed"
 			}
 			indexLabel.SetText(indexedText)
-			if showingDefault {
-				lastResultText = defaultStatus(len(tableData))
-				statusBar.SetText(lastResultText)
+			if indexStatus != nil {
+				indexStatus.SetText(indexedText)
 			}
 		})
 	}()
@@ -323,7 +325,7 @@ func handleAutoCompleteEntryChanged(searchText string, opts searchOptions, t *wi
 			return
 		}
 
-		newData := buildRows(results, searchText, opts.decimalSizes)
+		newData := buildRows(results, searchText, opts)
 
 		if searchCounter.Load() != myID {
 			return
@@ -615,8 +617,31 @@ type searchEntry struct {
 func newSearchEntry() *searchEntry {
 	e := &searchEntry{}
 	e.ExtendBaseWidget(e)
-	e.SetPlaceHolder("Enter filename...")
+	e.SetPlaceHolder("Search")
+	e.Icon = theme.SearchIcon()
+	clear := widget.NewButtonWithIcon("", theme.ContentClearIcon(), func() {
+		e.SetText("")
+		if c := fyne.CurrentApp().Driver().CanvasForObject(e); c != nil {
+			c.Focus(e)
+		}
+	})
+	clear.Importance = widget.LowImportance
+	clear.Hide()
+	e.ActionItem = clear
 	return e
+}
+
+// showClear shows the clear button only while there is text to clear, as GTK
+// search entries do.
+func (e *searchEntry) showClear() {
+	if e.ActionItem == nil {
+		return
+	}
+	if e.Text == "" {
+		e.ActionItem.Hide()
+	} else {
+		e.ActionItem.Show()
+	}
 }
 
 func (e *searchEntry) TypedKey(key *fyne.KeyEvent) {
@@ -674,62 +699,101 @@ func iconForRow(r *shared.SearchResult) fyne.Resource {
 	return theme.FileIcon()
 }
 
-// nameHighlightMaxChars is roughly how many monospace characters fit in the
-// Name column. When the matched term sits beyond this, the Name cell renders as
-// a single truncating segment instead of highlighted inline segments, so it
-// never overflows into the Path column. Recomputed by updateNameBudget.
-var nameHighlightMaxChars = 47
+// rowIcons caches the recoloured icons rowIcon hands out. A coloured resource
+// is a new value each time it is made, and the cell re-rasterises its icon
+// whenever the resource changes, so reuse one per icon and colour.
+var rowIcons = map[[2]string]fyne.Resource{}
 
-// plainNameSegment builds a non-inline monospace segment. RichText truncates a
-// trailing segment like this with an ellipsis when it is too wide to fit.
-func plainNameSegment(text string) *widget.TextSegment {
+// rowIcon is iconForRow's icon in the colour the row draws it: the text
+// colour on a selected row, the accent colour for a folder (as GTK file lists
+// draw folders) and the theme's own colour otherwise.
+func rowIcon(r *shared.SearchResult, selected bool) fyne.Resource {
+	res := iconForRow(r)
+	var colorName fyne.ThemeColorName
+	switch {
+	case selected:
+		colorName = theme.ColorNameForegroundOnPrimary
+	case r.ObjectType == shared.ItemIsDir:
+		colorName = theme.ColorNamePrimary
+	default:
+		return res
+	}
+	key := [2]string{res.Name(), string(colorName)}
+	if c, ok := rowIcons[key]; ok {
+		return c
+	}
+	c := theme.NewColoredResource(res, colorName)
+	rowIcons[key] = c
+	return c
+}
+
+// nameHighlightMaxWidth is how wide the text in the Name column can be. When
+// the matched term ends beyond this, the Name cell renders as a single
+// truncating segment instead of highlighted inline segments, so it never
+// overflows into the Path column. Recomputed by updateNameBudget.
+var nameHighlightMaxWidth float32 = 360
+
+// cellColor is the text colour for a cell: the one that reads on the solid
+// selection, or "" for the theme's foreground.
+func cellColor(selected bool) fyne.ThemeColorName {
+	if selected {
+		return theme.ColorNameForegroundOnPrimary
+	}
+	return ""
+}
+
+// textSegment builds a plain cell segment. RichText truncates a trailing
+// segment like this with an ellipsis when it is too wide to fit.
+func textSegment(text string, align fyne.TextAlign, selected bool) *widget.TextSegment {
 	return &widget.TextSegment{
-		Text: text,
-		Style: widget.RichTextStyle{
-			Alignment: fyne.TextAlignLeading,
-			TextStyle: fyne.TextStyle{Monospace: true},
-		},
+		Text:  text,
+		Style: widget.RichTextStyle{Alignment: align, ColorName: cellColor(selected)},
 	}
 }
 
 // inlineNameSegment builds an inline segment for the highlighted-name path.
 // Highlighted segments are bold and use the match color, which the user picks
-// on the Appearance tab.
-func inlineNameSegment(text string, highlight bool) *widget.TextSegment {
-	style := widget.RichTextStyle{
-		Inline:    true,
-		TextStyle: fyne.TextStyle{Monospace: true},
-	}
+// on the Appearance tab; on a selected row they keep the selection's text
+// colour, as a GTK list does.
+func inlineNameSegment(text string, highlight, selected bool) *widget.TextSegment {
+	style := widget.RichTextStyle{Inline: true, ColorName: cellColor(selected)}
 	if highlight {
 		style.TextStyle.Bold = true
-		style.ColorName = colorNameMatch
+		if !selected {
+			style.ColorName = colorNameMatch
+		}
 	}
 	return &widget.TextSegment{Text: text, Style: style}
 }
 
 // nameSegments renders a row's name parts (see RowData.Name), highlighting the
 // odd-indexed ones.
-func nameSegments(parts []string) []widget.RichTextSegment {
-	// lastEnd is where the last non-empty highlighted part ends.
-	lastEnd, pos := 0, 0
+func nameSegments(parts []string, selected bool) []widget.RichTextSegment {
+	// last is the index of the last non-empty highlighted part, and width how
+	// wide the name is up to its end.
+	last := -1
 	for i, p := range parts {
-		pos += len(p)
 		if i%2 == 1 && p != "" {
-			lastEnd = pos
+			last = i
 		}
 	}
-	if lastEnd == 0 || lastEnd > nameHighlightMaxChars {
+	var width float32
+	for i := 0; i <= last; i++ {
+		style := fyne.TextStyle{Bold: i%2 == 1}
+		width += fyne.MeasureText(parts[i], theme.TextSize(), style).Width
+	}
+	if last < 0 || width > nameHighlightMaxWidth {
 		// No match, or the highlighting reaches too far right to fit before
 		// the column edge. Render the whole name as a single trailing segment
 		// so RichText truncates it with an ellipsis; its ellipsis only applies
 		// to the last segment, so a long leading segment would otherwise
 		// overflow into the Path column.
-		return []widget.RichTextSegment{plainNameSegment(strings.Join(parts, ""))}
+		return []widget.RichTextSegment{textSegment(strings.Join(parts, ""), fyne.TextAlignLeading, selected)}
 	}
 	var segments []widget.RichTextSegment
 	for i, p := range parts {
 		if p != "" {
-			segments = append(segments, inlineNameSegment(p, i%2 == 1))
+			segments = append(segments, inlineNameSegment(p, i%2 == 1, selected))
 		}
 	}
 	return segments
@@ -749,7 +813,7 @@ func makeTable() *widget.Table {
 			text := newTooltipCell()
 			icon := newCellIcon(text)
 			icon.Hide()
-			return container.NewStack(
+			return container.New(rowBandLayout{},
 				canvas.NewRectangle(color.Transparent),
 				container.NewBorder(nil, nil, icon, nil, text),
 			)
@@ -787,10 +851,13 @@ func makeTable() *widget.Table {
 
 			// Only repaint what changed: this runs for every visible cell on
 			// each refresh, so unconditional work here is felt as click lag.
+			// The selected row is filled with the accent colour and its text
+			// drawn in the colour that reads on it, as in a GTK list.
+			selected := id.Row == selectedRow
 			var highlight color.Color = color.Transparent
 			switch {
-			case id.Row == selectedRow:
-				highlight = theme.Color(theme.ColorNameSelection)
+			case selected:
+				highlight = theme.Color(theme.ColorNamePrimary)
 			case id.Row == hoveredRow:
 				highlight = theme.Color(theme.ColorNameHover)
 			}
@@ -801,38 +868,20 @@ func makeTable() *widget.Table {
 
 			switch id.Col {
 			case 0:
-				richText.Segments = nameSegments(row.Name)
+				richText.Segments = nameSegments(row.Name, selected)
 			case 1:
-				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: row.Path,
-					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
-						TextStyle: fyne.TextStyle{Monospace: true},
-					},
-				},
-				}
+				richText.Segments = []widget.RichTextSegment{textSegment(row.Path, fyne.TextAlignLeading, selected)}
 			case 2:
-				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: row.Size,
-					Style: widget.RichTextStyle{Alignment: fyne.TextAlignTrailing,
-						TextStyle: fyne.TextStyle{Monospace: true},
-					},
-				},
-				}
+				richText.Segments = []widget.RichTextSegment{textSegment(row.Size, fyne.TextAlignTrailing, selected)}
 			case 3:
-				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: row.Modified,
-					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
-						TextStyle: fyne.TextStyle{Monospace: true},
-					},
-				},
-				}
+				richText.Segments = []widget.RichTextSegment{textSegment(row.Modified, fyne.TextAlignLeading, selected)}
 			}
 
 			showIcon := id.Col == 0
 			if showIcon {
 				// SetResource re-rasterises the SVG, so only pay for it when
 				// the icon actually changes.
-				if res := iconForRow(row.SearchResult); icon.Resource != res {
+				if res := rowIcon(row.SearchResult, selected); icon.Resource != res {
 					icon.SetResource(res)
 				}
 			}
@@ -851,6 +900,11 @@ func makeTable() *widget.Table {
 			}
 		},
 	)
+
+	// No row-number column, and no lines between rows: a file list in GTK
+	// has neither. The headers draw their own column dividers (sortHeader).
+	t.ShowHeaderColumn = false
+	t.HideSeparators = true
 
 	applyColumnWidths()
 
@@ -878,9 +932,36 @@ func makeTable() *widget.Table {
 	return t
 }
 
+// rowBandLayout lays out a cell as a stack, but grows the highlight behind it
+// (the first object) by half the table's padding on every side. The table
+// leaves that padding between cells, so the highlights of a row's cells meet
+// in one unbroken band, as a selected row in a GTK list is.
+type rowBandLayout struct{}
+
+func (rowBandLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	half := theme.Padding() / 2
+	objects[0].Move(fyne.NewPos(-half, -half))
+	objects[0].Resize(size.AddWidthHeight(2*half, 2*half))
+	for _, o := range objects[1:] {
+		o.Move(fyne.NewPos(0, 0))
+		o.Resize(size)
+	}
+}
+
+func (rowBandLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	var min fyne.Size
+	for _, o := range objects[1:] {
+		min = min.Max(o.MinSize())
+	}
+	return min
+}
+
 var headerTitles = [4]string{"Name", "Path", "Size", "Last Modified"}
 
-// sortHeader is a column header that sorts the results when tapped.
+// sortHeader is a column header that sorts the results when tapped. It draws
+// a divider at its right edge and a rule along its bottom, as GTK column
+// headers do. The table's own dividers would run down every row, so they are
+// off (Table.HideSeparators), and the divider marks where to drag.
 type sortHeader struct {
 	widget.Label
 	col int
@@ -889,8 +970,45 @@ type sortHeader struct {
 func newSortHeader() *sortHeader {
 	h := &sortHeader{col: -1}
 	h.ExtendBaseWidget(h)
-	h.TextStyle = fyne.TextStyle{Bold: true}
 	return h
+}
+
+func (h *sortHeader) CreateRenderer() fyne.WidgetRenderer {
+	return &sortHeaderRenderer{
+		WidgetRenderer: h.Label.CreateRenderer(),
+		divider:        canvas.NewRectangle(theme.Color(theme.ColorNameSeparator)),
+		rule:           canvas.NewRectangle(theme.Color(theme.ColorNameSeparator)),
+	}
+}
+
+type sortHeaderRenderer struct {
+	fyne.WidgetRenderer // the label's
+	divider, rule       *canvas.Rectangle
+}
+
+// Layout puts the divider in the middle of the gap the table leaves between
+// columns, where Fyne's own divider went, and runs the rule under the gap too
+// so it is unbroken.
+func (r *sortHeaderRenderer) Layout(size fyne.Size) {
+	r.WidgetRenderer.Layout(size)
+	pad := theme.Padding()
+	line := theme.SeparatorThicknessSize()
+	r.divider.Move(fyne.NewPos(size.Width+(pad-line)/2, 0))
+	r.divider.Resize(fyne.NewSize(line, size.Height))
+	r.rule.Move(fyne.NewPos(0, size.Height-line))
+	r.rule.Resize(fyne.NewSize(size.Width+pad, line))
+}
+
+func (r *sortHeaderRenderer) Objects() []fyne.CanvasObject {
+	return append(r.WidgetRenderer.Objects(), r.divider, r.rule)
+}
+
+func (r *sortHeaderRenderer) Refresh() {
+	r.divider.FillColor = theme.Color(theme.ColorNameSeparator)
+	r.rule.FillColor = r.divider.FillColor
+	r.divider.Refresh()
+	r.rule.Refresh()
+	r.WidgetRenderer.Refresh()
 }
 
 func (h *sortHeader) Tapped(_ *fyne.PointEvent) {
@@ -938,7 +1056,7 @@ func tooltipMaxChars() int {
 	}
 	width -= theme.InnerPadding() * 2
 
-	charW := fyne.MeasureText("M", theme.CaptionTextSize(), fyne.TextStyle{Monospace: true}).Width
+	charW := fyne.MeasureText("M", theme.CaptionTextSize(), fyne.TextStyle{}).Width
 	if charW <= 0 {
 		return 64
 	}
@@ -1004,7 +1122,10 @@ Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 	w.Show()
 }
 
+// statusBar shows the result count, or a passing message, at the left of the
+// bottom bar. indexStatus shows the size of the index at the right.
 var statusBar *widget.Label
+var indexStatus *widget.Label
 
 // logoResource is the app logo that reads on the current background: white
 // and orange on dark, orange and black on light.
@@ -1062,6 +1183,7 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	if prefs.RememberLayout {
 		sortCol, sortAsc = prefs.SortCol, prefs.SortAsc
 	}
+	loadSystemFonts()
 	appTheme.setPrefs(prefs)
 	a.Settings().SetTheme(appTheme)
 	w := a.NewWindow(AppName)
@@ -1108,11 +1230,13 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	searchBox = entry
 
 	statusBar = widget.NewLabel("")
-	statusBar.TextStyle = fyne.TextStyle{Bold: true}
+	statusBar.Truncation = fyne.TextTruncateEllipsis
+	indexStatus = widget.NewLabel("")
 
 	// Debounce keystrokes: only search once typing pauses, so fast typing
 	// doesn't fire a DB query per character. Runs on the UI thread.
 	entry.OnChanged = func(s string) {
+		entry.showClear()
 		if searchDebounceTimer != nil {
 			searchDebounceTimer.Stop()
 		}
@@ -1129,8 +1253,9 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	}
 
 	content := container.NewBorder(
-		entry,
-		statusBar,
+		container.NewPadded(entry),
+		container.NewVBox(widget.NewSeparator(),
+			container.NewBorder(nil, nil, nil, indexStatus, statusBar)),
 		nil,
 		nil,
 		container.NewStack(table, makeEmptyState()),
