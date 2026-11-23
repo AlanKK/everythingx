@@ -6,8 +6,10 @@ require (
 	fyne.io/fyne/v2 v2.8.2
 	github.com/dweymouth/fyne-tooltip v0.4.0
 	github.com/fsnotify/fsevents v0.2.0
+	github.com/godbus/dbus/v5 v5.2.4
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/mattn/go-sqlite3 v1.14.53
+	github.com/rymdport/portal v0.4.2
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/sys v0.49.0
 	golang.org/x/text v0.43.0
@@ -27,7 +29,6 @@ require (
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2 // indirect
 	github.com/go-text/render v0.2.1 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
-	github.com/godbus/dbus/v5 v5.2.4 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.1 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect
@@ -35,7 +36,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.31 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
-	github.com/rymdport/portal v0.4.2 // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/yuin/goldmark v1.8.6 // indirect

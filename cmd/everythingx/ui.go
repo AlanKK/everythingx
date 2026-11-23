@@ -413,6 +413,9 @@ func (c *tooltipCell) cancelToolTip() {
 // flashStatus shows a transient message in the status bar, then restores the
 // result count. Must be called on the UI thread.
 func flashStatus(msg string) {
+	if statusBar == nil {
+		return
+	}
 	statusBar.SetText(msg)
 	time.AfterFunc(1500*time.Millisecond, func() {
 		fyne.Do(func() {
@@ -437,9 +440,17 @@ func (c *tooltipCell) MouseDown(e *desktop.MouseEvent) {
 
 func (c *tooltipCell) MouseUp(_ *desktop.MouseEvent) {}
 
-// DoubleTapped reveals the file in the system file manager.
+// pathColumn is the table column holding the containing folder.
+const pathColumn = 1
+
+// DoubleTapped on the Path column shows the item selected in its folder, which
+// is what that column is about. Anywhere else it opens the item itself.
 func (c *tooltipCell) DoubleTapped(_ *fyne.PointEvent) {
-	revealFile(c.path)
+	if c.col == pathColumn {
+		revealFile(c.path)
+		return
+	}
+	openFile(c.path)
 }
 
 // TappedSecondary opens the row's context menu.
@@ -454,16 +465,39 @@ func (c *tooltipCell) TappedSecondary(e *fyne.PointEvent) {
 	// fires under the menu with nowhere to draw.
 	c.cancelToolTip()
 
-	path := c.path
-	menu := fyne.NewMenu("",
+	widget.NewPopUpMenu(contextMenu(c.path), mainWindow.Canvas()).ShowAtPosition(e.AbsolutePosition)
+}
+
+// contextMenu is the right-click menu for a result.
+func contextMenu(path string) *fyne.Menu {
+	return fyne.NewMenu("",
+		fyne.NewMenuItem("Open", func() { openFile(path) }),
 		fyne.NewMenuItem(revealLabel, func() { revealFile(path) }),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Copy Name", func() { copyToClipboard(filepath.Base(path)) }),
 		fyne.NewMenuItem("Copy Full Path", func() { copyToClipboard(path) }),
 		fyne.NewMenuItem("Copy Containing Folder", func() { copyToClipboard(filepath.Dir(path)) }),
 	)
-	widget.NewPopUpMenu(menu, mainWindow.Canvas()).ShowAtPosition(e.AbsolutePosition)
 }
+
+// cellIcon is the file-type icon beside a Name cell. A plain widget.Icon takes
+// no input, and the table offers no double-click of its own, so clicks on the
+// icon would do nothing. It passes them to the cell it sits beside instead.
+type cellIcon struct {
+	widget.Icon
+	cell *tooltipCell
+}
+
+func newCellIcon(cell *tooltipCell) *cellIcon {
+	i := &cellIcon{cell: cell}
+	i.ExtendBaseWidget(i)
+	return i
+}
+
+func (i *cellIcon) MouseDown(e *desktop.MouseEvent)    { i.cell.MouseDown(e) }
+func (i *cellIcon) MouseUp(e *desktop.MouseEvent)      { i.cell.MouseUp(e) }
+func (i *cellIcon) DoubleTapped(e *fyne.PointEvent)    { i.cell.DoubleTapped(e) }
+func (i *cellIcon) TappedSecondary(e *fyne.PointEvent) { i.cell.TappedSecondary(e) }
 
 func (c *tooltipCell) selectRow() {
 	if c.row >= 0 {
@@ -541,16 +575,10 @@ func moveSelection(delta int) {
 	t.ScrollTo(widget.TableCellID{Row: next, Col: 0})
 }
 
-// revealFile launches the file manager off the UI thread; "open -R" and
-// "xdg-open" take long enough to stall a click.
-func revealFile(path string) {
-	go handleOpenFile(path)
-}
-
-// openSelected reveals the highlighted result in the system file manager.
+// openSelected opens the highlighted result, as double-clicking its name does.
 func openSelected() {
 	if selectedRow >= 0 && selectedRow < len(tableData) {
-		revealFile(tableData[selectedRow].SearchResult.Fullpath)
+		openFile(tableData[selectedRow].SearchResult.Fullpath)
 	}
 }
 
@@ -694,11 +722,12 @@ func makeTable() *widget.Table {
 			// Stack: selection highlight behind, icon + text in front. The icon
 			// is only shown for the Name column; a hidden object is skipped by
 			// the border layout, so the other columns keep their full width.
-			icon := widget.NewIcon(nil)
+			text := newTooltipCell()
+			icon := newCellIcon(text)
 			icon.Hide()
 			return container.NewStack(
 				canvas.NewRectangle(color.Transparent),
-				container.NewBorder(nil, nil, icon, nil, newTooltipCell()),
+				container.NewBorder(nil, nil, icon, nil, text),
 			)
 		},
 		// UpdateCell()
@@ -712,7 +741,7 @@ func makeTable() *widget.Table {
 			bg := stack.Objects[0].(*canvas.Rectangle)
 			inner := stack.Objects[1].(*fyne.Container)
 			richText := inner.Objects[0].(*tooltipCell)
-			icon := inner.Objects[1].(*widget.Icon)
+			icon := inner.Objects[1].(*cellIcon)
 
 			if richText.path != row.SearchResult.Fullpath {
 				// Scrolling recycles this cell onto another row without the

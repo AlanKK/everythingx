@@ -171,7 +171,7 @@ func TestUpdateCellRendersIconAndSelection(t *testing.T) {
 	bg := stack.Objects[0].(*canvas.Rectangle)
 	inner := stack.Objects[1].(*fyne.Container)
 	text := inner.Objects[0].(*tooltipCell)
-	icon := inner.Objects[1].(*widget.Icon)
+	icon := inner.Objects[1].(*cellIcon)
 
 	if !icon.Visible() {
 		t.Error("icon hidden in the Name column")
@@ -727,4 +727,109 @@ func TestNameSegments(t *testing.T) {
 	if segs := nameSegments([]string{long, "hit", ""}); len(segs) != 1 {
 		t.Errorf("highlight past the column edge should render plain, got %d segments", len(segs))
 	}
+}
+
+// cellParts builds a cell for row 0 at col and returns its text and icon.
+func cellParts(table *widget.Table, col int) (*tooltipCell, *cellIcon) {
+	cell := table.CreateCell()
+	table.UpdateCell(widget.TableCellID{Row: 0, Col: col}, cell)
+	inner := cell.(*fyne.Container).Objects[1].(*fyne.Container)
+	return inner.Objects[0].(*tooltipCell), inner.Objects[1].(*cellIcon)
+}
+
+func oneRow(path string) []RowData {
+	base := filepath.Base(path)
+	return []RowData{{
+		Name:         []string{base, "", ""},
+		Base:         base,
+		Path:         filepath.Dir(path),
+		SearchResult: &shared.SearchResult{Fullpath: path, ObjectType: shared.ItemIsFile},
+	}}
+}
+
+// Double-clicking the Path column is about the folder, so it reveals the item
+// there. Every other column opens the item itself.
+func TestDoubleTapDispatchesByColumn(t *testing.T) {
+	calls := stubLaunchers(t)
+	table := makeTable()
+	defer func() { tableData, selectedRow = nil, -1 }()
+
+	path := tempFile(t, "movie.mkv")
+	tableData = oneRow(path)
+
+	for col := range 4 {
+		text, _ := cellParts(table, col)
+		text.DoubleTapped(&fyne.PointEvent{})
+		want := "open"
+		if col == pathColumn {
+			want = "reveal"
+		}
+		expectLaunch(t, calls, want, path)
+	}
+}
+
+func TestEnterOpensSelectedRow(t *testing.T) {
+	calls := stubLaunchers(t)
+	makeTable()
+	defer func() { tableData, selectedRow = nil, -1 }()
+
+	path := tempFile(t, "song.flac")
+	tableData = oneRow(path)
+	entry := newSearchEntry()
+
+	selectedRow = -1
+	entry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	expectNoLaunch(t, calls)
+
+	selectedRow = 0
+	entry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	expectLaunch(t, calls, "open", path)
+}
+
+func TestContextMenuItems(t *testing.T) {
+	menu := contextMenu("/tmp/a.txt")
+	var got []string
+	for _, item := range menu.Items {
+		if item.IsSeparator {
+			got = append(got, "---")
+			continue
+		}
+		got = append(got, item.Label)
+	}
+	want := []string{"Open", revealLabel, "---", "Copy Name", "Copy Full Path", "Copy Containing Folder"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("menu = %q, want %q", got, want)
+	}
+}
+
+func TestContextMenuOpenAndReveal(t *testing.T) {
+	calls := stubLaunchers(t)
+	path := tempFile(t, "doc.pdf")
+	menu := contextMenu(path)
+
+	menu.Items[0].Action()
+	expectLaunch(t, calls, "open", path)
+	menu.Items[1].Action()
+	expectLaunch(t, calls, "reveal", path)
+}
+
+// The icon sits beside the Name text, and a click on it must act as a click on
+// the name: select the row on press, open on double-click.
+func TestNameIconForwardsToCell(t *testing.T) {
+	calls := stubLaunchers(t)
+	table := makeTable()
+	defer func() { tableData, selectedRow = nil, -1 }()
+
+	path := tempFile(t, "photo.jpg")
+	tableData = oneRow(path)
+	selectedRow = -1
+
+	_, icon := cellParts(table, 0)
+	icon.MouseDown(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary})
+	if selectedRow != 0 {
+		t.Errorf("selected row = %d after pressing the icon, want 0", selectedRow)
+	}
+
+	icon.DoubleTapped(&fyne.PointEvent{})
+	expectLaunch(t, calls, "open", path)
 }
