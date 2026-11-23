@@ -27,9 +27,6 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-
-	fynetooltip "github.com/dweymouth/fyne-tooltip"
-	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // searchDebounce is how long to wait after the last keystroke before running a
@@ -355,61 +352,37 @@ func handleAutoCompleteEntryChanged(searchText string, opts searchOptions, t *wi
 	}()
 }
 
-// tooltipCell is a RichText cell that lazily fetches file info on hover.
-type tooltipCell struct {
-	ttwidget.RichText
-	path    string
-	col     int
-	row     int
-	hovered bool
+// resultCell is a RichText cell in the results table. It takes the pointer
+// and clicks for its row: hover and selection highlights, opening, and the
+// context menu.
+type resultCell struct {
+	widget.RichText
+	path string
+	col  int
+	row  int
 }
 
-func newTooltipCell() *tooltipCell {
-	c := &tooltipCell{row: -1}
+func newTooltipCell() *resultCell {
+	c := &resultCell{row: -1}
 	c.Scroll = container.ScrollNone
 	c.Truncation = fyne.TextTruncateEllipsis
 	c.RichText.ExtendBaseWidget(c)
 	return c
 }
 
-func (c *tooltipCell) MouseIn(e *desktop.MouseEvent) {
-	// getToolTipForFile does blocking file I/O (os.Stat + user/group lookups).
-	// Run it off the UI thread so hovering over rows never stalls the UI, then
-	// set the text and start the hover timer together on the UI thread. Arming
-	// the timer first would show whatever the previously hovered row left behind,
-	// since cells are recycled.
-	c.hovered = true
+// MouseIn lights the row the pointer has entered.
+func (c *resultCell) MouseIn(_ *desktop.MouseEvent) {
 	setHoveredRow(c.row)
-	path := c.path
-	maxChars := tooltipMaxChars() // read window width on the UI thread
-	decimalSizes := prefs.DecimalSizes
-	go func() {
-		tip := getToolTipForFile(path, maxChars, decimalSizes)
-		fyne.Do(func() {
-			if !c.hovered || c.path != path {
-				return
-			}
-			c.SetToolTip(tip)
-			c.RichText.MouseIn(e)
-		})
-	}()
 }
+
+func (c *resultCell) MouseMoved(_ *desktop.MouseEvent) {}
 
 // MouseOut fires when the pointer leaves this cell, including on the way out of
 // the table entirely, so it is where the row highlight is dropped. Moving to
 // another cell clears and re-sets the highlight before the next paint, so a
 // sweep across a row does not flicker.
-func (c *tooltipCell) MouseOut() {
+func (c *resultCell) MouseOut() {
 	setHoveredRow(-1)
-	c.cancelToolTip()
-}
-
-// cancelToolTip drops an armed tool tip without touching the row highlight. The
-// widget itself calls this when a cell is recycled or covered by a menu, where
-// the pointer has not actually left the row.
-func (c *tooltipCell) cancelToolTip() {
-	c.hovered = false
-	c.RichText.MouseOut()
 }
 
 // flashStatus shows a transient message in the status bar, then restores the
@@ -434,13 +407,13 @@ func copyToClipboard(text string) {
 // MouseDown selects on press, as a file manager does. Selecting from Tapped
 // instead would feel laggy: Fyne defers Tapped on a DoubleTappable widget until
 // the system double-click interval has passed, to see if a second click lands.
-func (c *tooltipCell) MouseDown(e *desktop.MouseEvent) {
+func (c *resultCell) MouseDown(e *desktop.MouseEvent) {
 	if e.Button == desktop.MouseButtonPrimary {
 		c.selectRow()
 	}
 }
 
-func (c *tooltipCell) MouseUp(_ *desktop.MouseEvent) {}
+func (c *resultCell) MouseUp(_ *desktop.MouseEvent) {}
 
 // nameColumn and pathColumn are the table columns holding the file name and
 // the containing folder.
@@ -452,14 +425,14 @@ const (
 // Tapped on the Name column opens the item, like a link. Fyne only delivers it
 // once the double-click interval passes with no second click, so a double-click
 // opens the item once, through DoubleTapped.
-func (c *tooltipCell) Tapped(_ *fyne.PointEvent) {
+func (c *resultCell) Tapped(_ *fyne.PointEvent) {
 	if c.col == nameColumn {
 		openFile(c.path)
 	}
 }
 
 // Cursor shows a pointing hand over the Name column, where a click opens.
-func (c *tooltipCell) Cursor() desktop.Cursor {
+func (c *resultCell) Cursor() desktop.Cursor {
 	if c.col == nameColumn {
 		return desktop.PointerCursor
 	}
@@ -468,7 +441,7 @@ func (c *tooltipCell) Cursor() desktop.Cursor {
 
 // DoubleTapped on the Path column shows the item selected in its folder, which
 // is what that column is about. Anywhere else it opens the item itself.
-func (c *tooltipCell) DoubleTapped(_ *fyne.PointEvent) {
+func (c *resultCell) DoubleTapped(_ *fyne.PointEvent) {
 	if c.col == pathColumn {
 		revealFile(c.path)
 		return
@@ -477,42 +450,48 @@ func (c *tooltipCell) DoubleTapped(_ *fyne.PointEvent) {
 }
 
 // TappedSecondary opens the row's context menu.
-func (c *tooltipCell) TappedSecondary(e *fyne.PointEvent) {
+func (c *resultCell) TappedSecondary(e *fyne.PointEvent) {
 	if c.path == "" {
 		return
 	}
 	c.selectRow()
-
-	// A tool tip draws into the layer on the window content, which the menu
-	// overlay covers. Cancel any pending one before the overlay goes up, or it
-	// fires under the menu with nowhere to draw.
-	c.cancelToolTip()
-
 	widget.NewPopUpMenu(contextMenu(c.path), mainWindow.Canvas()).ShowAtPosition(e.AbsolutePosition)
 }
 
-// contextMenu is the right-click menu for a result.
+// contextMenu is the right-click menu for a result. Actions get an icon, as
+// in a GTK app's menus; Open With, whose submenu carries the app icons, gets
+// a blank one so its label lines up with the rest.
 func contextMenu(path string) *fyne.Menu {
+	openWith := openWithMenuItem(path)
+	openWith.Icon = blankMenuIcon
 	return fyne.NewMenu("",
-		fyne.NewMenuItem("Open", func() { openFile(path) }),
-		openWithMenuItem(path),
-		fyne.NewMenuItem(revealLabel, func() { revealFile(path) }),
+		fyne.NewMenuItemWithIcon("Open", theme.DocumentIcon(), func() { openFile(path) }),
+		openWith,
+		fyne.NewMenuItemWithIcon(revealLabel, theme.FolderOpenIcon(), func() { revealFile(path) }),
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Copy Name", func() { copyToClipboard(filepath.Base(path)) }),
-		fyne.NewMenuItem("Copy Full Path", func() { copyToClipboard(path) }),
-		fyne.NewMenuItem("Copy Directory Path", func() { copyToClipboard(filepath.Dir(path)) }),
+		fyne.NewMenuItemWithIcon("Copy Name", theme.ContentCopyIcon(), func() { copyToClipboard(filepath.Base(path)) }),
+		fyne.NewMenuItemWithIcon("Copy Full Path", theme.ContentCopyIcon(), func() { copyToClipboard(path) }),
+		fyne.NewMenuItemWithIcon("Copy Directory Path", theme.ContentCopyIcon(), func() { copyToClipboard(filepath.Dir(path)) }),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItemWithIcon(propertiesLabel, theme.InfoIcon(), func() { showProperties(path) }),
 	)
 }
+
+// blankMenuIcon is an empty icon for a menu item that has none. Fyne starts
+// the label where the icon ends, so an item without one would sit out of line
+// with its neighbours'.
+var blankMenuIcon = fyne.NewStaticResource("blank.svg",
+	[]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"/>`))
 
 // cellIcon is the file-type icon beside a Name cell. A plain widget.Icon takes
 // no input, and the table offers no double-click of its own, so clicks on the
 // icon would do nothing. It passes them to the cell it sits beside instead.
 type cellIcon struct {
 	widget.Icon
-	cell *tooltipCell
+	cell *resultCell
 }
 
-func newCellIcon(cell *tooltipCell) *cellIcon {
+func newCellIcon(cell *resultCell) *cellIcon {
 	i := &cellIcon{cell: cell}
 	i.ExtendBaseWidget(i)
 	return i
@@ -525,7 +504,7 @@ func (i *cellIcon) Cursor() desktop.Cursor             { return i.cell.Cursor() 
 func (i *cellIcon) DoubleTapped(e *fyne.PointEvent)    { i.cell.DoubleTapped(e) }
 func (i *cellIcon) TappedSecondary(e *fyne.PointEvent) { i.cell.TappedSecondary(e) }
 
-func (c *tooltipCell) selectRow() {
+func (c *resultCell) selectRow() {
 	if c.row >= 0 {
 		selectRow(c.row)
 	}
@@ -546,9 +525,9 @@ var selectedRow = -1
 // selectedRow, so the whole row lights up rather than just the cell. UI thread
 // only.
 //
-// It is fed from tooltipCell.MouseIn/MouseOut rather than the table's own
+// It is fed from resultCell.MouseIn/MouseOut rather than the table's own
 // OnHighlighted callback: the driver delivers hover to a single object, the
-// innermost hoverable one, and every data cell is a hoverable tooltipCell. The
+// innermost hoverable one, and every data cell is a hoverable resultCell. The
 // table therefore only ever sees the positions between and around cells, which
 // it treats as "no cell", so OnHighlighted never fires over a result row.
 var hoveredRow = -1
@@ -829,13 +808,12 @@ func makeTable() *widget.Table {
 			stack := cell.(*fyne.Container)
 			bg := stack.Objects[0].(*canvas.Rectangle)
 			inner := stack.Objects[1].(*fyne.Container)
-			richText := inner.Objects[0].(*tooltipCell)
+			richText := inner.Objects[0].(*resultCell)
 			icon := inner.Objects[1].(*cellIcon)
 
 			if richText.path != row.SearchResult.Fullpath {
 				// Scrolling recycles this cell onto another row without the
-				// pointer moving, so no MouseOut arrives. A tip already armed
-				// would fire with the old file's details.
+				// pointer moving, so no MouseOut arrives.
 				if richText.path != "" {
 					// Taking a different file (rather than being filled in for
 					// the first time) means the list moved under a pointer that
@@ -844,7 +822,6 @@ func makeTable() *widget.Table {
 					// setHoveredRow, which would refresh from inside a refresh.
 					hoveredRow = -1
 				}
-				richText.cancelToolTip()
 				richText.path = row.SearchResult.Fullpath
 			}
 			richText.col = id.Col
@@ -971,8 +948,9 @@ var headerTitles = [4]string{"Name", "Path", "Size", "Last Modified"}
 type sortHeader struct {
 	widget.Label
 	col int
-	// sortDir is 1 when the results are sorted up this column, -1 when down
-	// it, and 0 when they are sorted by another.
+	// sortDir is 1 when the results are sorted ascending (A to Z, smallest
+	// or oldest first) by this column, -1 when descending, and 0 when they
+	// are sorted by another.
 	sortDir int
 }
 
@@ -1048,12 +1026,13 @@ var (
 )
 
 // updateArrow shows the triangle for the header's sort direction, or none.
+// As in GTK, ascending points down and descending up.
 func (r *sortHeaderRenderer) updateArrow() {
 	switch r.h.sortDir {
 	case 1:
-		r.arrow.Resource = sortUpIcon
-	case -1:
 		r.arrow.Resource = sortDownIcon
+	case -1:
+		r.arrow.Resource = sortUpIcon
 	default:
 		r.arrow.Resource = nil
 	}
@@ -1090,66 +1069,6 @@ func (h *sortHeader) Tapped(_ *fyne.PointEvent) {
 	hoveredRow = -1
 	t.Refresh()
 	t.ScrollToTop()
-}
-
-func getToolTipForFile(path string, maxChars int, decimalSizes bool) string {
-	info, err := shared.GetFileInfo(path, decimalSizes)
-	if err != nil {
-		return "No access"
-	}
-
-	return fmt.Sprintf("%s\n\n%s", wrapPath(path, maxChars), info)
-}
-
-// tooltipMaxWidth mirrors the cap fyne-tooltip's internal layer uses when
-// sizing the tooltip popup.
-const tooltipMaxWidth = 600
-
-// tooltipMaxChars returns how many monospace characters fit across the tooltip
-// at the current window width, so long paths can be wrapped to fit rather than
-// stretching the popup. Must be called on the UI thread (it reads window size).
-func tooltipMaxChars() int {
-	width := float32(tooltipMaxWidth)
-	if mainWindow != nil {
-		if cw := mainWindow.Canvas().Size().Width; cw > 0 && cw < width {
-			width = cw
-		}
-	}
-	width -= theme.InnerPadding() * 2
-
-	charW := fyne.MeasureText("M", theme.CaptionTextSize(), fyne.TextStyle{}).Width
-	if charW <= 0 {
-		return 64
-	}
-	n := int(width / charW)
-	if n < 16 {
-		n = 16
-	}
-	return n
-}
-
-// wrapPath breaks a long path across multiple lines so it fits within maxChars
-// columns, preferring to break just after a path separator for readability and
-// falling back to a hard break for very long unbroken segments.
-func wrapPath(path string, maxChars int) string {
-	if maxChars < 8 {
-		maxChars = 8
-	}
-
-	var b strings.Builder
-	for len(path) > maxChars {
-		cut := strings.LastIndex(path[:maxChars], "/")
-		if cut <= 0 {
-			cut = maxChars // no separator to break on; hard-break
-		} else {
-			cut++ // keep the separator at the end of the current line
-		}
-		b.WriteString(path[:cut])
-		b.WriteByte('\n')
-		path = path[cut:]
-	}
-	b.WriteString(path)
-	return b.String()
 }
 
 func showAbout() {
@@ -1322,7 +1241,7 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 		container.NewStack(table, makeEmptyState()),
 	)
 
-	w.SetContent(fynetooltip.AddWindowToolTipLayer(content, w.Canvas()))
+	w.SetContent(content)
 	w.Canvas().Focus(entry)
 	w.Resize(fyne.NewSize(1300, 800))
 

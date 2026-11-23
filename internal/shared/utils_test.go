@@ -3,7 +3,6 @@ package shared
 import (
 	"compress/gzip"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -35,32 +34,14 @@ func TestSplitFileName(t *testing.T) {
 	}
 }
 
-func TestGetFileInfo(t *testing.T) {
-	// Create a temporary file for testing
-	tmpFile, err := os.CreateTemp("", "testfile")
+func TestFileOwnerGroup(t *testing.T) {
+	info, err := os.Stat(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpFile.Name())
-
-	// Write some data to the file
-	if _, err := tmpFile.Write([]byte("Hello, World!")); err != nil {
-		t.Fatal(err)
-	}
-	tmpFile.Close()
-
-	// Get file info
-	info, err := GetFileInfo(tmpFile.Name(), false)
-	if err != nil {
-		t.Errorf("getFileInfo(%q) returned error: %v", tmpFile.Name(), err)
-	}
-
-	// Check if the output contains expected substrings
-	expectedSubstrings := []string{"Mode", "Owner", "Group", "Size", "Last Modified"}
-	for _, substr := range expectedSubstrings {
-		if !strings.Contains(info, substr) {
-			t.Errorf("getFileInfo(%q) = %q; want it to contain %q", tmpFile.Name(), info, substr)
-		}
+	owner, group := FileOwnerGroup(info)
+	if owner == "" || group == "" {
+		t.Errorf("FileOwnerGroup = %q, %q; want both set", owner, group)
 	}
 }
 

@@ -170,7 +170,7 @@ func TestUpdateCellRendersIconAndSelection(t *testing.T) {
 	stack := cell.(*fyne.Container)
 	bg := stack.Objects[0].(*canvas.Rectangle)
 	inner := stack.Objects[1].(*fyne.Container)
-	text := inner.Objects[0].(*tooltipCell)
+	text := inner.Objects[0].(*resultCell)
 	icon := inner.Objects[1].(*cellIcon)
 
 	if !icon.Visible() {
@@ -217,9 +217,10 @@ func TestUpdateHeaderShowsSortDirection(t *testing.T) {
 			t.Errorf("%s arrow = %v (hidden %v), want %v", wantText, r.arrow.Resource, r.arrow.Hidden, wantArrow)
 		}
 	}
-	check(2, "Size", sortUpIcon)
-	sortAsc = false
+	// GTK's convention: ascending points down.
 	check(2, "Size", sortDownIcon)
+	sortAsc = false
+	check(2, "Size", sortUpIcon)
 	check(0, "Name", nil)
 }
 
@@ -348,7 +349,7 @@ func TestCellHoverLightsItsRow(t *testing.T) {
 
 	cell := table.CreateCell()
 	table.UpdateCell(widget.TableCellID{Row: 1, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
+	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*resultCell)
 
 	text.MouseIn(&desktop.MouseEvent{})
 
@@ -368,7 +369,7 @@ func TestCellMouseOutClearsRow(t *testing.T) {
 
 	cell := table.CreateCell()
 	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
+	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*resultCell)
 
 	hoveredRow = 0 // set by MouseIn on entry
 	text.MouseOut()
@@ -415,31 +416,6 @@ func TestScrollDropsHoverHighlight(t *testing.T) {
 	}
 }
 
-// Recycling a cell and opening the context menu both cancel a pending tool tip,
-// but the pointer has not left the row, so the highlight must survive both.
-func TestToolTipCancelKeepsRowHighlight(t *testing.T) {
-	table := makeTable()
-	mainWindow = test.NewWindow(nil)
-	defer func() { tableData, selectedRow, hoveredRow, mainWindow = nil, -1, -1, nil }()
-
-	result := &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}
-	tableData = []RowData{{Name: []string{"a", "", ""}, Base: "a", SearchResult: result}}
-
-	cell := table.CreateCell()
-	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
-
-	hoveredRow = 0
-	text.cancelToolTip()
-
-	if hoveredRow != 0 {
-		t.Errorf("hovered row = %d after cancelling a tool tip, want 0", hoveredRow)
-	}
-	if text.hovered {
-		t.Error("cancelToolTip left the tip armed")
-	}
-}
-
 // Selection must happen on press. Fyne defers Tapped on a DoubleTappable
 // widget for the system double-click interval, so selecting from Tapped shows
 // up as a visible lag before the row highlights.
@@ -456,67 +432,12 @@ func TestCellSelectsOnMouseDown(t *testing.T) {
 
 	cell := table.CreateCell()
 	table.UpdateCell(widget.TableCellID{Row: 1, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
+	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*resultCell)
 
 	text.MouseDown(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary})
 
 	if selectedRow != 1 {
 		t.Errorf("selected row = %d after press, want 1", selectedRow)
-	}
-}
-
-// The tool tip layer lives on the window content, which the menu overlay
-// covers. A tip left armed when the menu opens fires with nowhere to draw and
-// logs "no tool tip layer created for current overlay".
-func TestContextMenuCancelsPendingToolTip(t *testing.T) {
-	stubLaunchers(t)
-	table := makeTable()
-	mainWindow = test.NewWindow(nil)
-	defer func() { tableData, selectedRow, mainWindow = nil, -1, nil }()
-
-	result := &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}
-	tableData = []RowData{{Name: []string{"a", "", ""}, Base: "a", SearchResult: result}}
-
-	cell := table.CreateCell()
-	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
-
-	// Set by MouseIn on entry; not calling it keeps the test on one goroutine,
-	// as the test driver runs fyne.Do inline rather than on the UI thread.
-	text.hovered = true
-
-	text.TappedSecondary(&fyne.PointEvent{})
-
-	if text.hovered {
-		t.Error("cell still hovered after the context menu opened, so a tool tip can fire under it")
-	}
-}
-
-// Scrolling repoints a cell at another row with the pointer sitting still, so
-// no MouseOut arrives. A tip armed for the old row would show its details on
-// the new one.
-func TestRecyclingCellCancelsPendingToolTip(t *testing.T) {
-	table := makeTable()
-	defer func() { tableData, selectedRow = nil, -1 }()
-
-	tableData = []RowData{
-		{Name: []string{"a", "", ""}, Base: "a", SearchResult: &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}},
-		{Name: []string{"b", "", ""}, Base: "b", SearchResult: &shared.SearchResult{Fullpath: "/tmp/b", ObjectType: shared.ItemIsFile}},
-	}
-
-	cell := table.CreateCell()
-	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
-
-	text.hovered = true // set by MouseIn on entry
-	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
-	if !text.hovered {
-		t.Error("a refresh that left the cell on the same file dropped the pending tool tip")
-	}
-
-	table.UpdateCell(widget.TableCellID{Row: 1, Col: 0}, cell)
-	if text.hovered {
-		t.Error("cell still hovered after moving to another file, so its tool tip shows the wrong details")
 	}
 }
 
@@ -740,11 +661,11 @@ func TestNameSegments(t *testing.T) {
 }
 
 // cellParts builds a cell for row 0 at col and returns its text and icon.
-func cellParts(table *widget.Table, col int) (*tooltipCell, *cellIcon) {
+func cellParts(table *widget.Table, col int) (*resultCell, *cellIcon) {
 	cell := table.CreateCell()
 	table.UpdateCell(widget.TableCellID{Row: 0, Col: col}, cell)
 	inner := cell.(*fyne.Container).Objects[1].(*fyne.Container)
-	return inner.Objects[0].(*tooltipCell), inner.Objects[1].(*cellIcon)
+	return inner.Objects[0].(*resultCell), inner.Objects[1].(*cellIcon)
 }
 
 func oneRow(path string) []RowData {
@@ -807,9 +728,32 @@ func TestContextMenuItems(t *testing.T) {
 		}
 		got = append(got, item.Label)
 	}
-	want := []string{"Open", openWithLabel, revealLabel, "---", "Copy Name", "Copy Full Path", "Copy Directory Path"}
+	want := []string{"Open", openWithLabel, revealLabel, "---", "Copy Name", "Copy Full Path", "Copy Directory Path", "---", propertiesLabel}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("menu = %q, want %q", got, want)
+	}
+}
+
+// Every item has an icon, a blank one where there is none to show, so the
+// labels line up in a column.
+func TestContextMenuIcons(t *testing.T) {
+	stubLaunchers(t)
+	want := map[string]fyne.Resource{
+		"Open":                theme.DocumentIcon(),
+		openWithLabel:         blankMenuIcon,
+		revealLabel:           theme.FolderOpenIcon(),
+		"Copy Name":           theme.ContentCopyIcon(),
+		"Copy Full Path":      theme.ContentCopyIcon(),
+		"Copy Directory Path": theme.ContentCopyIcon(),
+		propertiesLabel:       theme.InfoIcon(),
+	}
+	for _, item := range contextMenu("/tmp/a.txt").Items {
+		if item.IsSeparator {
+			continue
+		}
+		if w, ok := want[item.Label]; !ok || item.Icon == nil || item.Icon.Name() != w.Name() {
+			t.Errorf("%q icon = %v, want %v", item.Label, item.Icon, w)
+		}
 	}
 }
 
