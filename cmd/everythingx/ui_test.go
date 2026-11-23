@@ -817,3 +817,46 @@ func TestTapOpensOnlyFromNameColumn(t *testing.T) {
 	icon.Tapped(&fyne.PointEvent{})
 	expectLaunch(t, calls, "open", path)
 }
+
+// A cell whose text fits shows no tool tip; one cut short shows all of it,
+// across every segment of a highlighted name.
+func TestTruncatedText(t *testing.T) {
+	test.NewTempApp(t)
+	c := newResultCell()
+	c.Segments = []widget.RichTextSegment{
+		inlineNameSegment("annual_", false, false),
+		inlineNameSegment("report", true, false),
+		inlineNameSegment("_2026.pdf", false, false),
+	}
+	c.Resize(fyne.NewSize(1000, 30))
+	if got := c.truncatedText(); got != "" {
+		t.Errorf("wide cell: tip %q, want none", got)
+	}
+	c.Resize(fyne.NewSize(60, 30))
+	if got := c.truncatedText(); got != "annual_report_2026.pdf" {
+		t.Errorf("narrow cell: tip %q, want the full name", got)
+	}
+}
+
+// Entering a cell whose text is cut short arms its tool tip with the full
+// text; entering one that fits arms none.
+func TestMouseInSetsToolTipOnlyWhenTruncated(t *testing.T) {
+	test.NewTempApp(t)
+	defer func() { hoveredRow = -1 }()
+	c := newResultCell()
+	c.Segments = []widget.RichTextSegment{textSegment("/home/alan/some/deep/folder/", fyne.TextAlignLeading, false)}
+
+	c.Resize(fyne.NewSize(1000, 30))
+	c.MouseIn(&desktop.MouseEvent{})
+	if got := c.ToolTip(); got != "" {
+		t.Errorf("fitting text armed tip %q", got)
+	}
+	c.MouseOut()
+
+	c.Resize(fyne.NewSize(50, 30))
+	c.MouseIn(&desktop.MouseEvent{})
+	if got := c.ToolTip(); got != "/home/alan/some/deep/folder/" {
+		t.Errorf("truncated text armed tip %q, want the full path", got)
+	}
+	c.MouseOut()
+}

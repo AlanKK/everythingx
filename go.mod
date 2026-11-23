@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	fyne.io/fyne/v2 v2.8.2
+	github.com/dweymouth/fyne-tooltip v0.4.0
 	github.com/fsnotify/fsevents v0.2.0
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/jessevdk/go-flags v1.6.1

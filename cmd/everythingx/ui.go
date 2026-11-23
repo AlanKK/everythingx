@@ -27,6 +27,8 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // searchDebounce is how long to wait after the last keystroke before running a
@@ -354,15 +356,16 @@ func handleAutoCompleteEntryChanged(searchText string, opts searchOptions, t *wi
 
 // resultCell is a RichText cell in the results table. It takes the pointer
 // and clicks for its row: hover and selection highlights, opening, and the
-// context menu.
+// context menu. When its text is cut short with an ellipsis, hovering shows
+// the whole of it in a tool tip.
 type resultCell struct {
-	widget.RichText
+	ttwidget.RichText
 	path string
 	col  int
 	row  int
 }
 
-func newTooltipCell() *resultCell {
+func newResultCell() *resultCell {
 	c := &resultCell{row: -1}
 	c.Scroll = container.ScrollNone
 	c.Truncation = fyne.TextTruncateEllipsis
@@ -370,12 +373,13 @@ func newTooltipCell() *resultCell {
 	return c
 }
 
-// MouseIn lights the row the pointer has entered.
-func (c *resultCell) MouseIn(_ *desktop.MouseEvent) {
+// MouseIn lights the row the pointer has entered and, if the cell's text
+// doesn't fit, arms a tool tip with all of it.
+func (c *resultCell) MouseIn(e *desktop.MouseEvent) {
 	setHoveredRow(c.row)
+	c.SetToolTip(c.truncatedText())
+	c.RichText.MouseIn(e)
 }
-
-func (c *resultCell) MouseMoved(_ *desktop.MouseEvent) {}
 
 // MouseOut fires when the pointer leaves this cell, including on the way out of
 // the table entirely, so it is where the row highlight is dropped. Moving to
@@ -383,6 +387,38 @@ func (c *resultCell) MouseMoved(_ *desktop.MouseEvent) {}
 // sweep across a row does not flicker.
 func (c *resultCell) MouseOut() {
 	setHoveredRow(-1)
+	c.cancelToolTip()
+}
+
+// cancelToolTip drops a pending or showing tool tip without touching the row
+// highlight, for when the cell changes under a pointer that hasn't left it.
+func (c *resultCell) cancelToolTip() {
+	c.RichText.MouseOut()
+}
+
+// truncatedText is the cell's full text when it is too wide for the cell, so
+// it is drawn cut short, or "" when it all shows.
+func (c *resultCell) truncatedText() string {
+	th := c.Theme()
+	avail := c.Size().Width - 2*th.Size(theme.SizeNameInnerPadding)
+	var width float32
+	var text strings.Builder
+	for _, seg := range c.Segments {
+		ts, ok := seg.(*widget.TextSegment)
+		if !ok {
+			continue
+		}
+		size := ts.Style.SizeName
+		if size == "" {
+			size = theme.SizeNameText
+		}
+		width += fyne.MeasureText(ts.Text, th.Size(size), ts.Style.TextStyle).Width
+		text.WriteString(ts.Text)
+	}
+	if width <= avail {
+		return ""
+	}
+	return text.String()
 }
 
 // flashStatus shows a transient message in the status bar, then restores the
@@ -408,6 +444,7 @@ func copyToClipboard(text string) {
 // instead would feel laggy: Fyne defers Tapped on a DoubleTappable widget until
 // the system double-click interval has passed, to see if a second click lands.
 func (c *resultCell) MouseDown(e *desktop.MouseEvent) {
+	c.cancelToolTip() // a click means the pointer is busy; don't pop up over it
 	if e.Button == desktop.MouseButtonPrimary {
 		c.selectRow()
 	}
@@ -455,6 +492,12 @@ func (c *resultCell) TappedSecondary(e *fyne.PointEvent) {
 		return
 	}
 	c.selectRow()
+
+	// A tool tip draws into the layer on the window content, which the menu
+	// overlay covers. Cancel any pending one before the overlay goes up, or it
+	// fires under the menu with nowhere to draw.
+	c.cancelToolTip()
+
 	widget.NewPopUpMenu(contextMenu(c.path), mainWindow.Canvas()).ShowAtPosition(e.AbsolutePosition)
 }
 
@@ -789,7 +832,7 @@ func makeTable() *widget.Table {
 			// Stack: selection highlight behind, icon + text in front. The icon
 			// is only shown for the Name column; a hidden object is skipped by
 			// the border layout, so the other columns keep their full width.
-			text := newTooltipCell()
+			text := newResultCell()
 			icon := newCellIcon(text)
 			icon.Hide()
 			return container.New(rowBandLayout{},
@@ -813,7 +856,8 @@ func makeTable() *widget.Table {
 
 			if richText.path != row.SearchResult.Fullpath {
 				// Scrolling recycles this cell onto another row without the
-				// pointer moving, so no MouseOut arrives.
+				// pointer moving, so no MouseOut arrives. A tip already armed
+				// would show the old row's text.
 				if richText.path != "" {
 					// Taking a different file (rather than being filled in for
 					// the first time) means the list moved under a pointer that
@@ -822,6 +866,7 @@ func makeTable() *widget.Table {
 					// setHoveredRow, which would refresh from inside a refresh.
 					hoveredRow = -1
 				}
+				richText.cancelToolTip()
 				richText.path = row.SearchResult.Fullpath
 			}
 			richText.col = id.Col
@@ -1241,7 +1286,7 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 		container.NewStack(table, makeEmptyState()),
 	)
 
-	w.SetContent(content)
+	w.SetContent(fynetooltip.AddWindowToolTipLayer(content, w.Canvas()))
 	w.Canvas().Focus(entry)
 	w.Resize(fyne.NewSize(1300, 800))
 
