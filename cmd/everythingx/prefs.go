@@ -61,6 +61,12 @@ type appPrefs struct {
 	DecimalSizes bool
 	ISODates     bool // "2026-11-23 14:23" rather than "Nov 23 2026 14:23"
 
+	// ExitOnClose quits the app when the main window is closed, instead of
+	// hiding it to the tray. CloseOnEscape closes the main window on Escape;
+	// with both on, Escape quits.
+	ExitOnClose   bool
+	CloseOnEscape bool
+
 	// RememberLayout keeps the column widths and sort order across launches.
 	RememberLayout bool
 	ColumnWidths   [numColumns]float32 // 0 means the default width
@@ -97,6 +103,8 @@ const (
 	keyResultLimit    = "resultLimit"
 	keyShowHidden     = "showHidden"
 	keyDecimalSizes   = "decimalSizes"
+	keyExitOnClose    = "exitOnClose"
+	keyCloseOnEscape  = "closeOnEscape"
 	keyRememberLayout = "rememberLayout"
 	keyColumnWidths   = "columnWidths"
 	keySortCol        = "sortColumn"
@@ -118,6 +126,8 @@ func loadPrefs(store fyne.Preferences) appPrefs {
 		ShowHidden:     store.BoolWithFallback(keyShowHidden, d.ShowHidden),
 		DecimalSizes:   store.BoolWithFallback(keyDecimalSizes, d.DecimalSizes),
 		ISODates:       store.BoolWithFallback(keyISODates, d.ISODates),
+		ExitOnClose:    store.BoolWithFallback(keyExitOnClose, d.ExitOnClose),
+		CloseOnEscape:  store.BoolWithFallback(keyCloseOnEscape, d.CloseOnEscape),
 		RememberLayout: store.BoolWithFallback(keyRememberLayout, d.RememberLayout),
 		SortCol:        store.IntWithFallback(keySortCol, d.SortCol),
 		SortAsc:        store.BoolWithFallback(keySortAsc, d.SortAsc),
@@ -168,6 +178,8 @@ func (p appPrefs) save(store fyne.Preferences) {
 	store.SetBool(keyShowHidden, p.ShowHidden)
 	store.SetBool(keyDecimalSizes, p.DecimalSizes)
 	store.SetBool(keyISODates, p.ISODates)
+	store.SetBool(keyExitOnClose, p.ExitOnClose)
+	store.SetBool(keyCloseOnEscape, p.CloseOnEscape)
 	store.SetBool(keyRememberLayout, p.RememberLayout)
 	widths := make([]float64, numColumns)
 	for i, w := range p.ColumnWidths {

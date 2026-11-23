@@ -21,7 +21,7 @@ func usePrefs(tb testing.TB, p appPrefs) {
 	tb.Helper()
 	store := fyne.CurrentApp().Preferences()
 	for _, k := range []string{keyTheme, keyAccent, keyMatchColor, keyTextScale, keyFont, keyDensity, keyISODates, keyResultLimit,
-		keyShowHidden, keyDecimalSizes, keyRememberLayout, keyColumnWidths, keySortCol, keySortAsc} {
+		keyShowHidden, keyDecimalSizes, keyRememberLayout, keyColumnWidths, keySortCol, keySortAsc, keyExitOnClose, keyCloseOnEscape} {
 		store.RemoveValue(k)
 	}
 	prefs = p
@@ -64,6 +64,8 @@ func TestPrefsRoundTrip(t *testing.T) {
 		ShowHidden:     false,
 		DecimalSizes:   true,
 		ISODates:       true,
+		ExitOnClose:    true,
+		CloseOnEscape:  true,
 		RememberLayout: true,
 		ColumnWidths:   [numColumns]float32{300, 500, 80, 200},
 		SortCol:        2,
@@ -432,6 +434,53 @@ func TestRestoreDefaults(t *testing.T) {
 	}
 	if appTheme.forced {
 		t.Error("theme still forced after restore")
+	}
+}
+
+func TestWindowTabStoresChoices(t *testing.T) {
+	usePrefs(t, defaultPrefs())
+	content := windowTab()
+	test.NewTempWindow(t, content)
+
+	check := func(label string) *widget.Check {
+		c := findWidgetWith(content, func(c *widget.Check) bool { return c.Text == label })
+		if c == nil {
+			t.Fatalf("no %q check on the Window tab", label)
+		}
+		return c
+	}
+	check("Quit EverythingX when the window is closed").SetChecked(true)
+	check("Close the window when Escape is pressed").SetChecked(true)
+	if !prefs.ExitOnClose || !prefs.CloseOnEscape {
+		t.Errorf("after checking both: %+v", prefs)
+	}
+	stored := loadPrefs(fyne.CurrentApp().Preferences())
+	if !stored.ExitOnClose || !stored.CloseOnEscape {
+		t.Errorf("stored prefs after checking both: %+v", stored)
+	}
+}
+
+func TestEscapeClosesWindow(t *testing.T) {
+	usePrefs(t, defaultPrefs())
+	closed := 0
+	closeMainWindow = func() { closed++ }
+	defer func() { closeMainWindow = nil }()
+
+	e := newSearchEntry()
+	test.NewTempWindow(t, e)
+	e.SetText("report")
+	escape := &fyne.KeyEvent{Name: fyne.KeyEscape}
+
+	e.TypedKey(escape)
+	if closed != 0 || e.Text != "" {
+		t.Errorf("with the option off, Escape should clear the search: closed %d, text %q", closed, e.Text)
+	}
+
+	prefs.CloseOnEscape = true
+	e.SetText("report")
+	e.TypedKey(escape)
+	if closed != 1 {
+		t.Errorf("with the option on, Escape closed the window %d times, want 1", closed)
 	}
 }
 

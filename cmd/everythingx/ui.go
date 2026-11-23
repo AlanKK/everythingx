@@ -557,6 +557,21 @@ func (c *resultCell) selectRow() {
 var tableData []RowData
 var t *widget.Table
 var mainWindow fyne.Window
+
+// closeMainWindow is what closing the main window does: quit when the user
+// wants that, else hide it to the tray. Nil until loadUI sets it.
+var closeMainWindow func()
+
+// escapeClosesWindow closes the main window, as closing it would, when the
+// user wants Escape to do that, and reports whether it did. UI thread only.
+func escapeClosesWindow() bool {
+	if !prefs.CloseOnEscape || closeMainWindow == nil {
+		return false
+	}
+	closeMainWindow()
+	return true
+}
+
 var lastResultText string
 
 // selectedRow is the highlighted result, or -1 for none. Fyne's own table
@@ -675,7 +690,9 @@ func (e *searchEntry) TypedKey(key *fyne.KeyEvent) {
 	case fyne.KeyReturn, fyne.KeyEnter:
 		openSelected()
 	case fyne.KeyEscape:
-		e.SetText("")
+		if !escapeClosesWindow() {
+			e.SetText("")
+		}
 	default:
 		e.Entry.TypedKey(key)
 	}
@@ -1228,11 +1245,23 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 
 	// Hiding the window is the last chance to store column widths when the
 	// app is then ended from outside (logout, kill), which runs no OnStopped.
-	hideWindow := func() {
+	closeWindow := func() {
 		saveLayout()
+		if prefs.ExitOnClose {
+			a.Quit() // OnStopped saves the layout again; that's harmless
+			return
+		}
 		w.Hide()
 	}
-	w.SetCloseIntercept(hideWindow)
+	closeMainWindow = closeWindow
+	w.SetCloseIntercept(closeWindow)
+	// Escape reaches the canvas when nothing has focus, such as after a
+	// click on a result.
+	w.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
+		if e.Name == fyne.KeyEscape {
+			escapeClosesWindow()
+		}
+	})
 
 	prefsItem := fyne.NewMenuItem(preferencesLabel, showPreferences)
 	prefsItem.Shortcut = preferencesShortcut
@@ -1240,7 +1269,7 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 		fyne.NewMenu("File",
 			prefsItem,
 			fyne.NewMenuItemSeparator(),
-			fyne.NewMenuItem("Close Window", hideWindow)),
+			fyne.NewMenuItem("Close Window", closeWindow)),
 		fyne.NewMenu("Help", fyne.NewMenuItem("About EverythingX", showAbout)),
 	))
 	// The macOS menu bar handles its own shortcuts; elsewhere, menu shortcuts

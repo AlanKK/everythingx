@@ -57,6 +57,7 @@ func buildPreferences(w fyne.Window) fyne.CanvasObject {
 	tabs := container.NewAppTabs(
 		container.NewTabItemWithIcon("Appearance", theme.ColorPaletteIcon(), appearanceTab()),
 		container.NewTabItemWithIcon("Results", theme.ListIcon(), resultsTab()),
+		container.NewTabItemWithIcon("Window", theme.ViewFullScreenIcon(), windowTab()),
 		container.NewTabItemWithIcon("Shortcut", theme.ComputerIcon(), shortcutTab(w)),
 	)
 
@@ -214,6 +215,29 @@ func resultsTab() fyne.CanvasObject {
 		widget.NewFormItem("Size units", units),
 		widget.NewFormItem("Dates", dates),
 		widget.NewFormItem("Columns", layoutCheck),
+	))
+}
+
+func windowTab() fyne.CanvasObject {
+	exit := widget.NewCheck("Quit EverythingX when the window is closed", nil)
+	exit.Checked = prefs.ExitOnClose
+	exit.OnChanged = func(on bool) {
+		prefs.ExitOnClose = on
+		savePrefs()
+	}
+
+	escape := widget.NewCheck("Close the window when Escape is pressed", nil)
+	escape.Checked = prefs.CloseOnEscape
+	escape.OnChanged = func(on bool) {
+		prefs.CloseOnEscape = on
+		savePrefs()
+	}
+
+	return container.NewVScroll(widget.NewForm(
+		&widget.FormItem{Text: "On close", Widget: exit,
+			HintText: "Otherwise the window hides and EverythingX keeps running in the tray"},
+		&widget.FormItem{Text: "Escape key", Widget: escape,
+			HintText: "Otherwise Escape clears the search. Quits instead when the option above is on"},
 	))
 }
 
