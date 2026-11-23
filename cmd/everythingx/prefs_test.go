@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/AlanKK/everythingx/internal/shared"
@@ -19,8 +20,8 @@ import (
 func usePrefs(tb testing.TB, p appPrefs) {
 	tb.Helper()
 	store := fyne.CurrentApp().Preferences()
-	for _, k := range []string{keyTheme, keyAccent, keyMatchColor, keyTextScale, keyResultLimit,
-		keyShowHidden, keyDecimalSizes, keyRememberLayout, keyColumnWidths, keySortCol, keySortAsc} {
+	for _, k := range []string{keyTheme, keyAccent, keyMatchColor, keyTextScale, keyFont, keyDensity, keyISODates, keyResultLimit,
+		keyShowHidden, keyDecimalSizes, keyRememberLayout, keyColumnWidths, keySortCol, keySortAsc, keyExitOnClose, keyCloseOnEscape} {
 		store.RemoveValue(k)
 	}
 	prefs = p
@@ -57,9 +58,14 @@ func TestPrefsRoundTrip(t *testing.T) {
 		Accent:         theme.ColorPurple,
 		MatchColor:     theme.ColorGreen,
 		TextScale:      1.15,
+		Font:           fontMono,
+		Density:        densityComfortable,
 		ResultLimit:    5000,
 		ShowHidden:     false,
 		DecimalSizes:   true,
+		ISODates:       true,
+		ExitOnClose:    true,
+		CloseOnEscape:  true,
 		RememberLayout: true,
 		ColumnWidths:   [numColumns]float32{300, 500, 80, 200},
 		SortCol:        2,
@@ -80,6 +86,8 @@ func TestLoadPrefsRejectsBadValues(t *testing.T) {
 	store.SetString(keyAccent, "chartreuse")
 	store.SetString(keyMatchColor, "plaid")
 	store.SetFloat(keyTextScale, 9)
+	store.SetString(keyFont, "comic")
+	store.SetString(keyDensity, "cozy")
 	store.SetInt(keyResultLimit, 1_000_000)
 	store.SetInt(keySortCol, 12)
 	store.SetFloatList(keyColumnWidths, []float64{-5, 0, 90, 100, 300})
@@ -147,7 +155,7 @@ func TestTextSizeScalesColumns(t *testing.T) {
 
 	content := appearanceTab()
 	test.NewTempWindow(t, content)
-	sel := findWidget[*widget.Select](content)
+	sel := findWidgetWith(content, func(s *widget.Select) bool { return slices.Contains(s.Options, "Larger") })
 	if sel == nil {
 		t.Fatal("no text size choice on the Appearance tab")
 	}
@@ -298,19 +306,29 @@ func TestSaveLayout(t *testing.T) {
 	}
 }
 
-// The Name column's character budget follows the text size, or highlighted
-// names overflow into the Path column at a larger size.
+// A highlighted name that fits the Name column at one text size can run past
+// it at a larger one, and must then fall back to plain truncation rather than
+// overflow into the Path column.
 func TestApplyAppearanceUpdatesNameBudget(t *testing.T) {
 	usePrefs(t, defaultPrefs())
 	makeTable()
 	defer func() { tableData = nil }()
 	applyAppearance()
-	before := nameHighlightMaxChars
+
+	// A name whose match ends at about 90% of the column at the default size.
+	prefix := ""
+	for fyne.MeasureText(prefix+"x", theme.TextSize(), fyne.TextStyle{}).Width < nameHighlightMaxWidth*0.9 {
+		prefix += "x"
+	}
+	parts := []string{prefix, "hit", ""}
+	if segs := nameSegments(parts, false); len(segs) != 2 {
+		t.Fatalf("name fitting the column: %d segments, want it highlighted", len(segs))
+	}
 
 	prefs.TextScale = 1.3
 	applyAppearance()
-	if nameHighlightMaxChars >= before {
-		t.Errorf("name budget at text size 1.3 = %d, want fewer than %d", nameHighlightMaxChars, before)
+	if segs := nameSegments(parts, false); len(segs) != 1 {
+		t.Errorf("name past the column at text size 1.3: %d segments, want one plain segment", len(segs))
 	}
 }
 
@@ -320,10 +338,10 @@ func TestBuildRowsSizeUnits(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := []*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}
-	if got := buildRows(r, "", false)[0].Size; got != "1.5K" {
+	if got := buildRows(r, "", searchOptions{})[0].Size; got != "1.5K" {
 		t.Errorf("binary size = %q, want 1.5K", got)
 	}
-	if got := buildRows(r, "", true)[0].Size; got != "1.5kB" {
+	if got := buildRows(r, "", searchOptions{decimalSizes: true})[0].Size; got != "1.5kB" {
 		t.Errorf("decimal size = %q, want 1.5kB", got)
 	}
 }
@@ -408,7 +426,7 @@ func TestRestoreDefaults(t *testing.T) {
 	sortCol = 2
 
 	restoreDefaults()
-	if prefs != defaultPrefs() || sortCol != -1 {
+	if prefs != defaultPrefs() || sortCol != 0 || !sortAsc {
 		t.Errorf("after restore: prefs %+v, sort %d", prefs, sortCol)
 	}
 	if w := tableColumnWidths(table)[0]; w != defaultColumnWidths[0] {
@@ -419,10 +437,63 @@ func TestRestoreDefaults(t *testing.T) {
 	}
 }
 
+func TestWindowTabStoresChoices(t *testing.T) {
+	usePrefs(t, defaultPrefs())
+	content := windowTab()
+	test.NewTempWindow(t, content)
+
+	check := func(label string) *widget.Check {
+		c := findWidgetWith(content, func(c *widget.Check) bool { return c.Text == label })
+		if c == nil {
+			t.Fatalf("no %q check on the Window tab", label)
+		}
+		return c
+	}
+	check("Quit EverythingX when the window is closed").SetChecked(true)
+	check("Close the window when Escape is pressed").SetChecked(true)
+	if !prefs.ExitOnClose || !prefs.CloseOnEscape {
+		t.Errorf("after checking both: %+v", prefs)
+	}
+	stored := loadPrefs(fyne.CurrentApp().Preferences())
+	if !stored.ExitOnClose || !stored.CloseOnEscape {
+		t.Errorf("stored prefs after checking both: %+v", stored)
+	}
+}
+
+func TestEscapeClosesWindow(t *testing.T) {
+	usePrefs(t, defaultPrefs())
+	closed := 0
+	closeMainWindow = func() { closed++ }
+	defer func() { closeMainWindow = nil }()
+
+	e := newSearchEntry()
+	test.NewTempWindow(t, e)
+	e.SetText("report")
+	escape := &fyne.KeyEvent{Name: fyne.KeyEscape}
+
+	e.TypedKey(escape)
+	if closed != 0 || e.Text != "" {
+		t.Errorf("with the option off, Escape should clear the search: closed %d, text %q", closed, e.Text)
+	}
+
+	prefs.CloseOnEscape = true
+	e.SetText("report")
+	e.TypedKey(escape)
+	if closed != 1 {
+		t.Errorf("with the option on, Escape closed the window %d times, want 1", closed)
+	}
+}
+
 // findWidget returns the first object of type T in o's tree.
 func findWidget[T fyne.CanvasObject](o fyne.CanvasObject) T {
+	return findWidgetWith(o, func(T) bool { return true })
+}
+
+// findWidgetWith returns the first object of type T in o's tree that match
+// accepts.
+func findWidgetWith[T fyne.CanvasObject](o fyne.CanvasObject, match func(T) bool) T {
 	var zero T
-	if v, ok := o.(T); ok {
+	if v, ok := o.(T); ok && match(v) {
 		return v
 	}
 	var children []fyne.CanvasObject
@@ -437,7 +508,7 @@ func findWidget[T fyne.CanvasObject](o fyne.CanvasObject) T {
 		children = test.WidgetRenderer(c).Objects()
 	}
 	for _, child := range children {
-		if v := findWidget[T](child); any(v) != any(zero) {
+		if v := findWidgetWith(child, match); any(v) != any(zero) {
 			return v
 		}
 	}

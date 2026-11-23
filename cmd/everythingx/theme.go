@@ -10,6 +10,16 @@ import (
 // colorNameMatch is the colour of the matched part of a name in the results.
 const colorNameMatch fyne.ThemeColorName = "everythingxMatch"
 
+// colorNameGrid is the colour of the results table's column dividers and the
+// rules around its header: the darker grey of GTK's tree view lines, which
+// read better than Fyne's separator colour does on a white list.
+const colorNameGrid fyne.ThemeColorName = "everythingxGrid"
+
+var (
+	gridLight = color.NRGBA{R: 0xc5, G: 0xc7, B: 0xc8, A: 0xff}
+	gridDark  = color.NRGBA{R: 0x3d, G: 0x3e, B: 0x42, A: 0xff}
+)
+
 // namedColor is one of the swatches on the Appearance tab.
 type namedColor struct {
 	name  string
@@ -73,6 +83,9 @@ type everythingxTheme struct {
 	match  *namedColor // nil for the default match colour
 
 	textScale float32 // 0 means 1
+
+	font    string // fontSystem, fontFyne or fontMono; "" is fontSystem
+	compact bool   // tighter rows and controls, like a GTK app
 }
 
 var _ fyne.Theme = (*everythingxTheme)(nil)
@@ -95,6 +108,8 @@ func (th *everythingxTheme) setPrefs(p appPrefs) {
 		th.match = &c
 	}
 	th.textScale = float32(p.TextScale)
+	th.font = p.Font
+	th.compact = p.Density == densityCompact
 }
 
 // Variant is the variant the theme draws with: the forced one, or else the
@@ -107,11 +122,19 @@ func (th *everythingxTheme) Variant() fyne.ThemeVariant {
 	return fyne.CurrentApp().Settings().ThemeVariant()
 }
 
-// Roboto Mono. All of these are monospace fonts
-func (*everythingxTheme) Font(s fyne.TextStyle) fyne.Resource {
-	if s.Monospace {
-		return resourceRobotoMonoRegular
+// Font draws with the chosen font. Monospace text, such as the command on the
+// Shortcut tab, is Roboto Mono whatever the choice.
+func (th *everythingxTheme) Font(s fyne.TextStyle) fyne.Resource {
+	if s.Monospace || th.font == fontMono {
+		return robotoMono(s)
 	}
+	if th.font != fontFyne && systemFonts != nil {
+		return systemFonts.face(s)
+	}
+	return theme.DefaultTheme().Font(s)
+}
+
+func robotoMono(s fyne.TextStyle) fyne.Resource {
 	if s.Bold {
 		if s.Italic {
 			return resourceRobotoMonoBoldItalic
@@ -152,6 +175,18 @@ func (th *everythingxTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) co
 		}
 	}
 
+	// The table's header row is the colour of the rows, with rules above and
+	// below (sortHeader), as GTK column headers are.
+	if n == theme.ColorNameHeaderBackground {
+		n = theme.ColorNameBackground
+	}
+	if n == colorNameGrid {
+		if v == theme.VariantDark {
+			return gridDark
+		}
+		return gridLight
+	}
+
 	return theme.DefaultTheme().Color(n, v)
 }
 
@@ -166,6 +201,10 @@ func withAlpha(c color.NRGBA, a uint8) color.NRGBA {
 func (*everythingxTheme) Icon(n fyne.ThemeIconName) fyne.Resource {
 	return theme.DefaultTheme().Icon(n)
 }
+
+// compactIconSize is the inline icon size at Compact density, the 16px of a
+// GTK list view's icons, rather than Fyne's 20.
+const compactIconSize = 16
 
 func (th *everythingxTheme) Size(n fyne.ThemeSizeName) float32 {
 
@@ -186,10 +225,20 @@ func (th *everythingxTheme) Size(n fyne.ThemeSizeName) float32 {
 		// resize by dragging, so keep a small non-zero value. Lowering it
 		// fits more rows on screen at the cost of a narrower drag target.
 		return 4
+	case theme.SizeNameInnerPadding:
+		// The space inside a cell, entry or button, which sets the row
+		// height. Compact matches the row spacing of GTK list views.
+		if th.compact {
+			return 3
+		}
+		return theme.DefaultTheme().Size(n)
 	case theme.SizeNameText, theme.SizeNameCaptionText, theme.SizeNameHeadingText,
 		theme.SizeNameSubHeadingText, theme.SizeNameInlineIcon:
 		// Icons in rows scale with the text so rows keep their proportions.
 		size := theme.DefaultTheme().Size(n)
+		if n == theme.SizeNameInlineIcon && th.compact {
+			size = compactIconSize
+		}
 		if th.textScale > 0 {
 			size *= th.textScale
 		}

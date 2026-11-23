@@ -27,7 +27,6 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
@@ -99,13 +98,10 @@ var indexedText string
 // directory's files) rather than search results. UI thread only.
 var showingDefault bool
 
-// defaultStatus is the status bar text for the default view.
+// defaultStatus is the status bar text for the default view. The index size
+// has its own place at the other end of the bar (indexStatus).
 func defaultStatus(items int) string {
-	text := fmt.Sprintf("%d files in ~", items)
-	if indexedText != "" {
-		text += " · " + indexedText
-	}
-	return text
+	return fmt.Sprintf("%d files in ~", items)
 }
 
 // showDefaultView lists the files directly in the home directory, which is what the
@@ -123,7 +119,7 @@ func showDefaultView(t *widget.Table, statusBar *widget.Label) {
 			if err != nil {
 				fmt.Println("Error listing home directory:", err)
 			}
-			rows = buildRows(results, "", opts.decimalSizes)
+			rows = buildRows(results, "", opts)
 		}
 
 		fyne.Do(func() {
@@ -163,12 +159,15 @@ func homeResults(dir string, showHidden bool) ([]*shared.SearchResult, error) {
 	return results, nil
 }
 
+// isoDateLayout is the ISO date format the Results tab offers, as file
+// managers on Linux write dates.
+const isoDateLayout = "2006-01-02 15:04"
+
 // buildRows stats each result and splits its name around searchText for
 // highlighting: around each literal part of a glob, or the first occurrence of
-// a literal term. An empty searchText highlights nothing. Sizes are written in
-// decimal units when decimalSizes is set, else binary. Does file I/O, so run it
-// off the UI thread.
-func buildRows(results []*shared.SearchResult, searchText string, decimalSizes bool) []RowData {
+// a literal term. An empty searchText highlights nothing. Sizes and dates are
+// written as opts says. Does file I/O, so run it off the UI thread.
+func buildRows(results []*shared.SearchResult, searchText string, opts searchOptions) []RowData {
 	rows := make([]RowData, 0, len(results))
 	for _, r := range results {
 		fullpath := r.Fullpath
@@ -176,7 +175,10 @@ func buildRows(results []*shared.SearchResult, searchText string, decimalSizes b
 		dir := filepath.Dir(fullpath) + "/"
 		size, modified, sizeBytes, modTime := shared.GetFileSizeMod(fullpath)
 		if size != "" {
-			size = shared.HumanizeSizeUnits(sizeBytes, decimalSizes)
+			size = shared.HumanizeSizeUnits(sizeBytes, opts.decimalSizes)
+		}
+		if opts.isoDates && modified != "" {
+			modified = modTime.Format(isoDateLayout)
 		}
 
 		// A glob matches the whole name, so take its spans before the
@@ -272,9 +274,8 @@ func loadIndexCount(db *sql.DB) {
 				indexedText = formatCount(count) + " files indexed"
 			}
 			indexLabel.SetText(indexedText)
-			if showingDefault {
-				lastResultText = defaultStatus(len(tableData))
-				statusBar.SetText(lastResultText)
+			if indexStatus != nil {
+				indexStatus.SetText(indexedText)
 			}
 		})
 	}()
@@ -323,7 +324,7 @@ func handleAutoCompleteEntryChanged(searchText string, opts searchOptions, t *wi
 			return
 		}
 
-		newData := buildRows(results, searchText, opts.decimalSizes)
+		newData := buildRows(results, searchText, opts)
 
 		if searchCounter.Load() != myID {
 			return
@@ -353,66 +354,83 @@ func handleAutoCompleteEntryChanged(searchText string, opts searchOptions, t *wi
 	}()
 }
 
-// tooltipCell is a RichText cell that lazily fetches file info on hover.
-type tooltipCell struct {
+// resultCell is a RichText cell in the results table. It takes the pointer
+// and clicks for its row: hover and selection highlights, opening, and the
+// context menu. When its text is cut short with an ellipsis, hovering shows
+// the whole of it in a tool tip.
+type resultCell struct {
 	ttwidget.RichText
-	path    string
-	col     int
-	row     int
-	hovered bool
+	path string
+	col  int
+	row  int
+
+	// pressedCloses is windowCloses when the cell was last pressed, so a
+	// click that lands after the window closed can be told apart.
+	pressedCloses int
 }
 
-func newTooltipCell() *tooltipCell {
-	c := &tooltipCell{row: -1}
+func newResultCell() *resultCell {
+	c := &resultCell{row: -1}
 	c.Scroll = container.ScrollNone
 	c.Truncation = fyne.TextTruncateEllipsis
 	c.RichText.ExtendBaseWidget(c)
 	return c
 }
 
-func (c *tooltipCell) MouseIn(e *desktop.MouseEvent) {
-	// getToolTipForFile does blocking file I/O (os.Stat + user/group lookups).
-	// Run it off the UI thread so hovering over rows never stalls the UI, then
-	// set the text and start the hover timer together on the UI thread. Arming
-	// the timer first would show whatever the previously hovered row left behind,
-	// since cells are recycled.
-	c.hovered = true
+// MouseIn lights the row the pointer has entered and, if the cell's text
+// doesn't fit, arms a tool tip with all of it.
+func (c *resultCell) MouseIn(e *desktop.MouseEvent) {
 	setHoveredRow(c.row)
-	path := c.path
-	maxChars := tooltipMaxChars() // read window width on the UI thread
-	decimalSizes := prefs.DecimalSizes
-	go func() {
-		tip := getToolTipForFile(path, maxChars, decimalSizes)
-		fyne.Do(func() {
-			if !c.hovered || c.path != path {
-				return
-			}
-			c.SetToolTip(tip)
-			c.RichText.MouseIn(e)
-		})
-	}()
+	c.SetToolTip(c.truncatedText())
+	c.RichText.MouseIn(e)
 }
 
 // MouseOut fires when the pointer leaves this cell, including on the way out of
 // the table entirely, so it is where the row highlight is dropped. Moving to
 // another cell clears and re-sets the highlight before the next paint, so a
 // sweep across a row does not flicker.
-func (c *tooltipCell) MouseOut() {
+func (c *resultCell) MouseOut() {
 	setHoveredRow(-1)
 	c.cancelToolTip()
 }
 
-// cancelToolTip drops an armed tool tip without touching the row highlight. The
-// widget itself calls this when a cell is recycled or covered by a menu, where
-// the pointer has not actually left the row.
-func (c *tooltipCell) cancelToolTip() {
-	c.hovered = false
+// cancelToolTip drops a pending or showing tool tip without touching the row
+// highlight, for when the cell changes under a pointer that hasn't left it.
+func (c *resultCell) cancelToolTip() {
 	c.RichText.MouseOut()
+}
+
+// truncatedText is the cell's full text when it is too wide for the cell, so
+// it is drawn cut short, or "" when it all shows.
+func (c *resultCell) truncatedText() string {
+	th := c.Theme()
+	avail := c.Size().Width - 2*th.Size(theme.SizeNameInnerPadding)
+	var width float32
+	var text strings.Builder
+	for _, seg := range c.Segments {
+		ts, ok := seg.(*widget.TextSegment)
+		if !ok {
+			continue
+		}
+		size := ts.Style.SizeName
+		if size == "" {
+			size = theme.SizeNameText
+		}
+		width += fyne.MeasureText(ts.Text, th.Size(size), ts.Style.TextStyle).Width
+		text.WriteString(ts.Text)
+	}
+	if width <= avail {
+		return ""
+	}
+	return text.String()
 }
 
 // flashStatus shows a transient message in the status bar, then restores the
 // result count. Must be called on the UI thread.
 func flashStatus(msg string) {
+	if statusBar == nil {
+		return
+	}
 	statusBar.SetText(msg)
 	time.AfterFunc(1500*time.Millisecond, func() {
 		fyne.Do(func() {
@@ -429,21 +447,64 @@ func copyToClipboard(text string) {
 // MouseDown selects on press, as a file manager does. Selecting from Tapped
 // instead would feel laggy: Fyne defers Tapped on a DoubleTappable widget until
 // the system double-click interval has passed, to see if a second click lands.
-func (c *tooltipCell) MouseDown(e *desktop.MouseEvent) {
+func (c *resultCell) MouseDown(e *desktop.MouseEvent) {
+	c.cancelToolTip() // a click means the pointer is busy; don't pop up over it
+	c.pressedCloses = windowCloses
 	if e.Button == desktop.MouseButtonPrimary {
 		c.selectRow()
 	}
 }
 
-func (c *tooltipCell) MouseUp(_ *desktop.MouseEvent) {}
+func (c *resultCell) MouseUp(_ *desktop.MouseEvent) {}
 
-// DoubleTapped reveals the file in the system file manager.
-func (c *tooltipCell) DoubleTapped(_ *fyne.PointEvent) {
-	revealFile(c.path)
+// nameColumn and pathColumn are the table columns holding the file name and
+// the containing folder.
+const (
+	nameColumn = 0
+	pathColumn = 1
+)
+
+// Tapped on the Name column opens the item, like a link. Fyne only delivers it
+// once the double-click interval passes with no second click, so a double-click
+// opens the item once, through DoubleTapped.
+func (c *resultCell) Tapped(_ *fyne.PointEvent) {
+	if c.col == nameColumn && !c.closedSincePress() {
+		openFile(c.path)
+	}
+}
+
+// closedSincePress reports whether the main window was closed after the cell
+// was pressed. Fyne holds back Tapped and DoubleTapped until the double-click
+// interval has passed, which on macOS is the system setting and can run to
+// seconds. Closing the window in that time, with Escape say, means the user
+// is done; opening the item anyway would surprise them.
+func (c *resultCell) closedSincePress() bool {
+	return c.pressedCloses != windowCloses
+}
+
+// Cursor shows a pointing hand over the Name column, where a click opens.
+func (c *resultCell) Cursor() desktop.Cursor {
+	if c.col == nameColumn {
+		return desktop.PointerCursor
+	}
+	return desktop.DefaultCursor
+}
+
+// DoubleTapped on the Path column shows the item selected in its folder, which
+// is what that column is about. Anywhere else it opens the item itself.
+func (c *resultCell) DoubleTapped(_ *fyne.PointEvent) {
+	if c.closedSincePress() {
+		return
+	}
+	if c.col == pathColumn {
+		revealFile(c.path)
+		return
+	}
+	openFile(c.path)
 }
 
 // TappedSecondary opens the row's context menu.
-func (c *tooltipCell) TappedSecondary(e *fyne.PointEvent) {
+func (c *resultCell) TappedSecondary(e *fyne.PointEvent) {
 	if c.path == "" {
 		return
 	}
@@ -454,18 +515,56 @@ func (c *tooltipCell) TappedSecondary(e *fyne.PointEvent) {
 	// fires under the menu with nowhere to draw.
 	c.cancelToolTip()
 
-	path := c.path
-	menu := fyne.NewMenu("",
-		fyne.NewMenuItem(revealLabel, func() { revealFile(path) }),
-		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Copy Name", func() { copyToClipboard(filepath.Base(path)) }),
-		fyne.NewMenuItem("Copy Full Path", func() { copyToClipboard(path) }),
-		fyne.NewMenuItem("Copy Containing Folder", func() { copyToClipboard(filepath.Dir(path)) }),
-	)
-	widget.NewPopUpMenu(menu, mainWindow.Canvas()).ShowAtPosition(e.AbsolutePosition)
+	widget.NewPopUpMenu(contextMenu(c.path), mainWindow.Canvas()).ShowAtPosition(e.AbsolutePosition)
 }
 
-func (c *tooltipCell) selectRow() {
+// contextMenu is the right-click menu for a result. Actions get an icon, as
+// in a GTK app's menus; Open With, whose submenu carries the app icons, gets
+// a blank one so its label lines up with the rest.
+func contextMenu(path string) *fyne.Menu {
+	openWith := openWithMenuItem(path)
+	openWith.Icon = blankMenuIcon
+	return fyne.NewMenu("",
+		fyne.NewMenuItemWithIcon("Open", theme.DocumentIcon(), func() { openFile(path) }),
+		openWith,
+		fyne.NewMenuItemWithIcon(revealLabel, theme.FolderOpenIcon(), func() { revealFile(path) }),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItemWithIcon("Copy Name", theme.ContentCopyIcon(), func() { copyToClipboard(filepath.Base(path)) }),
+		fyne.NewMenuItemWithIcon("Copy Full Path", theme.ContentCopyIcon(), func() { copyToClipboard(path) }),
+		fyne.NewMenuItemWithIcon("Copy Directory Path", theme.ContentCopyIcon(), func() { copyToClipboard(filepath.Dir(path)) }),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItemWithIcon(propertiesLabel, theme.InfoIcon(), func() { showProperties(path) }),
+	)
+}
+
+// blankMenuIcon is an empty icon for a menu item that has none. Fyne starts
+// the label where the icon ends, so an item without one would sit out of line
+// with its neighbours'.
+var blankMenuIcon = fyne.NewStaticResource("blank.svg",
+	[]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"/>`))
+
+// cellIcon is the file-type icon beside a Name cell. A plain widget.Icon takes
+// no input, and the table offers no double-click of its own, so clicks on the
+// icon would do nothing. It passes them to the cell it sits beside instead.
+type cellIcon struct {
+	widget.Icon
+	cell *resultCell
+}
+
+func newCellIcon(cell *resultCell) *cellIcon {
+	i := &cellIcon{cell: cell}
+	i.ExtendBaseWidget(i)
+	return i
+}
+
+func (i *cellIcon) MouseDown(e *desktop.MouseEvent)    { i.cell.MouseDown(e) }
+func (i *cellIcon) MouseUp(e *desktop.MouseEvent)      { i.cell.MouseUp(e) }
+func (i *cellIcon) Tapped(e *fyne.PointEvent)          { i.cell.Tapped(e) }
+func (i *cellIcon) Cursor() desktop.Cursor             { return i.cell.Cursor() }
+func (i *cellIcon) DoubleTapped(e *fyne.PointEvent)    { i.cell.DoubleTapped(e) }
+func (i *cellIcon) TappedSecondary(e *fyne.PointEvent) { i.cell.TappedSecondary(e) }
+
+func (c *resultCell) selectRow() {
 	if c.row >= 0 {
 		selectRow(c.row)
 	}
@@ -475,6 +574,25 @@ func (c *tooltipCell) selectRow() {
 var tableData []RowData
 var t *widget.Table
 var mainWindow fyne.Window
+
+// closeMainWindow is what closing the main window does: quit when the user
+// wants that, else hide it to the tray. Nil until loadUI sets it.
+var closeMainWindow func()
+
+// windowCloses counts the times the main window has been closed (see
+// resultCell.closedSincePress). UI thread only.
+var windowCloses int
+
+// escapeClosesWindow closes the main window, as closing it would, when the
+// user wants Escape to do that, and reports whether it did. UI thread only.
+func escapeClosesWindow() bool {
+	if !prefs.CloseOnEscape || closeMainWindow == nil {
+		return false
+	}
+	closeMainWindow()
+	return true
+}
+
 var lastResultText string
 
 // selectedRow is the highlighted result, or -1 for none. Fyne's own table
@@ -486,9 +604,9 @@ var selectedRow = -1
 // selectedRow, so the whole row lights up rather than just the cell. UI thread
 // only.
 //
-// It is fed from tooltipCell.MouseIn/MouseOut rather than the table's own
+// It is fed from resultCell.MouseIn/MouseOut rather than the table's own
 // OnHighlighted callback: the driver delivers hover to a single object, the
-// innermost hoverable one, and every data cell is a hoverable tooltipCell. The
+// innermost hoverable one, and every data cell is a hoverable resultCell. The
 // table therefore only ever sees the positions between and around cells, which
 // it treats as "no cell", so OnHighlighted never fires over a result row.
 var hoveredRow = -1
@@ -541,16 +659,10 @@ func moveSelection(delta int) {
 	t.ScrollTo(widget.TableCellID{Row: next, Col: 0})
 }
 
-// revealFile launches the file manager off the UI thread; "open -R" and
-// "xdg-open" take long enough to stall a click.
-func revealFile(path string) {
-	go handleOpenFile(path)
-}
-
-// openSelected reveals the highlighted result in the system file manager.
+// openSelected opens the highlighted result, as double-clicking its name does.
 func openSelected() {
 	if selectedRow >= 0 && selectedRow < len(tableData) {
-		revealFile(tableData[selectedRow].SearchResult.Fullpath)
+		openFile(tableData[selectedRow].SearchResult.Fullpath)
 	}
 }
 
@@ -563,8 +675,31 @@ type searchEntry struct {
 func newSearchEntry() *searchEntry {
 	e := &searchEntry{}
 	e.ExtendBaseWidget(e)
-	e.SetPlaceHolder("Enter filename...")
+	e.SetPlaceHolder("Search")
+	e.Icon = theme.SearchIcon()
+	clear := widget.NewButtonWithIcon("", theme.ContentClearIcon(), func() {
+		e.SetText("")
+		if c := fyne.CurrentApp().Driver().CanvasForObject(e); c != nil {
+			c.Focus(e)
+		}
+	})
+	clear.Importance = widget.LowImportance
+	clear.Hide()
+	e.ActionItem = clear
 	return e
+}
+
+// showClear shows the clear button only while there is text to clear, as GTK
+// search entries do.
+func (e *searchEntry) showClear() {
+	if e.ActionItem == nil {
+		return
+	}
+	if e.Text == "" {
+		e.ActionItem.Hide()
+	} else {
+		e.ActionItem.Show()
+	}
 }
 
 func (e *searchEntry) TypedKey(key *fyne.KeyEvent) {
@@ -576,7 +711,9 @@ func (e *searchEntry) TypedKey(key *fyne.KeyEvent) {
 	case fyne.KeyReturn, fyne.KeyEnter:
 		openSelected()
 	case fyne.KeyEscape:
-		e.SetText("")
+		if !escapeClosesWindow() {
+			e.SetText("")
+		}
 	default:
 		e.Entry.TypedKey(key)
 	}
@@ -622,62 +759,101 @@ func iconForRow(r *shared.SearchResult) fyne.Resource {
 	return theme.FileIcon()
 }
 
-// nameHighlightMaxChars is roughly how many monospace characters fit in the
-// Name column. When the matched term sits beyond this, the Name cell renders as
-// a single truncating segment instead of highlighted inline segments, so it
-// never overflows into the Path column. Recomputed by updateNameBudget.
-var nameHighlightMaxChars = 47
+// rowIcons caches the recoloured icons rowIcon hands out. A coloured resource
+// is a new value each time it is made, and the cell re-rasterises its icon
+// whenever the resource changes, so reuse one per icon and colour.
+var rowIcons = map[[2]string]fyne.Resource{}
 
-// plainNameSegment builds a non-inline monospace segment. RichText truncates a
-// trailing segment like this with an ellipsis when it is too wide to fit.
-func plainNameSegment(text string) *widget.TextSegment {
+// rowIcon is iconForRow's icon in the colour the row draws it: the text
+// colour on a selected row, the accent colour for a folder (as GTK file lists
+// draw folders) and the theme's own colour otherwise.
+func rowIcon(r *shared.SearchResult, selected bool) fyne.Resource {
+	res := iconForRow(r)
+	var colorName fyne.ThemeColorName
+	switch {
+	case selected:
+		colorName = theme.ColorNameForegroundOnPrimary
+	case r.ObjectType == shared.ItemIsDir:
+		colorName = theme.ColorNamePrimary
+	default:
+		return res
+	}
+	key := [2]string{res.Name(), string(colorName)}
+	if c, ok := rowIcons[key]; ok {
+		return c
+	}
+	c := theme.NewColoredResource(res, colorName)
+	rowIcons[key] = c
+	return c
+}
+
+// nameHighlightMaxWidth is how wide the text in the Name column can be. When
+// the matched term ends beyond this, the Name cell renders as a single
+// truncating segment instead of highlighted inline segments, so it never
+// overflows into the Path column. Recomputed by updateNameBudget.
+var nameHighlightMaxWidth float32 = 360
+
+// cellColor is the text colour for a cell: the one that reads on the solid
+// selection, or "" for the theme's foreground.
+func cellColor(selected bool) fyne.ThemeColorName {
+	if selected {
+		return theme.ColorNameForegroundOnPrimary
+	}
+	return ""
+}
+
+// textSegment builds a plain cell segment. RichText truncates a trailing
+// segment like this with an ellipsis when it is too wide to fit.
+func textSegment(text string, align fyne.TextAlign, selected bool) *widget.TextSegment {
 	return &widget.TextSegment{
-		Text: text,
-		Style: widget.RichTextStyle{
-			Alignment: fyne.TextAlignLeading,
-			TextStyle: fyne.TextStyle{Monospace: true},
-		},
+		Text:  text,
+		Style: widget.RichTextStyle{Alignment: align, ColorName: cellColor(selected)},
 	}
 }
 
 // inlineNameSegment builds an inline segment for the highlighted-name path.
 // Highlighted segments are bold and use the match color, which the user picks
-// on the Appearance tab.
-func inlineNameSegment(text string, highlight bool) *widget.TextSegment {
-	style := widget.RichTextStyle{
-		Inline:    true,
-		TextStyle: fyne.TextStyle{Monospace: true},
-	}
+// on the Appearance tab; on a selected row they keep the selection's text
+// colour, as a GTK list does.
+func inlineNameSegment(text string, highlight, selected bool) *widget.TextSegment {
+	style := widget.RichTextStyle{Inline: true, ColorName: cellColor(selected)}
 	if highlight {
 		style.TextStyle.Bold = true
-		style.ColorName = colorNameMatch
+		if !selected {
+			style.ColorName = colorNameMatch
+		}
 	}
 	return &widget.TextSegment{Text: text, Style: style}
 }
 
 // nameSegments renders a row's name parts (see RowData.Name), highlighting the
 // odd-indexed ones.
-func nameSegments(parts []string) []widget.RichTextSegment {
-	// lastEnd is where the last non-empty highlighted part ends.
-	lastEnd, pos := 0, 0
+func nameSegments(parts []string, selected bool) []widget.RichTextSegment {
+	// last is the index of the last non-empty highlighted part, and width how
+	// wide the name is up to its end.
+	last := -1
 	for i, p := range parts {
-		pos += len(p)
 		if i%2 == 1 && p != "" {
-			lastEnd = pos
+			last = i
 		}
 	}
-	if lastEnd == 0 || lastEnd > nameHighlightMaxChars {
+	var width float32
+	for i := 0; i <= last; i++ {
+		style := fyne.TextStyle{Bold: i%2 == 1}
+		width += fyne.MeasureText(parts[i], theme.TextSize(), style).Width
+	}
+	if last < 0 || width > nameHighlightMaxWidth {
 		// No match, or the highlighting reaches too far right to fit before
 		// the column edge. Render the whole name as a single trailing segment
 		// so RichText truncates it with an ellipsis; its ellipsis only applies
 		// to the last segment, so a long leading segment would otherwise
 		// overflow into the Path column.
-		return []widget.RichTextSegment{plainNameSegment(strings.Join(parts, ""))}
+		return []widget.RichTextSegment{textSegment(strings.Join(parts, ""), fyne.TextAlignLeading, selected)}
 	}
 	var segments []widget.RichTextSegment
 	for i, p := range parts {
 		if p != "" {
-			segments = append(segments, inlineNameSegment(p, i%2 == 1))
+			segments = append(segments, inlineNameSegment(p, i%2 == 1, selected))
 		}
 	}
 	return segments
@@ -694,11 +870,13 @@ func makeTable() *widget.Table {
 			// Stack: selection highlight behind, icon + text in front. The icon
 			// is only shown for the Name column; a hidden object is skipped by
 			// the border layout, so the other columns keep their full width.
-			icon := widget.NewIcon(nil)
+			text := newResultCell()
+			icon := newCellIcon(text)
 			icon.Hide()
-			return container.NewStack(
+			return container.New(rowBandLayout{},
 				canvas.NewRectangle(color.Transparent),
-				container.NewBorder(nil, nil, icon, nil, newTooltipCell()),
+				container.NewBorder(nil, nil, icon, nil, text),
+				canvas.NewRectangle(theme.Color(colorNameGrid)),
 			)
 		},
 		// UpdateCell()
@@ -711,13 +889,13 @@ func makeTable() *widget.Table {
 			stack := cell.(*fyne.Container)
 			bg := stack.Objects[0].(*canvas.Rectangle)
 			inner := stack.Objects[1].(*fyne.Container)
-			richText := inner.Objects[0].(*tooltipCell)
-			icon := inner.Objects[1].(*widget.Icon)
+			richText := inner.Objects[0].(*resultCell)
+			icon := inner.Objects[1].(*cellIcon)
 
 			if richText.path != row.SearchResult.Fullpath {
 				// Scrolling recycles this cell onto another row without the
 				// pointer moving, so no MouseOut arrives. A tip already armed
-				// would fire with the old file's details.
+				// would show the old row's text.
 				if richText.path != "" {
 					// Taking a different file (rather than being filled in for
 					// the first time) means the list moved under a pointer that
@@ -734,10 +912,13 @@ func makeTable() *widget.Table {
 
 			// Only repaint what changed: this runs for every visible cell on
 			// each refresh, so unconditional work here is felt as click lag.
+			// The selected row is filled with the accent colour and its text
+			// drawn in the colour that reads on it, as in a GTK list.
+			selected := id.Row == selectedRow
 			var highlight color.Color = color.Transparent
 			switch {
-			case id.Row == selectedRow:
-				highlight = theme.Color(theme.ColorNameSelection)
+			case selected:
+				highlight = theme.Color(theme.ColorNamePrimary)
 			case id.Row == hoveredRow:
 				highlight = theme.Color(theme.ColorNameHover)
 			}
@@ -745,41 +926,28 @@ func makeTable() *widget.Table {
 				bg.FillColor = highlight
 				bg.Refresh()
 			}
+			// The column divider follows the theme, which can change under it.
+			if div := stack.Objects[2].(*canvas.Rectangle); div.FillColor != theme.Color(colorNameGrid) {
+				div.FillColor = theme.Color(colorNameGrid)
+				div.Refresh()
+			}
 
 			switch id.Col {
 			case 0:
-				richText.Segments = nameSegments(row.Name)
+				richText.Segments = nameSegments(row.Name, selected)
 			case 1:
-				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: row.Path,
-					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
-						TextStyle: fyne.TextStyle{Monospace: true},
-					},
-				},
-				}
+				richText.Segments = []widget.RichTextSegment{textSegment(row.Path, fyne.TextAlignLeading, selected)}
 			case 2:
-				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: row.Size,
-					Style: widget.RichTextStyle{Alignment: fyne.TextAlignTrailing,
-						TextStyle: fyne.TextStyle{Monospace: true},
-					},
-				},
-				}
+				richText.Segments = []widget.RichTextSegment{textSegment(row.Size, fyne.TextAlignTrailing, selected)}
 			case 3:
-				richText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-					Text: row.Modified,
-					Style: widget.RichTextStyle{Alignment: fyne.TextAlignLeading,
-						TextStyle: fyne.TextStyle{Monospace: true},
-					},
-				},
-				}
+				richText.Segments = []widget.RichTextSegment{textSegment(row.Modified, fyne.TextAlignLeading, selected)}
 			}
 
 			showIcon := id.Col == 0
 			if showIcon {
 				// SetResource re-rasterises the SVG, so only pay for it when
 				// the icon actually changes.
-				if res := iconForRow(row.SearchResult); icon.Resource != res {
+				if res := rowIcon(row.SearchResult, selected); icon.Resource != res {
 					icon.SetResource(res)
 				}
 			}
@@ -799,6 +967,12 @@ func makeTable() *widget.Table {
 		},
 	)
 
+	// No row-number column, and no lines between rows: a file list in GTK
+	// has neither. The cells and headers draw the column dividers themselves
+	// (rowBandLayout, sortHeader), as Fyne's would cross every row too.
+	t.ShowHeaderColumn = false
+	t.HideSeparators = true
+
 	applyColumnWidths()
 
 	// Define custom headers
@@ -812,32 +986,152 @@ func makeTable() *widget.Table {
 		if cellID.Col == -1 {
 			return
 		}
-		text := headerTitles[cellID.Col]
+		h.sortDir = 0
 		if sortCol == cellID.Col {
+			h.sortDir = -1
 			if sortAsc {
-				text += " ▲"
-			} else {
-				text += " ▼"
+				h.sortDir = 1
 			}
 		}
-		h.SetText(text)
+		h.Text = headerTitles[cellID.Col]
+		h.Refresh()
 	}
 	return t
 }
 
+// rowBandLayout lays out a cell: the highlight behind it, the content, and the
+// column divider at its right. The table leaves its padding between cells, so
+// the highlight grows by half of it on every side, and the highlights of a
+// row's cells meet in one unbroken band as a selected row in a GTK list does.
+// The divider sits in the middle of the gap to the next column and grows the
+// same way, so the dividers of a column's cells join into one line down the
+// list.
+type rowBandLayout struct{}
+
+func (rowBandLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	half := theme.Padding() / 2
+	objects[0].Move(fyne.NewPos(-half, -half))
+	objects[0].Resize(size.AddWidthHeight(2*half, 2*half))
+	objects[1].Move(fyne.NewPos(0, 0))
+	objects[1].Resize(size)
+	line := theme.SeparatorThicknessSize()
+	objects[2].Move(fyne.NewPos(size.Width+half-line/2, -half))
+	objects[2].Resize(fyne.NewSize(line, size.Height+2*half))
+}
+
+func (rowBandLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	return objects[1].MinSize()
+}
+
 var headerTitles = [4]string{"Name", "Path", "Size", "Last Modified"}
 
-// sortHeader is a column header that sorts the results when tapped.
+// sortHeader is a column header that sorts the results when tapped. Like a
+// GTK column header, it shows the sort direction as a triangle at its right
+// edge, and draws a divider there and rules along its top and bottom.
 type sortHeader struct {
 	widget.Label
 	col int
+	// sortDir is 1 when the results are sorted ascending (A to Z, smallest
+	// or oldest first) by this column, -1 when descending, and 0 when they
+	// are sorted by another.
+	sortDir int
 }
 
 func newSortHeader() *sortHeader {
 	h := &sortHeader{col: -1}
 	h.ExtendBaseWidget(h)
-	h.TextStyle = fyne.TextStyle{Bold: true}
+	h.Truncation = fyne.TextTruncateEllipsis
 	return h
+}
+
+func (h *sortHeader) CreateRenderer() fyne.WidgetRenderer {
+	sep := theme.Color(colorNameGrid)
+	r := &sortHeaderRenderer{
+		WidgetRenderer: h.Label.CreateRenderer(),
+		h:              h,
+		arrow:          canvas.NewImageFromResource(nil),
+		divider:        canvas.NewRectangle(sep),
+		top:            canvas.NewRectangle(sep),
+		bottom:         canvas.NewRectangle(sep),
+	}
+	r.arrow.FillMode = canvas.ImageFillContain
+	r.updateArrow()
+	return r
+}
+
+type sortHeaderRenderer struct {
+	fyne.WidgetRenderer // the label's
+	h                   *sortHeader
+	arrow               *canvas.Image
+	divider, top        *canvas.Rectangle
+	bottom              *canvas.Rectangle
+}
+
+// Layout gives the title the width the arrow leaves, puts the arrow at the
+// right edge, the divider in the middle of the gap the table leaves between
+// columns, and runs the rules under the gap too so they are unbroken.
+func (r *sortHeaderRenderer) Layout(size fyne.Size) {
+	pad := theme.Padding()
+	icon := theme.IconInlineSize()
+	title := size
+	if r.h.sortDir != 0 {
+		title.Width = max(size.Width-icon-pad, 0)
+	}
+	r.WidgetRenderer.Layout(title)
+	r.arrow.Move(fyne.NewPos(size.Width-icon-pad, (size.Height-icon)/2))
+	r.arrow.Resize(fyne.NewSquareSize(icon))
+
+	line := theme.SeparatorThicknessSize()
+	r.divider.Move(fyne.NewPos(size.Width+(pad-line)/2, 0))
+	r.divider.Resize(fyne.NewSize(line, size.Height))
+	r.top.Move(fyne.NewPos(0, 0))
+	r.top.Resize(fyne.NewSize(size.Width+pad, line))
+	r.bottom.Move(fyne.NewPos(0, size.Height-line))
+	r.bottom.Resize(fyne.NewSize(size.Width+pad, line))
+}
+
+func (r *sortHeaderRenderer) MinSize() fyne.Size {
+	return r.WidgetRenderer.MinSize().AddWidthHeight(theme.IconInlineSize()+theme.Padding(), 0)
+}
+
+func (r *sortHeaderRenderer) Objects() []fyne.CanvasObject {
+	return append(r.WidgetRenderer.Objects(), r.arrow, r.divider, r.top, r.bottom)
+}
+
+// sortUpIcon and sortDownIcon are the sort triangles: solid, 10 by 5 in a 16
+// square, as GTK draws them. Fyne's menu arrows are smaller and outlined.
+// Themed, so they take the text colour.
+var (
+	sortUpIcon = theme.NewThemedResource(fyne.NewStaticResource("sort-up.svg", []byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3 10.5h10l-5-5z"/></svg>`)))
+	sortDownIcon = theme.NewThemedResource(fyne.NewStaticResource("sort-down.svg", []byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3 5.5h10l-5 5z"/></svg>`)))
+)
+
+// updateArrow shows the triangle for the header's sort direction, or none.
+// As in GTK, ascending points down and descending up.
+func (r *sortHeaderRenderer) updateArrow() {
+	switch r.h.sortDir {
+	case 1:
+		r.arrow.Resource = sortDownIcon
+	case -1:
+		r.arrow.Resource = sortUpIcon
+	default:
+		r.arrow.Resource = nil
+	}
+	r.arrow.Hidden = r.h.sortDir == 0
+}
+
+func (r *sortHeaderRenderer) Refresh() {
+	r.updateArrow()
+	r.arrow.Refresh()
+	sep := theme.Color(colorNameGrid)
+	for _, l := range []*canvas.Rectangle{r.divider, r.top, r.bottom} {
+		l.FillColor = sep
+		l.Refresh()
+	}
+	r.WidgetRenderer.Refresh()
+	r.Layout(r.h.Size())
 }
 
 func (h *sortHeader) Tapped(_ *fyne.PointEvent) {
@@ -858,66 +1152,6 @@ func (h *sortHeader) Tapped(_ *fyne.PointEvent) {
 	hoveredRow = -1
 	t.Refresh()
 	t.ScrollToTop()
-}
-
-func getToolTipForFile(path string, maxChars int, decimalSizes bool) string {
-	info, err := shared.GetFileInfo(path, decimalSizes)
-	if err != nil {
-		return "No access"
-	}
-
-	return fmt.Sprintf("%s\n\n%s", wrapPath(path, maxChars), info)
-}
-
-// tooltipMaxWidth mirrors the cap fyne-tooltip's internal layer uses when
-// sizing the tooltip popup.
-const tooltipMaxWidth = 600
-
-// tooltipMaxChars returns how many monospace characters fit across the tooltip
-// at the current window width, so long paths can be wrapped to fit rather than
-// stretching the popup. Must be called on the UI thread (it reads window size).
-func tooltipMaxChars() int {
-	width := float32(tooltipMaxWidth)
-	if mainWindow != nil {
-		if cw := mainWindow.Canvas().Size().Width; cw > 0 && cw < width {
-			width = cw
-		}
-	}
-	width -= theme.InnerPadding() * 2
-
-	charW := fyne.MeasureText("M", theme.CaptionTextSize(), fyne.TextStyle{Monospace: true}).Width
-	if charW <= 0 {
-		return 64
-	}
-	n := int(width / charW)
-	if n < 16 {
-		n = 16
-	}
-	return n
-}
-
-// wrapPath breaks a long path across multiple lines so it fits within maxChars
-// columns, preferring to break just after a path separator for readability and
-// falling back to a hard break for very long unbroken segments.
-func wrapPath(path string, maxChars int) string {
-	if maxChars < 8 {
-		maxChars = 8
-	}
-
-	var b strings.Builder
-	for len(path) > maxChars {
-		cut := strings.LastIndex(path[:maxChars], "/")
-		if cut <= 0 {
-			cut = maxChars // no separator to break on; hard-break
-		} else {
-			cut++ // keep the separator at the end of the current line
-		}
-		b.WriteString(path[:cut])
-		b.WriteByte('\n')
-		path = path[cut:]
-	}
-	b.WriteString(path)
-	return b.String()
 }
 
 func showAbout() {
@@ -951,7 +1185,10 @@ Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 	w.Show()
 }
 
+// statusBar shows the result count, or a passing message, at the left of the
+// bottom bar. indexStatus shows the size of the index at the right.
 var statusBar *widget.Label
+var indexStatus *widget.Label
 
 // logoResource is the app logo that reads on the current background: white
 // and orange on dark, orange and black on light.
@@ -1005,10 +1242,11 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	// not carry one, so set it here.
 	a.SetIcon(resourceFolderWhiteOrange5122xPng)
 	prefs = loadPrefs(a.Preferences())
-	sortCol, sortAsc = -1, true
+	sortCol, sortAsc = defaultPrefs().SortCol, defaultPrefs().SortAsc
 	if prefs.RememberLayout {
 		sortCol, sortAsc = prefs.SortCol, prefs.SortAsc
 	}
+	loadSystemFonts()
 	appTheme.setPrefs(prefs)
 	a.Settings().SetTheme(appTheme)
 	w := a.NewWindow(AppName)
@@ -1028,11 +1266,24 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 
 	// Hiding the window is the last chance to store column widths when the
 	// app is then ended from outside (logout, kill), which runs no OnStopped.
-	hideWindow := func() {
+	closeWindow := func() {
+		windowCloses++
 		saveLayout()
+		if prefs.ExitOnClose {
+			a.Quit() // OnStopped saves the layout again; that's harmless
+			return
+		}
 		w.Hide()
 	}
-	w.SetCloseIntercept(hideWindow)
+	closeMainWindow = closeWindow
+	w.SetCloseIntercept(closeWindow)
+	// Escape reaches the canvas when nothing has focus, such as after a
+	// click on a result.
+	w.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
+		if e.Name == fyne.KeyEscape {
+			escapeClosesWindow()
+		}
+	})
 
 	prefsItem := fyne.NewMenuItem(preferencesLabel, showPreferences)
 	prefsItem.Shortcut = preferencesShortcut
@@ -1040,7 +1291,7 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 		fyne.NewMenu("File",
 			prefsItem,
 			fyne.NewMenuItemSeparator(),
-			fyne.NewMenuItem("Close Window", hideWindow)),
+			fyne.NewMenuItem("Close Window", closeWindow)),
 		fyne.NewMenu("Help", fyne.NewMenuItem("About EverythingX", showAbout)),
 	))
 	// The macOS menu bar handles its own shortcuts; elsewhere, menu shortcuts
@@ -1055,11 +1306,13 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	searchBox = entry
 
 	statusBar = widget.NewLabel("")
-	statusBar.TextStyle = fyne.TextStyle{Bold: true}
+	statusBar.Truncation = fyne.TextTruncateEllipsis
+	indexStatus = widget.NewLabel("")
 
 	// Debounce keystrokes: only search once typing pauses, so fast typing
 	// doesn't fire a DB query per character. Runs on the UI thread.
 	entry.OnChanged = func(s string) {
+		entry.showClear()
 		if searchDebounceTimer != nil {
 			searchDebounceTimer.Stop()
 		}
@@ -1076,8 +1329,9 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	}
 
 	content := container.NewBorder(
-		entry,
-		statusBar,
+		container.NewPadded(entry),
+		container.NewVBox(widget.NewSeparator(),
+			container.NewBorder(nil, nil, nil, indexStatus, statusBar)),
 		nil,
 		nil,
 		container.NewStack(table, makeEmptyState()),

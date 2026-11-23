@@ -170,8 +170,8 @@ func TestUpdateCellRendersIconAndSelection(t *testing.T) {
 	stack := cell.(*fyne.Container)
 	bg := stack.Objects[0].(*canvas.Rectangle)
 	inner := stack.Objects[1].(*fyne.Container)
-	text := inner.Objects[0].(*tooltipCell)
-	icon := inner.Objects[1].(*widget.Icon)
+	text := inner.Objects[0].(*resultCell)
+	icon := inner.Objects[1].(*cellIcon)
 
 	if !icon.Visible() {
 		t.Error("icon hidden in the Name column")
@@ -196,32 +196,42 @@ func TestUpdateCellRendersIconAndSelection(t *testing.T) {
 	}
 }
 
-// Headers carry the sort indicator and the resize rule, and UpdateHeader
-// reaches into a nested container by index to reach both.
+// The sorted column's header shows a triangle for the direction; the others
+// show none, and the title is never changed to carry it.
 func TestUpdateHeaderShowsSortDirection(t *testing.T) {
 	table := makeTable()
 	defer func() { sortCol, sortAsc = -1, true }()
 
 	sortCol, sortAsc = 2, true
 	header := table.CreateHeader()
-	table.UpdateHeader(widget.TableCellID{Row: -1, Col: 2}, header)
+	h := header.(*sortHeader)
+	r := test.WidgetRenderer(h).(*sortHeaderRenderer)
 
-	label := header.(*sortHeader)
-
-	if label.Text != "Size ▲" {
-		t.Errorf("header text = %q, want \"Size ▲\"", label.Text)
+	check := func(col int, wantText string, wantArrow fyne.Resource) {
+		t.Helper()
+		table.UpdateHeader(widget.TableCellID{Row: -1, Col: col}, header)
+		if h.Text != wantText {
+			t.Errorf("header text = %q, want %q", h.Text, wantText)
+		}
+		if r.arrow.Resource != wantArrow || r.arrow.Hidden != (wantArrow == nil) {
+			t.Errorf("%s arrow = %v (hidden %v), want %v", wantText, r.arrow.Resource, r.arrow.Hidden, wantArrow)
+		}
 	}
-
+	// GTK's convention: ascending points down.
+	check(2, "Size", sortDownIcon)
 	sortAsc = false
-	table.UpdateHeader(widget.TableCellID{Row: -1, Col: 2}, header)
-	if label.Text != "Size ▼" {
-		t.Errorf("header text = %q, want \"Size ▼\"", label.Text)
-	}
+	check(2, "Size", sortUpIcon)
+	check(0, "Name", nil)
+}
 
-	// A column that is not sorted carries no arrow.
-	table.UpdateHeader(widget.TableCellID{Row: -1, Col: 0}, header)
-	if label.Text != "Name" {
-		t.Errorf("unsorted header = %q, want \"Name\"", label.Text)
+// An earlier version stored -1 for the database order, which had no arrow.
+// It now loads as the default, sorted by Name, so a column always shows one.
+func TestLoadPrefsMigratesDatabaseOrder(t *testing.T) {
+	usePrefs(t, defaultPrefs())
+	store := fyne.CurrentApp().Preferences()
+	store.SetInt(keySortCol, -1)
+	if got := loadPrefs(store).SortCol; got != 0 {
+		t.Errorf("stored sort -1 loads as %d, want 0 (Name)", got)
 	}
 }
 
@@ -318,7 +328,7 @@ func TestSelectionWinsOverHover(t *testing.T) {
 	cell := table.CreateCell()
 	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
 
-	if got := cell.(*fyne.Container).Objects[0].(*canvas.Rectangle).FillColor; got != theme.Color(theme.ColorNameSelection) {
+	if got := cell.(*fyne.Container).Objects[0].(*canvas.Rectangle).FillColor; got != theme.Color(theme.ColorNamePrimary) {
 		t.Error("hover overrode the selection colour on the selected row")
 	}
 }
@@ -339,7 +349,7 @@ func TestCellHoverLightsItsRow(t *testing.T) {
 
 	cell := table.CreateCell()
 	table.UpdateCell(widget.TableCellID{Row: 1, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
+	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*resultCell)
 
 	text.MouseIn(&desktop.MouseEvent{})
 
@@ -359,7 +369,7 @@ func TestCellMouseOutClearsRow(t *testing.T) {
 
 	cell := table.CreateCell()
 	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
+	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*resultCell)
 
 	hoveredRow = 0 // set by MouseIn on entry
 	text.MouseOut()
@@ -406,31 +416,6 @@ func TestScrollDropsHoverHighlight(t *testing.T) {
 	}
 }
 
-// Recycling a cell and opening the context menu both cancel a pending tool tip,
-// but the pointer has not left the row, so the highlight must survive both.
-func TestToolTipCancelKeepsRowHighlight(t *testing.T) {
-	table := makeTable()
-	mainWindow = test.NewWindow(nil)
-	defer func() { tableData, selectedRow, hoveredRow, mainWindow = nil, -1, -1, nil }()
-
-	result := &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}
-	tableData = []RowData{{Name: []string{"a", "", ""}, Base: "a", SearchResult: result}}
-
-	cell := table.CreateCell()
-	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
-
-	hoveredRow = 0
-	text.cancelToolTip()
-
-	if hoveredRow != 0 {
-		t.Errorf("hovered row = %d after cancelling a tool tip, want 0", hoveredRow)
-	}
-	if text.hovered {
-		t.Error("cancelToolTip left the tip armed")
-	}
-}
-
 // Selection must happen on press. Fyne defers Tapped on a DoubleTappable
 // widget for the system double-click interval, so selecting from Tapped shows
 // up as a visible lag before the row highlights.
@@ -447,66 +432,12 @@ func TestCellSelectsOnMouseDown(t *testing.T) {
 
 	cell := table.CreateCell()
 	table.UpdateCell(widget.TableCellID{Row: 1, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
+	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*resultCell)
 
 	text.MouseDown(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary})
 
 	if selectedRow != 1 {
 		t.Errorf("selected row = %d after press, want 1", selectedRow)
-	}
-}
-
-// The tool tip layer lives on the window content, which the menu overlay
-// covers. A tip left armed when the menu opens fires with nowhere to draw and
-// logs "no tool tip layer created for current overlay".
-func TestContextMenuCancelsPendingToolTip(t *testing.T) {
-	table := makeTable()
-	mainWindow = test.NewWindow(nil)
-	defer func() { tableData, selectedRow, mainWindow = nil, -1, nil }()
-
-	result := &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}
-	tableData = []RowData{{Name: []string{"a", "", ""}, Base: "a", SearchResult: result}}
-
-	cell := table.CreateCell()
-	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
-
-	// Set by MouseIn on entry; not calling it keeps the test on one goroutine,
-	// as the test driver runs fyne.Do inline rather than on the UI thread.
-	text.hovered = true
-
-	text.TappedSecondary(&fyne.PointEvent{})
-
-	if text.hovered {
-		t.Error("cell still hovered after the context menu opened, so a tool tip can fire under it")
-	}
-}
-
-// Scrolling repoints a cell at another row with the pointer sitting still, so
-// no MouseOut arrives. A tip armed for the old row would show its details on
-// the new one.
-func TestRecyclingCellCancelsPendingToolTip(t *testing.T) {
-	table := makeTable()
-	defer func() { tableData, selectedRow = nil, -1 }()
-
-	tableData = []RowData{
-		{Name: []string{"a", "", ""}, Base: "a", SearchResult: &shared.SearchResult{Fullpath: "/tmp/a", ObjectType: shared.ItemIsFile}},
-		{Name: []string{"b", "", ""}, Base: "b", SearchResult: &shared.SearchResult{Fullpath: "/tmp/b", ObjectType: shared.ItemIsFile}},
-	}
-
-	cell := table.CreateCell()
-	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
-	text := cell.(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*tooltipCell)
-
-	text.hovered = true // set by MouseIn on entry
-	table.UpdateCell(widget.TableCellID{Row: 0, Col: 0}, cell)
-	if !text.hovered {
-		t.Error("a refresh that left the cell on the same file dropped the pending tool tip")
-	}
-
-	table.UpdateCell(widget.TableCellID{Row: 1, Col: 0}, cell)
-	if text.hovered {
-		t.Error("cell still hovered after moving to another file, so its tool tip shows the wrong details")
 	}
 }
 
@@ -617,7 +548,7 @@ func TestBuildRowsWithoutTermHighlightsNothing(t *testing.T) {
 	rows := buildRows([]*shared.SearchResult{
 		{Fullpath: dir, ObjectType: shared.ItemIsDir},
 		{Fullpath: file, ObjectType: shared.ItemIsFile},
-	}, "", false)
+	}, "", searchOptions{})
 
 	if rows[0].Base != filepath.Base(dir)+"/" || rows[0].Size != "--" || rows[0].SizeBytes != -1 {
 		t.Errorf("dir row = %+v, want trailing slash and no size", rows[0])
@@ -689,12 +620,12 @@ func TestBuildRowsHighlightsGlobParts(t *testing.T) {
 	if err := os.WriteFile(file, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rows := buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "mypackage*.bb", false)
+	rows := buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "mypackage*.bb", searchOptions{})
 	want := []string{"", "mypackage", "_1.0", ".bb", ""}
 	if !reflect.DeepEqual(rows[0].Name, want) {
 		t.Errorf("glob row name = %q, want %q", rows[0].Name, want)
 	}
-	rows = buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "1.0", false)
+	rows = buildRows([]*shared.SearchResult{{Fullpath: file, ObjectType: shared.ItemIsFile}}, "1.0", searchOptions{})
 	if want := []string{"mypackage_", "1.0", ".bb"}; !reflect.DeepEqual(rows[0].Name, want) {
 		t.Errorf("literal row name = %q, want %q", rows[0].Name, want)
 	}
@@ -704,14 +635,14 @@ func TestBuildRowsHighlightsGlobParts(t *testing.T) {
 	if err := os.Mkdir(src, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	rows = buildRows([]*shared.SearchResult{{Fullpath: src, ObjectType: shared.ItemIsDir}}, "*src", false)
+	rows = buildRows([]*shared.SearchResult{{Fullpath: src, ObjectType: shared.ItemIsDir}}, "*src", searchOptions{})
 	if want := []string{"my", "src", "/"}; !reflect.DeepEqual(rows[0].Name, want) {
 		t.Errorf("glob dir row name = %q, want %q", rows[0].Name, want)
 	}
 }
 
 func TestNameSegments(t *testing.T) {
-	segs := nameSegments([]string{"", "mypackage", "_1.0", ".bb", ""})
+	segs := nameSegments([]string{"", "mypackage", "_1.0", ".bb", ""}, false)
 	var got []string
 	for _, s := range segs {
 		ts := s.(*widget.TextSegment)
@@ -720,11 +651,237 @@ func TestNameSegments(t *testing.T) {
 	if want := []string{"mypackage:true", "_1.0:false", ".bb:true"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("segments = %q, want %q", got, want)
 	}
-	if segs := nameSegments([]string{"anything"}); len(segs) != 1 || segs[0].(*widget.TextSegment).Style.Inline {
+	if segs := nameSegments([]string{"anything"}, false); len(segs) != 1 || segs[0].(*widget.TextSegment).Style.Inline {
 		t.Errorf("unhighlighted name should be one plain segment, got %v", segs)
 	}
-	long := strings.Repeat("x", nameHighlightMaxChars)
-	if segs := nameSegments([]string{long, "hit", ""}); len(segs) != 1 {
+	long := strings.Repeat("x", int(nameHighlightMaxWidth))
+	if segs := nameSegments([]string{long, "hit", ""}, false); len(segs) != 1 {
 		t.Errorf("highlight past the column edge should render plain, got %d segments", len(segs))
 	}
+}
+
+// cellParts builds a cell for row 0 at col and returns its text and icon.
+func cellParts(table *widget.Table, col int) (*resultCell, *cellIcon) {
+	cell := table.CreateCell()
+	table.UpdateCell(widget.TableCellID{Row: 0, Col: col}, cell)
+	inner := cell.(*fyne.Container).Objects[1].(*fyne.Container)
+	return inner.Objects[0].(*resultCell), inner.Objects[1].(*cellIcon)
+}
+
+func oneRow(path string) []RowData {
+	base := filepath.Base(path)
+	return []RowData{{
+		Name:         []string{base, "", ""},
+		Base:         base,
+		Path:         filepath.Dir(path),
+		SearchResult: &shared.SearchResult{Fullpath: path, ObjectType: shared.ItemIsFile},
+	}}
+}
+
+// Double-clicking the Path column is about the folder, so it reveals the item
+// there. Every other column opens the item itself.
+func TestDoubleTapDispatchesByColumn(t *testing.T) {
+	calls := stubLaunchers(t)
+	table := makeTable()
+	defer func() { tableData, selectedRow = nil, -1 }()
+
+	path := tempFile(t, "movie.mkv")
+	tableData = oneRow(path)
+
+	for col := range 4 {
+		text, _ := cellParts(table, col)
+		text.DoubleTapped(&fyne.PointEvent{})
+		want := "open"
+		if col == pathColumn {
+			want = "reveal"
+		}
+		expectLaunch(t, calls, want, path)
+	}
+}
+
+func TestEnterOpensSelectedRow(t *testing.T) {
+	calls := stubLaunchers(t)
+	makeTable()
+	defer func() { tableData, selectedRow = nil, -1 }()
+
+	path := tempFile(t, "song.flac")
+	tableData = oneRow(path)
+	entry := newSearchEntry()
+
+	selectedRow = -1
+	entry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	expectNoLaunch(t, calls)
+
+	selectedRow = 0
+	entry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	expectLaunch(t, calls, "open", path)
+}
+
+func TestContextMenuItems(t *testing.T) {
+	stubLaunchers(t)
+	menu := contextMenu("/tmp/a.txt")
+	var got []string
+	for _, item := range menu.Items {
+		if item.IsSeparator {
+			got = append(got, "---")
+			continue
+		}
+		got = append(got, item.Label)
+	}
+	want := []string{"Open", openWithLabel, revealLabel, "---", "Copy Name", "Copy Full Path", "Copy Directory Path", "---", propertiesLabel}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("menu = %q, want %q", got, want)
+	}
+}
+
+// Every item has an icon, a blank one where there is none to show, so the
+// labels line up in a column.
+func TestContextMenuIcons(t *testing.T) {
+	stubLaunchers(t)
+	want := map[string]fyne.Resource{
+		"Open":                theme.DocumentIcon(),
+		openWithLabel:         blankMenuIcon,
+		revealLabel:           theme.FolderOpenIcon(),
+		"Copy Name":           theme.ContentCopyIcon(),
+		"Copy Full Path":      theme.ContentCopyIcon(),
+		"Copy Directory Path": theme.ContentCopyIcon(),
+		propertiesLabel:       theme.InfoIcon(),
+	}
+	for _, item := range contextMenu("/tmp/a.txt").Items {
+		if item.IsSeparator {
+			continue
+		}
+		if w, ok := want[item.Label]; !ok || item.Icon == nil || item.Icon.Name() != w.Name() {
+			t.Errorf("%q icon = %v, want %v", item.Label, item.Icon, w)
+		}
+	}
+}
+
+func TestContextMenuOpenAndReveal(t *testing.T) {
+	calls := stubLaunchers(t)
+	path := tempFile(t, "doc.pdf")
+	menu := contextMenu(path)
+
+	menu.Items[0].Action()
+	expectLaunch(t, calls, "open", path)
+	menu.Items[2].Action()
+	expectLaunch(t, calls, "reveal", path)
+}
+
+// The icon sits beside the Name text, and a click on it must act as a click on
+// the name: select the row on press, open on double-click.
+func TestNameIconForwardsToCell(t *testing.T) {
+	calls := stubLaunchers(t)
+	table := makeTable()
+	defer func() { tableData, selectedRow = nil, -1 }()
+
+	path := tempFile(t, "photo.jpg")
+	tableData = oneRow(path)
+	selectedRow = -1
+
+	_, icon := cellParts(table, 0)
+	icon.MouseDown(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary})
+	if selectedRow != 0 {
+		t.Errorf("selected row = %d after pressing the icon, want 0", selectedRow)
+	}
+
+	icon.DoubleTapped(&fyne.PointEvent{})
+	expectLaunch(t, calls, "open", path)
+}
+
+// A single click on the name opens the item, like a link. Elsewhere in the row
+// a click only selects.
+func TestTapOpensOnlyFromNameColumn(t *testing.T) {
+	calls := stubLaunchers(t)
+	table := makeTable()
+	defer func() { tableData, selectedRow = nil, -1 }()
+
+	path := tempFile(t, "clip.mp4")
+	tableData = oneRow(path)
+
+	for col := 1; col < 4; col++ {
+		text, _ := cellParts(table, col)
+		text.Tapped(&fyne.PointEvent{})
+		if text.Cursor() != desktop.DefaultCursor {
+			t.Errorf("column %d shows a pointer cursor but a click doesn't open", col)
+		}
+	}
+	expectNoLaunch(t, calls)
+
+	text, icon := cellParts(table, nameColumn)
+	if text.Cursor() != desktop.PointerCursor || icon.Cursor() != desktop.PointerCursor {
+		t.Error("Name column doesn't show a pointer cursor")
+	}
+	text.Tapped(&fyne.PointEvent{})
+	expectLaunch(t, calls, "open", path)
+	icon.Tapped(&fyne.PointEvent{})
+	expectLaunch(t, calls, "open", path)
+}
+
+// A cell whose text fits shows no tool tip; one cut short shows all of it,
+// across every segment of a highlighted name.
+func TestTruncatedText(t *testing.T) {
+	test.NewTempApp(t)
+	c := newResultCell()
+	c.Segments = []widget.RichTextSegment{
+		inlineNameSegment("annual_", false, false),
+		inlineNameSegment("report", true, false),
+		inlineNameSegment("_2026.pdf", false, false),
+	}
+	c.Resize(fyne.NewSize(1000, 30))
+	if got := c.truncatedText(); got != "" {
+		t.Errorf("wide cell: tip %q, want none", got)
+	}
+	c.Resize(fyne.NewSize(60, 30))
+	if got := c.truncatedText(); got != "annual_report_2026.pdf" {
+		t.Errorf("narrow cell: tip %q, want the full name", got)
+	}
+}
+
+// Entering a cell whose text is cut short arms its tool tip with the full
+// text; entering one that fits arms none.
+func TestMouseInSetsToolTipOnlyWhenTruncated(t *testing.T) {
+	test.NewTempApp(t)
+	defer func() { hoveredRow = -1 }()
+	c := newResultCell()
+	c.Segments = []widget.RichTextSegment{textSegment("/home/alan/some/deep/folder/", fyne.TextAlignLeading, false)}
+
+	c.Resize(fyne.NewSize(1000, 30))
+	c.MouseIn(&desktop.MouseEvent{})
+	if got := c.ToolTip(); got != "" {
+		t.Errorf("fitting text armed tip %q", got)
+	}
+	c.MouseOut()
+
+	c.Resize(fyne.NewSize(50, 30))
+	c.MouseIn(&desktop.MouseEvent{})
+	if got := c.ToolTip(); got != "/home/alan/some/deep/folder/" {
+		t.Errorf("truncated text armed tip %q, want the full path", got)
+	}
+	c.MouseOut()
+}
+
+// Fyne delivers a click on a cell only after the double-click interval. If
+// the window closes in that time, as with Escape, the click is dropped.
+func TestClickAfterWindowClosedDoesNothing(t *testing.T) {
+	calls := stubLaunchers(t)
+	table := makeTable()
+	defer func() { tableData, selectedRow = nil, -1 }()
+
+	path := tempFile(t, "notes.txt")
+	tableData = oneRow(path)
+	press := &desktop.MouseEvent{Button: desktop.MouseButtonPrimary}
+
+	text, icon := cellParts(table, nameColumn)
+	text.MouseDown(press)
+	windowCloses++
+	text.Tapped(&fyne.PointEvent{})
+	text.DoubleTapped(&fyne.PointEvent{})
+	icon.Tapped(&fyne.PointEvent{})
+	expectNoLaunch(t, calls)
+
+	// The next click, once the window is back, opens as usual.
+	text.MouseDown(press)
+	text.Tapped(&fyne.PointEvent{})
+	expectLaunch(t, calls, "open", path)
 }

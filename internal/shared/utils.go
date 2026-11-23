@@ -31,42 +31,9 @@ func FileExists(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-// GetFileInfo returns a compact, aligned key/value summary of a file's
-// metadata, suitable for display in a tooltip. Labels are left-aligned in a
-// fixed column so values line up under a monospace font. Sizes are written in
-// units of decimal (1000) or binary (1024) bytes; see HumanizeSizeUnits.
-func GetFileInfo(path string, decimal bool) (string, error) {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-
-	owner, group := fileOwnerGroup(fileInfo)
-
-	rows := [][2]string{
-		{"Size", HumanizeSizeUnits(fileInfo.Size(), decimal)},
-		{"Last Modified", fileInfo.ModTime().Format("Jan 2 2006 15:04")},
-		{"Mode", fileInfo.Mode().String()},
-		{"Owner", owner},
-		{"Group", group},
-	}
-
-	var b strings.Builder
-	for i, r := range rows {
-		if i > 0 {
-			b.WriteByte('\n')
-		}
-		// Pad the label to line the values up; "Last Modified" (13) is the
-		// widest, so a 15-wide column leaves a two-space gutter.
-		fmt.Fprintf(&b, "%-15s%s", r[0], r[1])
-	}
-
-	return b.String(), nil
-}
-
-// fileOwnerGroup resolves the owner and group names for a file, falling back to
+// FileOwnerGroup resolves the owner and group names for a file, falling back to
 // numeric ids when a name lookup fails.
-func fileOwnerGroup(fileInfo os.FileInfo) (owner, group string) {
+func FileOwnerGroup(fileInfo os.FileInfo) (owner, group string) {
 	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
 	if !ok {
 		return "", ""
