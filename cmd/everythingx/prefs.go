@@ -64,7 +64,7 @@ type appPrefs struct {
 	// RememberLayout keeps the column widths and sort order across launches.
 	RememberLayout bool
 	ColumnWidths   [numColumns]float32 // 0 means the default width
-	SortCol        int                 // -1 for the database order
+	SortCol        int                 // a column; the results are always sorted by one
 	SortAsc        bool
 }
 
@@ -77,7 +77,7 @@ func defaultPrefs() appPrefs {
 		ResultLimit:    1000,
 		ShowHidden:     true,
 		RememberLayout: true,
-		SortCol:        -1,
+		SortCol:        0, // Name, as file managers sort
 		SortAsc:        true,
 	}
 }
@@ -144,7 +144,8 @@ func loadPrefs(store fyne.Preferences) appPrefs {
 	if !slices.Contains(resultLimits, p.ResultLimit) {
 		p.ResultLimit = d.ResultLimit
 	}
-	if p.SortCol < -1 || p.SortCol >= numColumns {
+	// -1 was the database order, which earlier versions offered and stored.
+	if p.SortCol < 0 || p.SortCol >= numColumns {
 		p.SortCol = d.SortCol
 	}
 	for i, w := range store.FloatList(keyColumnWidths) {

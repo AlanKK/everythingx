@@ -196,32 +196,41 @@ func TestUpdateCellRendersIconAndSelection(t *testing.T) {
 	}
 }
 
-// Headers carry the sort indicator and the resize rule, and UpdateHeader
-// reaches into a nested container by index to reach both.
+// The sorted column's header shows a triangle for the direction; the others
+// show none, and the title is never changed to carry it.
 func TestUpdateHeaderShowsSortDirection(t *testing.T) {
 	table := makeTable()
 	defer func() { sortCol, sortAsc = -1, true }()
 
 	sortCol, sortAsc = 2, true
 	header := table.CreateHeader()
-	table.UpdateHeader(widget.TableCellID{Row: -1, Col: 2}, header)
+	h := header.(*sortHeader)
+	r := test.WidgetRenderer(h).(*sortHeaderRenderer)
 
-	label := header.(*sortHeader)
-
-	if label.Text != "Size ▲" {
-		t.Errorf("header text = %q, want \"Size ▲\"", label.Text)
+	check := func(col int, wantText string, wantArrow fyne.Resource) {
+		t.Helper()
+		table.UpdateHeader(widget.TableCellID{Row: -1, Col: col}, header)
+		if h.Text != wantText {
+			t.Errorf("header text = %q, want %q", h.Text, wantText)
+		}
+		if r.arrow.Resource != wantArrow || r.arrow.Hidden != (wantArrow == nil) {
+			t.Errorf("%s arrow = %v (hidden %v), want %v", wantText, r.arrow.Resource, r.arrow.Hidden, wantArrow)
+		}
 	}
-
+	check(2, "Size", sortUpIcon)
 	sortAsc = false
-	table.UpdateHeader(widget.TableCellID{Row: -1, Col: 2}, header)
-	if label.Text != "Size ▼" {
-		t.Errorf("header text = %q, want \"Size ▼\"", label.Text)
-	}
+	check(2, "Size", sortDownIcon)
+	check(0, "Name", nil)
+}
 
-	// A column that is not sorted carries no arrow.
-	table.UpdateHeader(widget.TableCellID{Row: -1, Col: 0}, header)
-	if label.Text != "Name" {
-		t.Errorf("unsorted header = %q, want \"Name\"", label.Text)
+// An earlier version stored -1 for the database order, which had no arrow.
+// It now loads as the default, sorted by Name, so a column always shows one.
+func TestLoadPrefsMigratesDatabaseOrder(t *testing.T) {
+	usePrefs(t, defaultPrefs())
+	store := fyne.CurrentApp().Preferences()
+	store.SetInt(keySortCol, -1)
+	if got := loadPrefs(store).SortCol; got != 0 {
+		t.Errorf("stored sort -1 loads as %d, want 0 (Name)", got)
 	}
 }
 

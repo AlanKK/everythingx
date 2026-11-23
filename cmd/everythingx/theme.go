@@ -10,6 +10,16 @@ import (
 // colorNameMatch is the colour of the matched part of a name in the results.
 const colorNameMatch fyne.ThemeColorName = "everythingxMatch"
 
+// colorNameGrid is the colour of the results table's column dividers and the
+// rules around its header: the darker grey of GTK's tree view lines, which
+// read better than Fyne's separator colour does on a white list.
+const colorNameGrid fyne.ThemeColorName = "everythingxGrid"
+
+var (
+	gridLight = color.NRGBA{R: 0xc5, G: 0xc7, B: 0xc8, A: 0xff}
+	gridDark  = color.NRGBA{R: 0x3d, G: 0x3e, B: 0x42, A: 0xff}
+)
+
 // namedColor is one of the swatches on the Appearance tab.
 type namedColor struct {
 	name  string
@@ -163,6 +173,18 @@ func (th *everythingxTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) co
 		case theme.ColorNameSelection:
 			return withAlpha(a.color, 0x40)
 		}
+	}
+
+	// The table's header row is the colour of the rows, with rules above and
+	// below (sortHeader), as GTK column headers are.
+	if n == theme.ColorNameHeaderBackground {
+		n = theme.ColorNameBackground
+	}
+	if n == colorNameGrid {
+		if v == theme.VariantDark {
+			return gridDark
+		}
+		return gridLight
 	}
 
 	return theme.DefaultTheme().Color(n, v)

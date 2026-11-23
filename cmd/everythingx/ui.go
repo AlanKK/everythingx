@@ -816,6 +816,7 @@ func makeTable() *widget.Table {
 			return container.New(rowBandLayout{},
 				canvas.NewRectangle(color.Transparent),
 				container.NewBorder(nil, nil, icon, nil, text),
+				canvas.NewRectangle(theme.Color(colorNameGrid)),
 			)
 		},
 		// UpdateCell()
@@ -865,6 +866,11 @@ func makeTable() *widget.Table {
 				bg.FillColor = highlight
 				bg.Refresh()
 			}
+			// The column divider follows the theme, which can change under it.
+			if div := stack.Objects[2].(*canvas.Rectangle); div.FillColor != theme.Color(colorNameGrid) {
+				div.FillColor = theme.Color(colorNameGrid)
+				div.Refresh()
+			}
 
 			switch id.Col {
 			case 0:
@@ -902,7 +908,8 @@ func makeTable() *widget.Table {
 	)
 
 	// No row-number column, and no lines between rows: a file list in GTK
-	// has neither. The headers draw their own column dividers (sortHeader).
+	// has neither. The cells and headers draw the column dividers themselves
+	// (rowBandLayout, sortHeader), as Fyne's would cross every row too.
 	t.ShowHeaderColumn = false
 	t.HideSeparators = true
 
@@ -919,96 +926,150 @@ func makeTable() *widget.Table {
 		if cellID.Col == -1 {
 			return
 		}
-		text := headerTitles[cellID.Col]
+		h.sortDir = 0
 		if sortCol == cellID.Col {
+			h.sortDir = -1
 			if sortAsc {
-				text += " ▲"
-			} else {
-				text += " ▼"
+				h.sortDir = 1
 			}
 		}
-		h.SetText(text)
+		h.Text = headerTitles[cellID.Col]
+		h.Refresh()
 	}
 	return t
 }
 
-// rowBandLayout lays out a cell as a stack, but grows the highlight behind it
-// (the first object) by half the table's padding on every side. The table
-// leaves that padding between cells, so the highlights of a row's cells meet
-// in one unbroken band, as a selected row in a GTK list is.
+// rowBandLayout lays out a cell: the highlight behind it, the content, and the
+// column divider at its right. The table leaves its padding between cells, so
+// the highlight grows by half of it on every side, and the highlights of a
+// row's cells meet in one unbroken band as a selected row in a GTK list does.
+// The divider sits in the middle of the gap to the next column and grows the
+// same way, so the dividers of a column's cells join into one line down the
+// list.
 type rowBandLayout struct{}
 
 func (rowBandLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	half := theme.Padding() / 2
 	objects[0].Move(fyne.NewPos(-half, -half))
 	objects[0].Resize(size.AddWidthHeight(2*half, 2*half))
-	for _, o := range objects[1:] {
-		o.Move(fyne.NewPos(0, 0))
-		o.Resize(size)
-	}
+	objects[1].Move(fyne.NewPos(0, 0))
+	objects[1].Resize(size)
+	line := theme.SeparatorThicknessSize()
+	objects[2].Move(fyne.NewPos(size.Width+half-line/2, -half))
+	objects[2].Resize(fyne.NewSize(line, size.Height+2*half))
 }
 
 func (rowBandLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	var min fyne.Size
-	for _, o := range objects[1:] {
-		min = min.Max(o.MinSize())
-	}
-	return min
+	return objects[1].MinSize()
 }
 
 var headerTitles = [4]string{"Name", "Path", "Size", "Last Modified"}
 
-// sortHeader is a column header that sorts the results when tapped. It draws
-// a divider at its right edge and a rule along its bottom, as GTK column
-// headers do. The table's own dividers would run down every row, so they are
-// off (Table.HideSeparators), and the divider marks where to drag.
+// sortHeader is a column header that sorts the results when tapped. Like a
+// GTK column header, it shows the sort direction as a triangle at its right
+// edge, and draws a divider there and rules along its top and bottom.
 type sortHeader struct {
 	widget.Label
 	col int
+	// sortDir is 1 when the results are sorted up this column, -1 when down
+	// it, and 0 when they are sorted by another.
+	sortDir int
 }
 
 func newSortHeader() *sortHeader {
 	h := &sortHeader{col: -1}
 	h.ExtendBaseWidget(h)
+	h.Truncation = fyne.TextTruncateEllipsis
 	return h
 }
 
 func (h *sortHeader) CreateRenderer() fyne.WidgetRenderer {
-	return &sortHeaderRenderer{
+	sep := theme.Color(colorNameGrid)
+	r := &sortHeaderRenderer{
 		WidgetRenderer: h.Label.CreateRenderer(),
-		divider:        canvas.NewRectangle(theme.Color(theme.ColorNameSeparator)),
-		rule:           canvas.NewRectangle(theme.Color(theme.ColorNameSeparator)),
+		h:              h,
+		arrow:          canvas.NewImageFromResource(nil),
+		divider:        canvas.NewRectangle(sep),
+		top:            canvas.NewRectangle(sep),
+		bottom:         canvas.NewRectangle(sep),
 	}
+	r.arrow.FillMode = canvas.ImageFillContain
+	r.updateArrow()
+	return r
 }
 
 type sortHeaderRenderer struct {
 	fyne.WidgetRenderer // the label's
-	divider, rule       *canvas.Rectangle
+	h                   *sortHeader
+	arrow               *canvas.Image
+	divider, top        *canvas.Rectangle
+	bottom              *canvas.Rectangle
 }
 
-// Layout puts the divider in the middle of the gap the table leaves between
-// columns, where Fyne's own divider went, and runs the rule under the gap too
-// so it is unbroken.
+// Layout gives the title the width the arrow leaves, puts the arrow at the
+// right edge, the divider in the middle of the gap the table leaves between
+// columns, and runs the rules under the gap too so they are unbroken.
 func (r *sortHeaderRenderer) Layout(size fyne.Size) {
-	r.WidgetRenderer.Layout(size)
 	pad := theme.Padding()
+	icon := theme.IconInlineSize()
+	title := size
+	if r.h.sortDir != 0 {
+		title.Width = max(size.Width-icon-pad, 0)
+	}
+	r.WidgetRenderer.Layout(title)
+	r.arrow.Move(fyne.NewPos(size.Width-icon-pad, (size.Height-icon)/2))
+	r.arrow.Resize(fyne.NewSquareSize(icon))
+
 	line := theme.SeparatorThicknessSize()
 	r.divider.Move(fyne.NewPos(size.Width+(pad-line)/2, 0))
 	r.divider.Resize(fyne.NewSize(line, size.Height))
-	r.rule.Move(fyne.NewPos(0, size.Height-line))
-	r.rule.Resize(fyne.NewSize(size.Width+pad, line))
+	r.top.Move(fyne.NewPos(0, 0))
+	r.top.Resize(fyne.NewSize(size.Width+pad, line))
+	r.bottom.Move(fyne.NewPos(0, size.Height-line))
+	r.bottom.Resize(fyne.NewSize(size.Width+pad, line))
+}
+
+func (r *sortHeaderRenderer) MinSize() fyne.Size {
+	return r.WidgetRenderer.MinSize().AddWidthHeight(theme.IconInlineSize()+theme.Padding(), 0)
 }
 
 func (r *sortHeaderRenderer) Objects() []fyne.CanvasObject {
-	return append(r.WidgetRenderer.Objects(), r.divider, r.rule)
+	return append(r.WidgetRenderer.Objects(), r.arrow, r.divider, r.top, r.bottom)
+}
+
+// sortUpIcon and sortDownIcon are the sort triangles: solid, 10 by 5 in a 16
+// square, as GTK draws them. Fyne's menu arrows are smaller and outlined.
+// Themed, so they take the text colour.
+var (
+	sortUpIcon = theme.NewThemedResource(fyne.NewStaticResource("sort-up.svg", []byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3 10.5h10l-5-5z"/></svg>`)))
+	sortDownIcon = theme.NewThemedResource(fyne.NewStaticResource("sort-down.svg", []byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3 5.5h10l-5 5z"/></svg>`)))
+)
+
+// updateArrow shows the triangle for the header's sort direction, or none.
+func (r *sortHeaderRenderer) updateArrow() {
+	switch r.h.sortDir {
+	case 1:
+		r.arrow.Resource = sortUpIcon
+	case -1:
+		r.arrow.Resource = sortDownIcon
+	default:
+		r.arrow.Resource = nil
+	}
+	r.arrow.Hidden = r.h.sortDir == 0
 }
 
 func (r *sortHeaderRenderer) Refresh() {
-	r.divider.FillColor = theme.Color(theme.ColorNameSeparator)
-	r.rule.FillColor = r.divider.FillColor
-	r.divider.Refresh()
-	r.rule.Refresh()
+	r.updateArrow()
+	r.arrow.Refresh()
+	sep := theme.Color(colorNameGrid)
+	for _, l := range []*canvas.Rectangle{r.divider, r.top, r.bottom} {
+		l.FillColor = sep
+		l.Refresh()
+	}
 	r.WidgetRenderer.Refresh()
+	r.Layout(r.h.Size())
 }
 
 func (h *sortHeader) Tapped(_ *fyne.PointEvent) {
@@ -1179,7 +1240,7 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	// not carry one, so set it here.
 	a.SetIcon(resourceFolderWhiteOrange5122xPng)
 	prefs = loadPrefs(a.Preferences())
-	sortCol, sortAsc = -1, true
+	sortCol, sortAsc = defaultPrefs().SortCol, defaultPrefs().SortAsc
 	if prefs.RememberLayout {
 		sortCol, sortAsc = prefs.SortCol, prefs.SortAsc
 	}

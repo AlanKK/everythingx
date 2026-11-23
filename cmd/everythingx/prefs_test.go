@@ -424,7 +424,7 @@ func TestRestoreDefaults(t *testing.T) {
 	sortCol = 2
 
 	restoreDefaults()
-	if prefs != defaultPrefs() || sortCol != -1 {
+	if prefs != defaultPrefs() || sortCol != 0 || !sortAsc {
 		t.Errorf("after restore: prefs %+v, sort %d", prefs, sortCol)
 	}
 	if w := tableColumnWidths(table)[0]; w != defaultColumnWidths[0] {

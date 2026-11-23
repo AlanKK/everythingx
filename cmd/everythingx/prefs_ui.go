@@ -203,7 +203,7 @@ func resultsTab() fyne.CanvasObject {
 		// Forget the stored layout, so turning this back on later doesn't
 		// bring back an old one. The window keeps its current layout.
 		prefs.ColumnWidths = [numColumns]float32{}
-		prefs.SortCol, prefs.SortAsc = -1, true
+		prefs.SortCol, prefs.SortAsc = defaultPrefs().SortCol, defaultPrefs().SortAsc
 		savePrefs()
 	}
 
