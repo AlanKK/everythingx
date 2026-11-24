@@ -114,15 +114,21 @@ func mimeIconNames(db *mimeDB, t string) []string {
 // themedIcon returns the first of names that the icon theme has, as a
 // resource, or nil.
 func themedIcon(names ...string) fyne.Resource {
-	path := currentIconLookup().find(names, iconPixels)
+	return iconResource(currentIconLookup().find(names, iconPixels))
+}
+
+// iconResource loads the icon file at path, or returns nil when there is none.
+// The resource is named by the whole path: Fyne caches drawn images by name,
+// and themes reuse file names across sizes and themes.
+func iconResource(path string) fyne.Resource {
 	if path == "" {
 		return nil
 	}
-	res, err := fyne.LoadResourceFromPath(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	return res
+	return fyne.NewStaticResource(path, data)
 }
 
 // iconLookup is the user's icon theme with the themes it inherits from, most
@@ -144,6 +150,7 @@ type iconDir struct {
 	size     int
 	scale    int
 	scalable bool
+	apps     bool // application icons rather than file-type and folder icons
 }
 
 var (
@@ -205,7 +212,8 @@ func newIconLookup(bases []string, theme string) *iconLookup {
 }
 
 // loadIconTheme reads the theme's index.theme from the first base directory
-// that has one, keeping the directories of file-type and folder icons. It
+// that has one, keeping the directories of file-type, folder and application
+// icons. It
 // returns nil if the theme is not installed.
 func loadIconTheme(bases []string, name string) *iconTheme {
 	for _, b := range bases {
@@ -248,7 +256,7 @@ func parseIconTheme(name string, sc *bufio.Scanner) *iconTheme {
 			continue
 		}
 		switch sec["Context"] {
-		case "MimeTypes", "Places":
+		case "MimeTypes", "Places", "Applications":
 		default:
 			continue
 		}
@@ -260,7 +268,11 @@ func parseIconTheme(name string, sc *bufio.Scanner) *iconTheme {
 		if s, err := strconv.Atoi(sec["Scale"]); err == nil && s > 0 {
 			scale = s
 		}
-		th.dirs = append(th.dirs, iconDir{path: d, size: size, scale: scale, scalable: sec["Type"] == "Scalable"})
+		th.dirs = append(th.dirs, iconDir{
+			path: d, size: size, scale: scale,
+			scalable: sec["Type"] == "Scalable",
+			apps:     sec["Context"] == "Applications",
+		})
 	}
 	return th
 }
@@ -280,10 +292,20 @@ func splitCommaList(s string) []string {
 // find returns the path of the first of names that a theme has, looking
 // through each theme in turn so the icons keep one theme's look, then
 // unthemed icons in /usr/share/pixmaps. It returns "" when none is found.
+// It looks among file-type and folder icons; findApp looks among apps'.
 func (l *iconLookup) find(names []string, px int) string {
+	return l.lookup(names, px, false)
+}
+
+// findApp is find for application icons, as a .desktop file's Icon key names.
+func (l *iconLookup) findApp(names []string, px int) string {
+	return l.lookup(names, px, true)
+}
+
+func (l *iconLookup) lookup(names []string, px int, apps bool) string {
 	for _, th := range l.themes {
 		for _, n := range names {
-			if p := l.findInTheme(th, n, px); p != "" {
+			if p := l.findInTheme(th, n, px, apps); p != "" {
 				return p
 			}
 		}
@@ -306,9 +328,16 @@ func (l *iconLookup) find(names []string, px int) string {
 // masks, filters, clip paths and inherited gradients, which current themes
 // use (Adwaita's archive and audio icons draw as black blots). SVG-only
 // themes such as Papirus still get their SVGs.
+//
+// A PNG smaller than the size it is drawn at (half px, as px is for HiDPI)
+// would be blown up and blurred, so undersizedPNGPenalty ranks it behind the
+// drawable SVGs, though still ahead of those Fyne cannot draw. Rows draw
+// 16px icons, so this only matters for larger ones, like the Properties
+// dialog's.
 const (
-	svgPenalty    = 1 << 20
-	badSVGPenalty = 1 << 21
+	svgPenalty           = 1 << 20
+	badSVGPenalty        = 1 << 21
+	undersizedPNGPenalty = 1 << 21
 )
 
 // unsupportedSVG matches the SVG features Fyne's renderer cannot draw.
@@ -330,10 +359,14 @@ func svgDrawable(path string) bool {
 // findInTheme returns the theme's best file for icon name at px pixels: a PNG
 // at px or a little larger, then a larger one, then the largest smaller one;
 // failing that an SVG, ranked the same way with scalable ones first and those
-// Fyne cannot draw last of all.
-func (l *iconLookup) findInTheme(th *iconTheme, name string, px int) string {
+// Fyne cannot draw last of all. It looks only in the theme's application
+// directories when apps is set, and only in its others when not.
+func (l *iconLookup) findInTheme(th *iconTheme, name string, px int, apps bool) string {
 	best, bestScore := "", 0
 	for _, d := range th.dirs {
+		if d.apps != apps {
+			continue
+		}
 		for _, ext := range []string{".png", ".svg"} {
 			score := iconDirScore(d, px)
 			if best != "" && score >= bestScore {
@@ -349,6 +382,8 @@ func (l *iconLookup) findInTheme(th *iconTheme, name string, px int) string {
 					if !svgDrawable(p) {
 						score += badSVGPenalty
 					}
+				} else if !d.scalable && d.size*d.scale < px/2 {
+					score += undersizedPNGPenalty
 				}
 				if best == "" || score < bestScore {
 					best, bestScore = p, score

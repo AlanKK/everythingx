@@ -150,7 +150,8 @@ static void *imagePNG(NSImage *icon, int px, int *length) {
     return buf;
 }
 
-// exAppIconPNG renders the Finder icon of appPath at px by px and returns it as
+// exAppIconPNG renders the Finder icon of the item at cpath (an app or any
+// other file) at px by px and returns it as
 // malloc'd PNG data, or NULL.
 void *exAppIconPNG(const char *cpath, int px, int *length) {
     *length = 0;

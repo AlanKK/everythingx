@@ -498,7 +498,21 @@ func (c *resultCell) TappedSecondary(e *fyne.PointEvent) {
 	// fires under the menu with nowhere to draw.
 	c.cancelToolTip()
 
-	widget.NewPopUpMenu(contextMenu(c.path), mainWindow.Canvas()).ShowAtPosition(e.AbsolutePosition)
+	newContextMenu(c.path, mainWindow.Canvas()).ShowAtPosition(e.AbsolutePosition)
+}
+
+// newContextMenu builds the right-click menu for a result on canvas c.
+// It is drawn with menuTheme rather than the app's theme.
+func newContextMenu(path string, c fyne.Canvas) *widget.PopUpMenu {
+	menu := contextMenu(path)
+	padMenuIcons(menu)
+	p := widget.NewPopUpMenu(menu, c)
+	container.NewThemeOverride(p, menuTheme{fyne.CurrentApp().Settings().Theme()})
+	// NewPopUpMenu sized the menu with the app's theme; size it again with
+	// the menu's own. Fyne leaves only the inner padding after the longest
+	// label, so add some room there, as GTK and macOS menus have.
+	p.Resize(p.MinSize().AddWidthHeight(menuTrailingSpace, 0))
+	return p
 }
 
 // contextMenu is the right-click menu for a result. Actions get an icon, as
@@ -692,7 +706,7 @@ func (e *searchEntry) TypedKey(key *fyne.KeyEvent) {
 	case fyne.KeyReturn, fyne.KeyEnter:
 		openSelected()
 	case fyne.KeyEscape:
-		if !escapeClosesWindow() {
+		if !mainWindowEscape() {
 			e.SetText("")
 		}
 	default:
@@ -1171,6 +1185,7 @@ Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 	content := container.NewBorder(imgContainer, okButton, nil, nil, text)
 
 	w.SetContent(content)
+	closeOnEscape(w, w.Close)
 	w.Resize(fyne.NewSize(400, 300))
 	w.Show()
 }
@@ -1268,10 +1283,10 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	closeMainWindow = closeWindow
 	w.SetCloseIntercept(closeWindow)
 	// Escape reaches the canvas when nothing has focus, such as after a
-	// click on a result.
+	// click on a result, or while a dialog is open over the window.
 	w.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
 		if e.Name == fyne.KeyEscape {
-			escapeClosesWindow()
+			mainWindowEscape()
 		}
 	})
 

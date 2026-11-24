@@ -46,6 +46,7 @@ func showPreferences() {
 	prefsWindow = w
 	w.SetContent(buildPreferences(w))
 	w.SetOnClosed(func() { prefsWindow = nil })
+	closeOnEscape(w, w.Close)
 	w.Resize(fyne.NewSize(620, 460))
 	w.CenterOnScreen()
 	w.Show()
@@ -80,6 +81,7 @@ func appearanceTab() fyne.CanvasObject {
 	themes.Required = true
 	themes.Selected = themeLabels[max(slices.Index(themeModes, prefs.Theme), 0)]
 	themes.OnChanged = func(label string) {
+		dropFocus(themes)
 		if i := slices.Index(themeLabels, label); i >= 0 {
 			prefs.Theme = themeModes[i]
 			appearanceChanged()
@@ -104,6 +106,7 @@ func appearanceTab() fyne.CanvasObject {
 		}
 	}
 	textSize.OnChanged = func(label string) {
+		dropFocus(textSize)
 		for _, s := range textScales {
 			if s.label == label && s.scale != prefs.TextScale {
 				ratio := s.scale / prefs.TextScale
@@ -117,6 +120,7 @@ func appearanceTab() fyne.CanvasObject {
 	font := widget.NewSelect(fontLabels, nil)
 	font.Selected = fontLabels[max(slices.Index(fontChoices, prefs.Font), 0)]
 	font.OnChanged = func(label string) {
+		dropFocus(font)
 		if i := slices.Index(fontLabels, label); i >= 0 && fontChoices[i] != prefs.Font {
 			prefs.Font = fontChoices[i]
 			appearanceChanged()
@@ -130,6 +134,7 @@ func appearanceTab() fyne.CanvasObject {
 	density.Required = true
 	density.Selected = densityLabels[max(slices.Index(densities, prefs.Density), 0)]
 	density.OnChanged = func(label string) {
+		dropFocus(density)
 		if i := slices.Index(densityLabels, label); i >= 0 {
 			prefs.Density = densities[i]
 			appearanceChanged()
@@ -156,6 +161,7 @@ func resultsTab() fyne.CanvasObject {
 	limit := widget.NewSelect(limitLabels, nil)
 	limit.Selected = formatCount(prefs.ResultLimit)
 	limit.OnChanged = func(label string) {
+		dropFocus(limit)
 		if i := slices.Index(limitLabels, label); i >= 0 {
 			prefs.ResultLimit = resultLimits[i]
 			resultsChanged()
@@ -165,6 +171,7 @@ func resultsTab() fyne.CanvasObject {
 	hidden := widget.NewCheck("Show hidden files and folders", nil)
 	hidden.Checked = prefs.ShowHidden
 	hidden.OnChanged = func(on bool) {
+		dropFocus(hidden)
 		prefs.ShowHidden = on
 		resultsChanged()
 	}
@@ -177,6 +184,7 @@ func resultsTab() fyne.CanvasObject {
 		units.Selected = unitLabels[1]
 	}
 	units.OnChanged = func(label string) {
+		dropFocus(units)
 		prefs.DecimalSizes = label == unitLabels[1]
 		resultsChanged()
 	}
@@ -189,6 +197,7 @@ func resultsTab() fyne.CanvasObject {
 		dates.Selected = dateLabels[1]
 	}
 	dates.OnChanged = func(label string) {
+		dropFocus(dates)
 		prefs.ISODates = label == dateLabels[1]
 		resultsChanged()
 	}
@@ -196,6 +205,7 @@ func resultsTab() fyne.CanvasObject {
 	layoutCheck := widget.NewCheck("Remember column widths and sort order", nil)
 	layoutCheck.Checked = prefs.RememberLayout
 	layoutCheck.OnChanged = func(on bool) {
+		dropFocus(layoutCheck)
 		prefs.RememberLayout = on
 		if on {
 			saveLayout() // start from what is on screen now
@@ -222,6 +232,7 @@ func windowTab() fyne.CanvasObject {
 	exit := widget.NewCheck("Quit EverythingX when the window is closed", nil)
 	exit.Checked = prefs.ExitOnClose
 	exit.OnChanged = func(on bool) {
+		dropFocus(exit)
 		prefs.ExitOnClose = on
 		savePrefs()
 	}
@@ -229,6 +240,7 @@ func windowTab() fyne.CanvasObject {
 	escape := widget.NewCheck("Close the window when Escape is pressed", nil)
 	escape.Checked = prefs.CloseOnEscape
 	escape.OnChanged = func(on bool) {
+		dropFocus(escape)
 		prefs.CloseOnEscape = on
 		savePrefs()
 	}
