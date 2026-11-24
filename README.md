@@ -91,7 +91,7 @@ These only apply when you type `ev` at the prompt. Scripts, `sudo ev …` and `$
 ## GUI app
 `everythingx` shows full paths and file details as you type. The search box takes the same terms and patterns as `ev`. Columns sort and resize.
 
-- Click or double-click a name, or press Enter, to open the file in its default app or the folder in your file manager.
+- Click a result to select it. Double-click a name, or press Enter, to open the file in its default app or the folder in your file manager.
 - Double-click the path to open the containing folder with the item selected.
 - Right-click a result to open it, reveal it, or copy its name, full path or directory path.
 - Right-click > Open With lists the apps registered for the item's type, default first, as Finder or
