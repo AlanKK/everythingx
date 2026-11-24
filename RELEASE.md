@@ -52,7 +52,7 @@ commit and build date are baked in with `-ldflags`; check with `ev --version` or
 | `everythingx_linux_arm64.rpm` | Linux arm64 (Fedora/RHEL) | Same as above |
 
 Asset names don't include the version, so `install.sh` can fetch them from
-`releases/latest/download/`. Each Linux arch is built natively (`ubuntu-latest` for amd64,
+`releases/latest/download/`. Each Linux arch is built natively (`ubuntu-24.04` for amd64,
 `ubuntu-24.04-arm` for arm64) and the `release` job only collects the artifacts.
 
 ## Homebrew tap

@@ -86,7 +86,7 @@ jobs:
             arch: amd64
             os_name: macos-intel-amd64
             platform: darwin
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04  # not -latest: 26.04 gcc emits x86-64-v3 binaries that fail on older CPUs/VMs
             arch: amd64
             os_name: linux-amd64
             platform: linux
