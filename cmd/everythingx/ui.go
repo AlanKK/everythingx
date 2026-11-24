@@ -706,7 +706,7 @@ func (e *searchEntry) TypedKey(key *fyne.KeyEvent) {
 	case fyne.KeyReturn, fyne.KeyEnter:
 		openSelected()
 	case fyne.KeyEscape:
-		if !escapeClosesWindow() {
+		if !mainWindowEscape() {
 			e.SetText("")
 		}
 	default:
@@ -1185,6 +1185,7 @@ Report issues to [GitHub Issues](https://github.com/AlanKK/everythingx/issues)
 	content := container.NewBorder(imgContainer, okButton, nil, nil, text)
 
 	w.SetContent(content)
+	closeOnEscape(w, w.Close)
 	w.Resize(fyne.NewSize(400, 300))
 	w.Show()
 }
@@ -1282,10 +1283,10 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	closeMainWindow = closeWindow
 	w.SetCloseIntercept(closeWindow)
 	// Escape reaches the canvas when nothing has focus, such as after a
-	// click on a result.
+	// click on a result, or while a dialog is open over the window.
 	w.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
 		if e.Name == fyne.KeyEscape {
-			escapeClosesWindow()
+			mainWindowEscape()
 		}
 	})
 

@@ -187,10 +187,10 @@ func showProperties(path string) {
 		}
 		fyne.Do(func() {
 			if err != nil {
-				dialog.ShowError(fmt.Errorf("Can't read %s: %w", filepath.Base(path), err), mainWindow)
+				showDialog(dialog.NewError(fmt.Errorf("Can't read %s: %w", filepath.Base(path), err), mainWindow))
 				return
 			}
-			dialog.ShowCustom(propertiesLabel, "Close", propertiesContent(path, props), mainWindow)
+			showDialog(dialog.NewCustom(propertiesLabel, "Close", propertiesContent(path, props), mainWindow))
 		})
 	}()
 }
