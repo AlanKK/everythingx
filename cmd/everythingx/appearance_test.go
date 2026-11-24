@@ -126,6 +126,7 @@ func TestSelectedRowTextColour(t *testing.T) {
 // Folders take the accent colour, and every icon on the selected row the
 // selection's text colour; the coloured icons are reused, not remade.
 func TestRowIconColours(t *testing.T) {
+	stubFileTypeIcon(t, nil)
 	dir := &shared.SearchResult{Fullpath: "/tmp/d", ObjectType: shared.ItemIsDir}
 	file := &shared.SearchResult{Fullpath: "/tmp/f.txt", ObjectType: shared.ItemIsFile}
 	if got := rowIcon(file, false); got != iconForRow(file) {
@@ -139,6 +140,30 @@ func TestRowIconColours(t *testing.T) {
 	}
 	if rowIcon(dir, true) != rowIcon(dir, true) {
 		t.Error("coloured icon made anew for each call")
+	}
+}
+
+// stubFileTypeIcon makes every result's system icon res for the test.
+func stubFileTypeIcon(t *testing.T, res fyne.Resource) {
+	t.Helper()
+	old := fileTypeIcon
+	fileTypeIcon = func(*shared.SearchResult) fyne.Resource { return res }
+	t.Cleanup(func() { fileTypeIcon = old })
+}
+
+// A system icon is full colour and drawn as it is, even on the selected row.
+func TestRowIconNative(t *testing.T) {
+	native := fyne.NewStaticResource("native.png", []byte("png"))
+	stubFileTypeIcon(t, native)
+	for _, r := range []*shared.SearchResult{
+		{Fullpath: "/tmp/d", ObjectType: shared.ItemIsDir},
+		{Fullpath: "/tmp/f.txt", ObjectType: shared.ItemIsFile},
+	} {
+		for _, selected := range []bool{false, true} {
+			if got := rowIcon(r, selected); got != native {
+				t.Errorf("rowIcon(%s, selected=%v) = %s, want the system icon", r.Fullpath, selected, got.Name())
+			}
+		}
 	}
 }
 

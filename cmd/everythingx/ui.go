@@ -723,8 +723,13 @@ func init() {
 		".app", ".exe", ".dmg", ".pkg", ".deb", ".rpm")
 }
 
-// iconForRow picks the icon for a result from its object type and, for regular
-// files, its extension.
+// fileTypeIcon is the system's own icon for a result: Finder's on macOS, the
+// desktop icon theme's on Linux. It returns nil when there is none, and the
+// row falls back to the theme's icons. Tests swap it.
+var fileTypeIcon = nativeFileIcon
+
+// iconForRow picks the theme icon for a result from its object type and, for
+// regular files, its extension. It is the fallback when the system has no icon.
 func iconForRow(r *shared.SearchResult) fyne.Resource {
 	switch r.ObjectType {
 	case shared.ItemIsDir:
@@ -745,10 +750,14 @@ func iconForRow(r *shared.SearchResult) fyne.Resource {
 // whenever the resource changes, so reuse one per icon and colour.
 var rowIcons = map[[2]string]fyne.Resource{}
 
-// rowIcon is iconForRow's icon in the colour the row draws it: the text
-// colour on a selected row, the accent colour for a folder (as GTK file lists
-// draw folders) and the theme's own colour otherwise.
+// rowIcon is the icon a row draws: the system's full-colour icon, unchanged
+// on a selected row as in Finder and Nautilus, or else iconForRow's in the
+// text colour on a selected row, the accent colour for a folder (as GTK file
+// lists draw folders) and the theme's own colour otherwise.
 func rowIcon(r *shared.SearchResult, selected bool) fyne.Resource {
+	if res := fileTypeIcon(r); res != nil {
+		return res
+	}
 	res := iconForRow(r)
 	var colorName fyne.ThemeColorName
 	switch {
@@ -1282,6 +1291,9 @@ func loadUI(db *sql.DB, instanceLn net.Listener) {
 	}
 
 	table := makeTable()
+	// Load the system's icon data (the MIME database and icon theme on
+	// Linux) now rather than in the first search's redraw.
+	go fileTypeIcon(&shared.SearchResult{Fullpath: "warm.txt", ObjectType: shared.ItemIsFile})
 
 	entry := newSearchEntry()
 	searchBox = entry

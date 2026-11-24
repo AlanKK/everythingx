@@ -3,7 +3,7 @@
 package main
 
 /*
-#cgo LDFLAGS: -framework Cocoa
+#cgo LDFLAGS: -framework Cocoa -framework UniformTypeIdentifiers
 #include <stdlib.h>
 #include "openwith_darwin.h"
 */
