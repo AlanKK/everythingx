@@ -32,7 +32,9 @@ type propSection struct {
 type fileProperties struct {
 	name       string
 	objectType shared.ObjectType
+	mode       os.FileMode
 	sections   []propSection
+	icon       fyne.Resource // the item's own system icon; nil to use the row's
 }
 
 // readProperties stats path and gathers what the Properties dialog shows. It
@@ -44,7 +46,7 @@ func readProperties(path string, decimalSizes bool) (fileProperties, error) {
 		return fileProperties{}, err
 	}
 	mode := info.Mode()
-	p := fileProperties{name: filepath.Base(path), objectType: objectTypeOf(mode)}
+	p := fileProperties{name: filepath.Base(path), objectType: objectTypeOf(mode), mode: mode}
 
 	general := []propRow{
 		{"Type", typeDescription(path, mode)},
@@ -180,6 +182,9 @@ func showProperties(path string) {
 	decimalSizes := prefs.DecimalSizes
 	go func() {
 		props, err := readProperties(path, decimalSizes)
+		if err == nil {
+			props.icon = propertiesIcon(path, props.mode)
+		}
 		fyne.Do(func() {
 			if err != nil {
 				dialog.ShowError(fmt.Errorf("Can't read %s: %w", filepath.Base(path), err), mainWindow)
@@ -190,6 +195,14 @@ func showProperties(path string) {
 	}()
 }
 
+// propertiesIconSize is how big the dialog draws the item's icon, and
+// propertiesIconPixels the size the system icon is fetched at: twice that,
+// so it stays sharp on HiDPI displays.
+const (
+	propertiesIconSize   = 48
+	propertiesIconPixels = 2 * propertiesIconSize
+)
+
 // propertiesWidth is how wide the dialog's content is. Long values (paths,
 // names) wrap within it rather than widening the dialog.
 const propertiesWidth float32 = 480
@@ -199,9 +212,13 @@ const propertiesWidth float32 = 480
 // in a softer colour and values on the right. All the grids share one label
 // column width, so the values line up from section to section.
 func propertiesContent(path string, p fileProperties) fyne.CanvasObject {
-	icon := canvas.NewImageFromResource(rowIcon(&shared.SearchResult{Fullpath: path, ObjectType: p.objectType}, false))
+	res := p.icon
+	if res == nil {
+		res = rowIcon(&shared.SearchResult{Fullpath: path, ObjectType: p.objectType}, false)
+	}
+	icon := canvas.NewImageFromResource(res)
 	icon.FillMode = canvas.ImageFillContain
-	icon.SetMinSize(fyne.NewSquareSize(48))
+	icon.SetMinSize(fyne.NewSquareSize(propertiesIconSize))
 
 	name := widget.NewLabelWithStyle(p.name, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	name.Wrapping = fyne.TextWrapBreak
