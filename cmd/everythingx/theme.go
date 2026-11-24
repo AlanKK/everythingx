@@ -248,3 +248,65 @@ func (th *everythingxTheme) Size(n fyne.ThemeSizeName) float32 {
 		return theme.DefaultTheme().Size(n)
 	}
 }
+
+// menuTheme is the theme of the results' right-click menu. Fyne sizes a menu
+// row from the inner padding alone, 8px above and below the text, which makes
+// its menus half again as tall as a GTK or macOS one. This wraps the app's
+// theme, so the font, text size and colours still follow the preferences, and
+// changes only what a menu draws with: tighter rows, a highlight that fills
+// the row, and a neutral grey for it rather than the accent tint.
+type menuTheme struct {
+	fyne.Theme
+}
+
+// Menu sizes. Rows are the text plus menuRowPadding above and below; the icon
+// slot is wider than the 16px glyph drawn in it (see padMenuIcon), which
+// leaves room either side of the icon without making the rows taller.
+const (
+	menuRowPadding = 4
+	menuIconSlot   = 24
+	menuIconGlyph  = 16
+
+	// menuTrailingSpace is added to the menu's width, after its longest label.
+	menuTrailingSpace = 20
+)
+
+var (
+	menuHoverLight = color.NRGBA{A: 0x1a}
+	menuHoverDark  = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x1f}
+)
+
+func (m menuTheme) Size(n fyne.ThemeSizeName) float32 {
+	switch n {
+	case theme.SizeNameInnerPadding:
+		return menuRowPadding
+	case theme.SizeNamePadding:
+		// Only insets the highlight within its row; the gap between rows is
+		// the app theme's padding, which the menu's layout reads directly.
+		return 0
+	case theme.SizeNameInlineIcon:
+		// Scale with the text, as the app's own icons do.
+		return menuIconSlot * m.Theme.Size(theme.SizeNameText) / theme.DefaultTheme().Size(theme.SizeNameText)
+	}
+	return m.Theme.Size(n)
+}
+
+func (m menuTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+	if n == theme.ColorNameFocus {
+		if th, ok := m.Theme.(*everythingxTheme); ok {
+			v = th.Variant()
+		}
+		if v == theme.VariantDark {
+			return menuHoverDark
+		}
+		return menuHoverLight
+	}
+	return m.Theme.Color(n, v)
+}
+
+func (m menuTheme) Icon(n fyne.ThemeIconName) fyne.Resource {
+	if n == theme.IconNameMenuExpand {
+		return padMenuIcon(m.Theme.Icon(n))
+	}
+	return m.Theme.Icon(n)
+}

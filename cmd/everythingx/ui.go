@@ -498,7 +498,21 @@ func (c *resultCell) TappedSecondary(e *fyne.PointEvent) {
 	// fires under the menu with nowhere to draw.
 	c.cancelToolTip()
 
-	widget.NewPopUpMenu(contextMenu(c.path), mainWindow.Canvas()).ShowAtPosition(e.AbsolutePosition)
+	newContextMenu(c.path, mainWindow.Canvas()).ShowAtPosition(e.AbsolutePosition)
+}
+
+// newContextMenu builds the right-click menu for a result on canvas c.
+// It is drawn with menuTheme rather than the app's theme.
+func newContextMenu(path string, c fyne.Canvas) *widget.PopUpMenu {
+	menu := contextMenu(path)
+	padMenuIcons(menu)
+	p := widget.NewPopUpMenu(menu, c)
+	container.NewThemeOverride(p, menuTheme{fyne.CurrentApp().Settings().Theme()})
+	// NewPopUpMenu sized the menu with the app's theme; size it again with
+	// the menu's own. Fyne leaves only the inner padding after the longest
+	// label, so add some room there, as GTK and macOS menus have.
+	p.Resize(p.MinSize().AddWidthHeight(menuTrailingSpace, 0))
+	return p
 }
 
 // contextMenu is the right-click menu for a result. Actions get an icon, as
