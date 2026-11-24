@@ -34,6 +34,9 @@ type mimeDB struct {
 	globs   []mimeGlob
 	parents map[string][]string // type -> its direct supertypes
 	aliases map[string]string   // alias -> canonical type
+	// genericIcons names the generic icon for a type, as its "generic-icon"
+	// element does in the database, for themes without the type's own icon.
+	genericIcons map[string]string
 }
 
 type mimeGlob struct {
@@ -66,7 +69,7 @@ func currentMimeDB() *mimeDB {
 // loadMimeDB reads globs2, subclasses and aliases from each data directory's
 // mime folder, most important directory first. Missing files are skipped.
 func loadMimeDB(dataDirs []string) *mimeDB {
-	db := &mimeDB{parents: map[string][]string{}, aliases: map[string]string{}}
+	db := &mimeDB{parents: map[string][]string{}, aliases: map[string]string{}, genericIcons: map[string]string{}}
 	for _, d := range dataDirs {
 		dir := filepath.Join(d, "mime")
 		eachLine(filepath.Join(dir, "globs2"), func(line string) {
@@ -103,6 +106,14 @@ func loadMimeDB(dataDirs []string) *mimeDB {
 			if alias, canonical, ok := strings.Cut(line, " "); ok {
 				if _, seen := db.aliases[alias]; !seen {
 					db.aliases[alias] = canonical
+				}
+			}
+		})
+		eachLine(filepath.Join(dir, "generic-icons"), func(line string) {
+			// type:icon-name
+			if t, icon, ok := strings.Cut(line, ":"); ok {
+				if _, seen := db.genericIcons[t]; !seen {
+					db.genericIcons[t] = icon
 				}
 			}
 		})

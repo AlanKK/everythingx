@@ -1,6 +1,7 @@
 //go:build darwin
 
 #import <Cocoa/Cocoa.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <stdlib.h>
 #include <string.h>
 #include "openwith_darwin.h"
@@ -104,6 +105,51 @@ void exFreeApps(EXApp *apps, int count) {
     free(apps);
 }
 
+// imagePNG renders icon at px by px and returns it as malloc'd PNG data, or
+// NULL. The caller holds an autorelease pool.
+static void *imagePNG(NSImage *icon, int px, int *length) {
+    *length = 0;
+    if (icon == nil) {
+        return NULL;
+    }
+    NSBitmapImageRep *rep = [[[NSBitmapImageRep alloc]
+        initWithBitmapDataPlanes:NULL
+                      pixelsWide:px
+                      pixelsHigh:px
+                   bitsPerSample:8
+                 samplesPerPixel:4
+                        hasAlpha:YES
+                        isPlanar:NO
+                  colorSpaceName:NSCalibratedRGBColorSpace
+                     bytesPerRow:0
+                    bitsPerPixel:0] autorelease];
+    if (rep == nil) {
+        return NULL;
+    }
+    NSGraphicsContext *ctx = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:ctx];
+    ctx.imageInterpolation = NSImageInterpolationHigh;
+    [icon drawInRect:NSMakeRect(0, 0, px, px)
+            fromRect:NSZeroRect
+           operation:NSCompositingOperationCopy
+            fraction:1.0];
+    [ctx flushGraphics];
+    [NSGraphicsContext restoreGraphicsState];
+
+    NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    if (png.length == 0) {
+        return NULL;
+    }
+    void *buf = malloc(png.length);
+    if (buf == NULL) {
+        return NULL;
+    }
+    memcpy(buf, png.bytes, png.length);
+    *length = (int)png.length;
+    return buf;
+}
+
 // exAppIconPNG renders the Finder icon of appPath at px by px and returns it as
 // malloc'd PNG data, or NULL.
 void *exAppIconPNG(const char *cpath, int px, int *length) {
@@ -113,43 +159,35 @@ void *exAppIconPNG(const char *cpath, int px, int *length) {
         if (path == nil) {
             return NULL;
         }
-        NSImage *icon = [[NSWorkspace sharedWorkspace] iconForFile:path];
-        NSBitmapImageRep *rep = [[[NSBitmapImageRep alloc]
-            initWithBitmapDataPlanes:NULL
-                          pixelsWide:px
-                          pixelsHigh:px
-                       bitsPerSample:8
-                     samplesPerPixel:4
-                            hasAlpha:YES
-                            isPlanar:NO
-                      colorSpaceName:NSCalibratedRGBColorSpace
-                         bytesPerRow:0
-                        bitsPerPixel:0] autorelease];
-        if (rep == nil) {
-            return NULL;
-        }
-        NSGraphicsContext *ctx = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
-        [NSGraphicsContext saveGraphicsState];
-        [NSGraphicsContext setCurrentContext:ctx];
-        ctx.imageInterpolation = NSImageInterpolationHigh;
-        [icon drawInRect:NSMakeRect(0, 0, px, px)
-                fromRect:NSZeroRect
-               operation:NSCompositingOperationCopy
-                fraction:1.0];
-        [ctx flushGraphics];
-        [NSGraphicsContext restoreGraphicsState];
+        return imagePNG([[NSWorkspace sharedWorkspace] iconForFile:path], px, length);
+    }
+}
 
-        NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
-        if (png.length == 0) {
-            return NULL;
+// exTypeIconPNG renders the Finder icon for a kind of item rather than one
+// file: kind is EXKindFolder, EXKindSymlink, or EXKindFile, whose type comes
+// from ext (without the dot; empty for none). It returns malloc'd PNG data, or
+// NULL.
+void *exTypeIconPNG(const char *cext, int kind, int px, int *length) {
+    *length = 0;
+    @autoreleasepool {
+        UTType *type = nil;
+        switch (kind) {
+        case EXKindFolder:
+            type = UTTypeFolder;
+            break;
+        case EXKindSymlink:
+            type = UTTypeSymbolicLink;
+            break;
+        default:
+            if (cext != NULL && cext[0] != '\0') {
+                type = [UTType typeWithFilenameExtension:[NSString stringWithUTF8String:cext]];
+            }
         }
-        void *buf = malloc(png.length);
-        if (buf == NULL) {
-            return NULL;
+        if (type == nil) {
+            type = UTTypeData;
         }
-        memcpy(buf, png.bytes, png.length);
-        *length = (int)png.length;
-        return buf;
+        NSImage *icon = [[NSWorkspace sharedWorkspace] iconForContentType:type];
+        return imagePNG(icon, px, length);
     }
 }
 
